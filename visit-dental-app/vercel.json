@@ -3,10 +3,5 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "framework": "vite",
-  "functions": {
-    "api/**/*.cjs": {
-      "maxDuration": 30
-    }
-  }
+  "framework": "vite"
 }

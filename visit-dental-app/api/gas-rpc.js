@@ -1,4 +1,4 @@
-/** Vercel Node.js API — lib フォルダを import せず1ファイル完結（Edge 落ち対策） */
+/** Vercel Node.js API — 1ファイル完結 */
 
 const POST_ONLY = new Set([
   'savePhoto',
@@ -26,12 +26,12 @@ async function parseGasText(res) {
     }
     return parsed
   } catch {
-    var hint = ''
-    if (text.indexOf('Page Not Found') >= 0) {
+    let hint = ''
+    if (text.includes('Page Not Found')) {
       hint = ' GAS URL が /exec か、Main.gs を新バージョンでデプロイ済みか確認してください。'
-    } else if (text.indexOf('Authorization') >= 0) {
+    } else if (text.includes('Authorization')) {
       hint = ' GAS のアクセスを「全員」にしてください。'
-    } else if (text.indexOf('<!DOCTYPE') >= 0 || text.indexOf('<html') >= 0) {
+    } else if (text.includes('<!DOCTYPE') || text.includes('<html')) {
       hint = ' GAS が HTML を返しました。doGet の rpc=1 が Main.gs に入っているか確認してください。'
     }
     return {
@@ -42,26 +42,26 @@ async function parseGasText(res) {
 }
 
 async function callGasGet(gasUrl, func, args) {
-  var url = new URL(gasUrl)
+  const url = new URL(gasUrl)
   url.searchParams.set('rpc', '1')
   url.searchParams.set('func', func)
   url.searchParams.set('args', JSON.stringify(args))
-  var res = await fetch(url.toString(), { method: 'GET', redirect: 'follow' })
+  const res = await fetch(url.toString(), { method: 'GET', redirect: 'follow' })
   return parseGasText(res)
 }
 
 async function callGasPost(gasUrl, func, args) {
-  var payload = JSON.stringify({ func: func, args: args })
-  var opts = {
+  const payload = JSON.stringify({ func, args })
+  const opts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: payload,
     redirect: 'manual',
   }
-  var res = await fetch(gasUrl, opts)
-  for (var i = 0; i < 5; i++) {
-    if ([301, 302, 303, 307, 308].indexOf(res.status) >= 0) {
-      var loc = res.headers.get('location')
+  let res = await fetch(gasUrl, opts)
+  for (let i = 0; i < 5; i++) {
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const loc = res.headers.get('location')
       if (!loc) break
       res = await fetch(loc, opts)
       continue
@@ -79,7 +79,7 @@ async function forwardGasRpc(gasUrl, func, args) {
 }
 
 function readJsonBody(req) {
-  var body = req.body
+  const body = req.body
   if (body == null) return {}
   if (typeof body === 'string') {
     try {
@@ -92,7 +92,7 @@ function readJsonBody(req) {
   return {}
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     if (req.method === 'OPTIONS') {
       res.status(204).end()
@@ -103,7 +103,7 @@ module.exports = async function handler(req, res) {
       return
     }
 
-    var gasUrl = String(process.env.GAS_WEBAPP_URL || '').trim()
+    const gasUrl = String(process.env.GAS_WEBAPP_URL || '').trim()
     if (!gasUrl) {
       res.status(502).json({
         ok: false,
@@ -115,22 +115,25 @@ module.exports = async function handler(req, res) {
     try {
       new URL(gasUrl)
     } catch {
-      res.status(502).json({ ok: false, error: 'GAS_WEBAPP_URL の形式が正しくありません: ' + gasUrl.slice(0, 80) })
+      res.status(502).json({
+        ok: false,
+        error: 'GAS_WEBAPP_URL の形式が正しくありません: ' + gasUrl.slice(0, 80),
+      })
       return
     }
 
-    var body = readJsonBody(req)
-    var func = String(body.func || '').trim()
+    const body = readJsonBody(req)
+    const func = String(body.func || '').trim()
     if (!func) {
       res.status(400).json({ ok: false, error: 'Missing func' })
       return
     }
-    var args = Array.isArray(body.args) ? body.args : []
+    const args = Array.isArray(body.args) ? body.args : []
 
-    var out = await forwardGasRpc(gasUrl, func, args)
+    const out = await forwardGasRpc(gasUrl, func, args)
     res.status(out.ok ? 200 : 502).json(out)
   } catch (e) {
-    var msg = e && e.message ? e.message : String(e)
+    const msg = e instanceof Error ? e.message : String(e)
     res.status(500).json({ ok: false, error: 'Vercel API 内部エラー: ' + msg })
   }
 }
