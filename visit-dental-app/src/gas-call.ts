@@ -13,7 +13,15 @@ export function installGasCallFetch(): void {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ func: funcName, args }),
     })
-    const body = (await res.json()) as { ok?: boolean; result?: unknown; error?: string }
+    const text = await res.text()
+    let body: { ok?: boolean; result?: unknown; error?: string }
+    try {
+      body = JSON.parse(text) as typeof body
+    } catch {
+      throw new Error(
+        `サーバー応答が読めません (${res.status}): ${text.slice(0, 160)}`,
+      )
+    }
     if (!body.ok) {
       throw new Error(body.error || `RPC failed (${res.status})`)
     }
