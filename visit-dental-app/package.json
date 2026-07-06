@@ -10,7 +10,6 @@
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
-    "@vercel/node": "^5.7.15",
     "typescript": "~6.0.2",
     "vite": "^7.0.0",
     "vite-plugin-pwa": "^1.2.0"

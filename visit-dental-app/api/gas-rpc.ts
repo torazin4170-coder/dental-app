@@ -1,36 +1,23 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { forwardGasRpc, type GasRpcRequest } from '../lib/forward-gas-rpc'
 
-function parseBody(req: VercelRequest): GasRpcRequest {
-  const raw = req.body
-  if (raw == null) return { func: '' }
-  if (typeof raw === 'string') {
-    try {
-      return JSON.parse(raw) as GasRpcRequest
-    } catch {
-      return { func: '' }
-    }
-  }
-  return raw as GasRpcRequest
-}
+export const runtime = 'edge'
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204 })
+  }
+  if (req.method !== 'POST') {
+    return Response.json({ ok: false, error: 'Method not allowed' }, { status: 405 })
+  }
+
+  const gasUrl = process.env.GAS_WEBAPP_URL || ''
+  let body: GasRpcRequest
   try {
-    if (req.method === 'OPTIONS') {
-      res.status(204).end()
-      return
-    }
-    if (req.method !== 'POST') {
-      res.status(405).json({ ok: false, error: 'Method not allowed' })
-      return
-    }
-
-    const gasUrl = process.env.GAS_WEBAPP_URL || ''
-    const body = parseBody(req)
-    const out = await forwardGasRpc(body, gasUrl)
-    res.status(out.ok ? 200 : 502).json(out)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    res.status(500).json({ ok: false, error: `Vercel API error: ${msg}` })
+    body = (await req.json()) as GasRpcRequest
+  } catch {
+    return Response.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 })
   }
+
+  const out = await forwardGasRpc(body, gasUrl)
+  return Response.json(out, { status: out.ok ? 200 : 502 })
 }

@@ -820,7 +820,19 @@ function doPost(e) {
 function doGet(e) {
   var q = (e && e.parameter) || {};
   if (String(q.rpc || "") === "1") {
-    return rpcJsonOutput_({ ok: false, error: "Use POST for RPC" });
+    try {
+      var funcName = String(q.func || "").trim();
+      if (!funcName) {
+        return rpcJsonOutput_({ ok: false, error: "Missing func" });
+      }
+      var argsRaw = String(q.args || "[]");
+      var args = JSON.parse(argsRaw);
+      var result = invokeRpc_(funcName, args);
+      return rpcJsonOutput_({ ok: true, result: result });
+    } catch (rpcErr) {
+      var rpcMsg = rpcErr && rpcErr.message ? String(rpcErr.message) : String(rpcErr);
+      return rpcJsonOutput_({ ok: false, error: rpcMsg });
+    }
   }
   if (String(q.manifest || "") === "1") {
     return manifestJsonResponse_();

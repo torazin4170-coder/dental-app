@@ -2425,10 +2425,11 @@ function init() {
   ensureMedItemsDelListener();
   ensureRecordDraftListeners();
   ensureUndoHooks_();
+  const initYm = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
   Promise.all([
     gasCall("getFacilities"),
     gasCall("getPatients", null),
-    gasCall("getMonthlyRecords", "*"),
+    gasCall("getMonthlyRecords", initYm),
   ]).then(([facsJson, patientsJson, recsJson]) => {
     try {
       FACILITIES = JSON.parse(facsJson);
