@@ -16,5 +16,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts", "api", "lib"]
+  "include": ["vite.config.ts", "lib"]
 }
