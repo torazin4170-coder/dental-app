@@ -1,0 +1,1847 @@
+<!-- ── ローディング ── -->
+<div id="loading">読み込み中…</div>
+
+<!-- ── サイドバー（PC） ── -->
+<nav class="sidebar">
+  <div class="sidebar-logo">🦷 訪問歯科カルテ</div>
+  <div class="sidebar-nav-item active" data-screen="patients" onclick="switchScreen('patients')">👥 患者リスト</div>
+  <div class="sidebar-nav-item" data-screen="dashboard" onclick="switchScreen('dashboard')">📊 ダッシュボード</div>
+  <div class="sidebar-nav-item" data-screen="calendar" onclick="switchScreen('calendar')">📅 カレンダー</div>
+  <div class="sidebar-nav-item" data-screen="settings" onclick="switchScreen('settings')">⚙️ 設定・管理</div>
+</nav>
+
+<div class="main-col">
+<!-- ── ヘッダー ── -->
+<div class="top-header" id="topHeader">
+  <span style="font-size:22px">🦷</span>
+  <div style="flex:1">
+    <div style="font-weight:800;font-size:14px">訪問歯科カルテ</div>
+    <div style="font-size:11px;color:var(--muted)" id="headerSub">患者リスト</div>
+  </div>
+  <div class="header-actions">
+    <button type="button" id="darkModeBtn" class="header-toggle-btn" onclick="toggleDarkMode()">🌙 ダーク</button>
+    <button type="button" id="pcModeBtn" class="header-toggle-btn" onclick="togglePcMode()">🖥 PC表示</button>
+  </div>
+</div>
+
+<!-- ── 施設タブ ── -->
+<div class="fac-tabs" id="facTabs"></div>
+
+<!-- ── 画面エリア ── -->
+<div class="screen-wrap">
+
+  <!-- 患者リスト -->
+  <div class="screen active" id="screen-patients">
+    <div class="card" style="display:flex;align-items:center;gap:8px;padding:10px 12px">
+      <span>🔍</span>
+      <input type="text" placeholder="患者名で検索…" id="searchInput" oninput="renderPatients()"
+        style="border:none;outline:none;flex:1;font-size:14px;background:none">
+    </div>
+    <div class="card" style="padding:10px 12px;margin-bottom:8px">
+      <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">施設で絞り込み</label>
+      <select id="patient-fac-filter" onchange="onPatientFacFilterChange_()"
+        style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit">
+        <option value="all">全施設（施設ごとの見出し付き）</option>
+      </select>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button type="button" id="plist-st-active" onclick="togglePatientListStatusFilter('active')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--green);background:var(--green-light);color:var(--green);font-size:12px;font-weight:700;cursor:pointer">✓ 有効</button>
+        <button type="button" id="plist-st-left" onclick="togglePatientListStatusFilter('left')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">退去</button>
+        <button type="button" id="plist-st-deceased" onclick="togglePatientListStatusFilter('deceased')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">逝去</button>
+      </div>
+    </div>
+    <div class="card" id="patient-inage-filter-wrap" style="display:none;padding:8px 12px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">サニーライフ稲毛 · 担当ドクター</div>
+      <select id="patient-inage-doctor-filter" onchange="setPatientInageDoctorFilter(this.value)"
+        style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit">
+        <option value="">すべて表示</option>
+      </select>
+    </div>
+    <div class="card" style="padding:8px 12px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">無料検診</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <button type="button" class="pif-btn" data-pif="all" onclick="setPatientIntakeFilter('all')">すべて</button>
+        <button type="button" class="pif-btn" data-pif="musho_kenshin" onclick="setPatientIntakeFilter('musho_kenshin')">無料検診</button>
+      </div>
+    </div>
+    <div id="patientList"></div>
+  </div>
+
+  <!-- 診療記録入力 -->
+  <div class="screen" id="screen-record">
+    <!-- ヘッダー：患者名 + 履歴ボタン -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button class="btn btn-secondary" style="padding:8px 14px;font-size:14px" onclick="backToList()">← 戻る</button>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div id="recordPatientName" style="font-size:18px;font-weight:800"></div>
+          <span id="recordUnsavedHud" style="display:none;font-size:11px;font-weight:800;color:#b45309;background:var(--yellow-light);border:1px solid #fcd34d;padding:3px 8px;border-radius:999px">未保存</span>
+        </div>
+        <div id="recordPatientMeta" style="font-size:12px;color:var(--muted)"></div>
+      </div>
+      <button class="btn btn-secondary" style="padding:8px 12px;font-size:13px;flex-shrink:0"
+        onclick="openHistory(selectedPatient?.id)">📋 履歴</button>
+      <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:8px 10px;font-size:12px;flex-shrink:0"
+        data-undo-btn title="元に戻す（Ctrl+Z）" onclick="performUndo_()" disabled>↩ 戻す</button>
+      <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:8px 10px;font-size:12px;flex-shrink:0"
+        data-redo-btn title="やり直す（Ctrl+Y）" onclick="performRedo_()" disabled>↪ やり直し</button>
+    </div>
+
+    <div class="record-cols">
+    <div class="record-left">
+    <div id="rollable-clinical-placeholder"></div>
+    <div id="rollable-clinical-block">
+    <!-- 歯式サマリー -->
+    <div class="section-title">現在の歯式</div>
+    <div id="teethChartBlock" style="background:white;border:1.5px solid var(--border);border-radius:12px;padding:12px 12px 28px 12px;margin-bottom:4px;overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;touch-action:pan-x pinch-zoom">
+      <div id="teethChartFitWrap" class="teeth-chart-fit-wrap" style="display:block;width:max-content;min-width:100%;margin:0 auto;box-sizing:border-box">
+        <div id="teethChartScaleInner" style="display:inline-block;vertical-align:top;line-height:0;flex-shrink:0">
+          <div id="teethChartView"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 写真・X線エリア -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px">
+      <div class="section-title" style="margin:0">写真・X線</div>
+    </div>
+    <!-- カテゴリフィルタ -->
+    <div id="photoCatFilter" style="display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:8px;margin-bottom:8px;scrollbar-width:thin">
+      <button type="button" onclick="filterPhotoCat('all')" id="pcat-all"
+        style="flex-shrink:0;padding:8px 14px;border-radius:16px;border:1.5px solid var(--accent);background:var(--accent);color:white;font-size:12px;font-weight:700;cursor:pointer;touch-action:manipulation;min-height:40px">すべて</button>
+      <button onclick="filterPhotoCat('口腔内')"  id="pcat-口腔内"  class="pcat-btn">🦷 口腔内</button>
+      <button onclick="filterPhotoCat('顔貌')"    id="pcat-顔貌"    class="pcat-btn">🧑 顔貌</button>
+      <button onclick="filterPhotoCat('義歯')"    id="pcat-義歯"    class="pcat-btn">🔲 義歯</button>
+      <button onclick="filterPhotoCat('X線')"     id="pcat-X線"     class="pcat-btn">☢️ X線</button>
+      <button onclick="filterPhotoCat('書類')"    id="pcat-書類"    class="pcat-btn">📄 書類</button>
+    </div>
+    <div class="photo-grid" id="photoGrid">
+      <!-- 写真サムネイルがここに入る -->
+      <div class="photo-add-btn" onclick="document.getElementById('photoInput').click()">
+        <span style="font-size:28px">📷</span>追加
+      </div>
+    </div>
+    <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(this)">
+
+    <!-- 歯科リスクアラート（自動表示） -->
+    <div id="riskAlerts"></div>
+    <div id="medical-accordion-host">
+    <!-- 要介護認定等 -->
+    <div class="acc-wrap">
+      <div class="acc-header" onclick="toggleAcc('careLevel')">
+        <div class="acc-title">🏷 要介護認定等</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span id="badge-careLevel" class="acc-badge" style="display:none"></span>
+          <span class="acc-arrow" id="arrow-careLevel">▼</span>
+        </div>
+      </div>
+      <div class="acc-body" id="acc-careLevel">
+        <div class="care-group">
+          <span class="care-group-label">要支援</span>
+          <div class="care-btns" id="care-shien"></div>
+        </div>
+        <div class="care-group">
+          <span class="care-group-label">要介護</span>
+          <div class="care-btns" id="care-kaigo-main"></div>
+        </div>
+        <div class="care-group">
+          <span class="care-group-label">障害高齢者の日常生活自立度</span>
+          <div class="care-btns" id="care-jiritsu"></div>
+        </div>
+        <div class="care-group">
+          <span class="care-group-label">認知症高齢者の日常生活自立度</span>
+          <div class="care-btns" id="care-ninchi"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 全身疾患・既往歴 -->
+    <div class="acc-wrap">
+      <div class="acc-header" onclick="toggleAcc('diseases')">
+        <div class="acc-title">🏥 全身疾患・既往歴</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span id="badge-diseases" class="acc-badge" style="display:none"></span>
+          <span class="acc-arrow" id="arrow-diseases">▼</span>
+        </div>
+      </div>
+      <div class="acc-body" id="acc-diseases">
+        <div class="med-search-wrap">
+          <input class="med-search" id="search-diseases" placeholder="🔍 病名で検索…" oninput="filterMedItems('diseases')">
+        </div>
+        <div class="med-cat-bar" id="dcat-bar"></div>
+        <div class="med-master-actions">
+          <button type="button" class="med-master-action-btn" onclick="addMasterCategory('diseases')">＋ カテゴリ追加</button>
+          <button type="button" class="med-master-action-btn" onclick="renameMasterCategory('diseases')">カテゴリ名変更</button>
+          <button type="button" class="med-master-action-btn" onclick="deleteMasterCategory('diseases')">カテゴリ削除</button>
+          <button type="button" class="med-master-action-btn" onclick="restoreMasterItems('diseases')">削除済みを復元</button>
+        </div>
+        <div class="med-items" id="list-diseases"></div>
+        <div class="med-selected" id="sel-diseases"></div>
+        <div class="med-add-row" id="add-diseases-row" style="display:none">
+          <span id="add-diseases-hint" style="font-size:13px;color:var(--muted)"></span>
+          <button class="med-add-btn" onclick="addCustomItem('diseases')">＋ 追加</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 服薬情報 -->
+    <div class="acc-wrap">
+      <div class="acc-header" onclick="toggleAcc('meds')">
+        <div class="acc-title">💊 服薬情報</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span id="badge-meds" class="acc-badge" style="display:none"></span>
+          <span class="acc-arrow" id="arrow-meds">▼</span>
+        </div>
+      </div>
+      <div class="acc-body" id="acc-meds">
+        <div class="med-search-wrap">
+          <input class="med-search" id="search-meds" placeholder="🔍 薬名・商品名で検索…" oninput="filterMedItems('meds')">
+        </div>
+        <div class="med-cat-bar" id="mcat-bar"></div>
+        <div class="med-master-actions">
+          <button type="button" class="med-master-action-btn" onclick="addMasterCategory('meds')">＋ カテゴリ追加</button>
+          <button type="button" class="med-master-action-btn" onclick="renameMasterCategory('meds')">カテゴリ名変更</button>
+          <button type="button" class="med-master-action-btn" onclick="deleteMasterCategory('meds')">カテゴリ削除</button>
+          <button type="button" class="med-master-action-btn" onclick="restoreMasterItems('meds')">削除済みを復元</button>
+        </div>
+        <div class="med-items" id="list-meds"></div>
+        <div class="med-selected" id="sel-meds"></div>
+        <div class="med-add-row" id="add-meds-row" style="display:none">
+          <span id="add-meds-hint" style="font-size:13px;color:var(--muted)"></span>
+          <button class="med-add-btn" onclick="addCustomItem('meds')">＋ 追加</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- アレルギー -->
+    <div class="acc-wrap">
+      <div class="acc-header" onclick="toggleAcc('allergy')">
+        <div class="acc-title">⚠️ アレルギー</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span id="badge-allergy" class="acc-badge" style="display:none"></span>
+          <span class="acc-arrow" id="arrow-allergy">▼</span>
+        </div>
+      </div>
+      <div class="acc-body" id="acc-allergy">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="sel-allergy"></div>
+        <div style="display:flex;gap:6px">
+          <input class="med-search" id="allergy-input" placeholder="薬剤名・食物・ラテックスなど…" style="flex:1">
+          <button class="med-add-btn" onclick="addAllergy()">追加</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">
+          <span style="font-size:11px;color:var(--muted);align-self:center">よく使う：</span>
+          <button onclick="addAllergyItem('局所麻酔薬')" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:white;font-size:12px;cursor:pointer">局所麻酔薬</button>
+          <button onclick="addAllergyItem('ペニシリン系')" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:white;font-size:12px;cursor:pointer">ペニシリン系</button>
+          <button onclick="addAllergyItem('セフェム系')" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:white;font-size:12px;cursor:pointer">セフェム系</button>
+          <button onclick="addAllergyItem('ラテックス')" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:white;font-size:12px;cursor:pointer">ラテックス</button>
+          <button onclick="addAllergyItem('アスピリン')" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:white;font-size:12px;cursor:pointer">アスピリン</button>
+          <button onclick="addAllergyItem('ヨード')" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:white;font-size:12px;cursor:pointer">ヨード</button>
+        </div>
+      </div>
+    </div>
+    </div><!-- /medical-accordion-host -->
+
+    </div><!-- /rollable-clinical-block -->
+
+    </div><!-- /record-left -->
+    <div class="record-right">
+
+    <div class="section-title">診療日・診療時間（任意）</div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label style="font-size:12px;font-weight:700;color:var(--muted)">診療日</label>
+      <input type="date" id="visitDateInput"
+        style="width:100%;max-width:280px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:14px">
+      <div class="form-group" style="flex:1;min-width:140px;margin:0">
+        <label style="font-size:12px">開始</label>
+        <input type="hidden" id="visitTimeStart" value="">
+        <div class="visit-time-digital" role="group" aria-label="診療開始時刻">
+          <input type="number" inputmode="numeric" id="visitTimeStartH" min="0" max="23" step="1" placeholder="時" autocomplete="off"
+            class="visit-time-digital-part" maxlength="2"
+            oninput="onVisitTimeStartHInput_()" onchange="commitVisitTimeStart_()" onblur="commitVisitTimeStart_()">
+          <span class="visit-time-colon" aria-hidden="true">:</span>
+          <input type="number" inputmode="numeric" id="visitTimeStartM" min="0" max="59" step="1" placeholder="分" autocomplete="off"
+            class="visit-time-digital-part" maxlength="2"
+            oninput="onVisitTimeStartMInput_()" onchange="commitVisitTimeStart_()" onblur="commitVisitTimeStart_()">
+        </div>
+      </div>
+      <div class="form-group" style="flex:1;min-width:140px;margin:0">
+        <label style="font-size:12px">終了</label>
+        <input type="hidden" id="visitTimeEnd" value="">
+        <div class="visit-time-digital" role="group" aria-label="診療終了時刻">
+          <input type="number" inputmode="numeric" id="visitTimeEndH" min="0" max="23" step="1" placeholder="時" autocomplete="off"
+            class="visit-time-digital-part" maxlength="2"
+            oninput="onVisitTimeEndHInput_()" onchange="commitVisitTimeEnd_()" onblur="commitVisitTimeEnd_()">
+          <span class="visit-time-colon" aria-hidden="true">:</span>
+          <input type="number" inputmode="numeric" id="visitTimeEndM" min="0" max="59" step="1" placeholder="分" autocomplete="off"
+            class="visit-time-digital-part" maxlength="2"
+            oninput="onVisitTimeEndMInput_()" onchange="commitVisitTimeEnd_()" onblur="commitVisitTimeEnd_()">
+        </div>
+      </div>
+    </div>
+
+    <!-- 処置内容 -->
+    <div class="section-title">処置内容を選択</div>
+    <p style="font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.45">上の<strong style="color:#991b1b">報告書ステータス</strong>（初診・入院中・退所・ご逝去）は②上司向けリストで<strong style="color:#dc2626">赤字</strong>になります。「無料検診」だけを選ぶと、その日の記録と患者の無料検診タグが付きます。他の処置と一緒に保存するとタグは自動で外れます。<strong>入院中</strong>は患者リストにラベル表示、<strong>退所・ご逝去</strong>は設定管理のステータスと同期します。</p>
+    <div id="treatChips"></div>
+
+    <!-- 定期検査（舌圧・湿潤度・F局）入力 -->
+    <div id="examInputsWrap" class="exam-inputs-wrap" style="display:none">
+      <div class="section-title" style="margin-top:12px;margin-bottom:8px">定期検査の記録</div>
+      <div id="examInputTongue" class="exam-input-row" style="display:none">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">舌圧検査（kPa）</label>
+        <p style="font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.45">5回測定可（1〜2回目＝練習、3〜5回目＝本番）。<strong>2回以上</strong>入力すると平均を記録に反映します（1回のみの場合はその値を記録）。</p>
+        <div class="ofpi-form-grid ofpi-form-grid-5">
+          <div><span class="ofpi-meas-lbl">1回目</span><input type="number" class="exam-tongue-inp" data-exam-tongue="0" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="onExamMeasurementInput_()"></div>
+          <div><span class="ofpi-meas-lbl">2回目</span><input type="number" class="exam-tongue-inp" data-exam-tongue="1" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="onExamMeasurementInput_()"></div>
+          <div><span class="ofpi-meas-lbl">3回目</span><input type="number" class="exam-tongue-inp" data-exam-tongue="2" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="onExamMeasurementInput_()"></div>
+          <div><span class="ofpi-meas-lbl">4回目</span><input type="number" class="exam-tongue-inp" data-exam-tongue="3" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="onExamMeasurementInput_()"></div>
+          <div><span class="ofpi-meas-lbl">5回目</span><input type="number" class="exam-tongue-inp" data-exam-tongue="4" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="onExamMeasurementInput_()"></div>
+        </div>
+        <div id="examTongueCalcHint" class="exam-calc-hint" style="display:none"></div>
+      </div>
+      <div id="examInputMoisture" class="exam-input-row" style="display:none">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">口腔粘膜湿潤度（口腔水分計）</label>
+        <p style="font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.45">連続3回まで入力可。<strong>3回</strong>入力すると中央値を記録に反映します（1回のみの場合はその値を記録）。</p>
+        <div class="ofpi-form-grid ofpi-form-grid-3">
+          <div><span class="ofpi-meas-lbl">1回目</span><input type="number" class="exam-moisture-inp" data-exam-moisture="0" step="0.1" min="0" inputmode="decimal" placeholder="例: 28.3" oninput="onExamMeasurementInput_()"></div>
+          <div><span class="ofpi-meas-lbl">2回目</span><input type="number" class="exam-moisture-inp" data-exam-moisture="1" step="0.1" min="0" inputmode="decimal" placeholder="例: 27.5" oninput="onExamMeasurementInput_()"></div>
+          <div><span class="ofpi-meas-lbl">3回目</span><input type="number" class="exam-moisture-inp" data-exam-moisture="2" step="0.1" min="0" inputmode="decimal" placeholder="例: 26.1" oninput="onExamMeasurementInput_()"></div>
+        </div>
+        <div id="examMoistureCalcHint" class="exam-calc-hint" style="display:none"></div>
+      </div>
+      <div id="examInputFkyoku" class="exam-input-row" style="display:none">
+        <label for="examFkyokuTeeth">F局 塗布歯（歯式から自動・編集可）</label>
+        <input type="text" id="examFkyokuTeeth" placeholder="例: 上右6、上右7"
+          oninput="scheduleDraftHudUpdate()">
+        <button type="button" class="btn btn-secondary exam-fkyoku-sync-btn" onclick="syncFkyokuTeethInputFromChart_()">歯式から再取得</button>
+      </div>
+    </div>
+
+    <!-- 定期検査履歴 -->
+    <div class="acc-wrap" id="examHistoryAcc" style="margin-top:12px">
+      <div class="acc-header" onclick="toggleAcc('examHistory')">
+        <div class="acc-title">📊 定期検査履歴</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="acc-arrow" id="arrow-examHistory">▼</span>
+        </div>
+      </div>
+      <div class="acc-body" id="acc-examHistory">
+        <div id="examHistoryTableHost"></div>
+      </div>
+    </div>
+
+    <!-- 患者メモ（マスタ） -->
+    <div class="section-title" style="margin-top:14px">患者メモ（マスタ）</div>
+    <p style="font-size:11px;color:var(--muted);margin:-4px 0 8px;line-height:1.45">その日の会話や気づき、訪問上の注意など。<strong>報告書・FAX・個人票には出力されません。</strong>保存すると患者マスタの「メモ・所見・特記」と同期されます。</p>
+    <div style="position:relative">
+      <textarea id="recordPatientNotes" rows="3" placeholder="例：義歯の装着に時間がかかる／午前中は眠気が強い／次回、ご家族同席希望 など"
+        style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit;resize:vertical;line-height:1.45"
+        oninput="scheduleDraftHudUpdate()"></textarea>
+      <button type="button" onclick="startVoiceInput('recordPatientNotes')" title="音声入力"
+        style="position:absolute;right:10px;top:10px;width:36px;height:36px;border-radius:50%;border:none;background:var(--accent-light);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;touch-action:manipulation">🎤</button>
+    </div>
+
+    <!-- メモ・所見（報告書向け） -->
+    <div class="section-title" style="margin-top:14px">メモ・所見（報告書向け）</div>
+    <p style="font-size:11px;color:var(--muted);margin:-4px 0 8px;line-height:1.45">文字を選んでから下のボタンで<strong>赤字・黄マーカー・枠</strong>を付けられます（報告書②などにも反映されます）。</p>
+    <div id="recordNotesEmBar" class="fax-em-bar notes-em-bar" aria-hidden="true">
+      <span class="fax-em-bar-label">①メモ欄をタップ → ②文字を選ぶ → ③赤字など</span>
+      <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
+      <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
+      <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">枠で囲む</button>
+      <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
+    </div>
+    <div class="notes-rich-wrap" style="position:relative">
+      <div id="notesRichEd" class="notes-rich-ed rpt-edit-rich" contenteditable="true" data-rpt-rich="1" spellcheck="false"
+        data-placeholder="追加メモや所見を入力…"></div>
+      <button type="button" onclick="startVoiceInput('notesRichEd')" title="音声入力"
+        style="position:absolute;right:8px;top:12px;width:40px;height:40px;border-radius:50%;border:none;background:var(--accent-light);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:4;touch-action:manipulation;box-shadow:0 0 0 1px rgba(148,163,184,.35)">🎤</button>
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">報告書向けカテゴリ（④と連動・複数可）</div>
+      <div id="recordCareCatPillsHost" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px"></div>
+    </div>
+
+    <!-- 次回予定 -->
+    <div class="section-title" style="margin-top:14px">次回予定</div>
+    <div class="form-group"><label>次回予定日</label><input type="date" id="nextDate"></div>
+    <div class="form-group">
+      <label>次回内容（タップまたはテキスト入力）</label>
+      <!-- 次回内容クイック選択チップ -->
+      <div id="nextChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+      <div style="position:relative">
+        <input type="text" id="nextContent" placeholder="例：口腔ケア、経過チェック…">
+        <button onclick="startVoiceInput('nextContent')" title="音声入力"
+          style="position:absolute;right:10px;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;border:none;background:var(--accent-light);font-size:16px;cursor:pointer">🎤</button>
+      </div>
+    </div>
+    <div id="recordSaveWrap" style="width:100%;margin-top:8px">
+            <div id="recordDuplicateWarn" class="record-duplicate-warn" role="alert"></div>
+<div id="recordSaveProgress" class="record-save-progress" role="progressbar" aria-valuetext="保存処理中"></div>
+      <button type="button" class="btn btn-primary" id="saveRecordBtn" style="width:100%" onclick="saveTreatmentRecord()">💾 保存する</button>
+    </div>
+    </div><!-- /record-right -->
+    </div><!-- /record-cols -->
+  </div>
+
+  <!-- 治療履歴画面 -->
+  <div class="screen" id="screen-history">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn btn-secondary" style="padding:8px 14px;font-size:14px"
+        onclick="switchScreen('record')">← 戻る</button>
+      <div>
+        <div id="historyPatientName" style="font-size:18px;font-weight:800"></div>
+        <div style="font-size:12px;color:var(--muted)">治療履歴</div>
+      </div>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+  <!-- ダッシュボード -->
+  <div class="screen" id="screen-dashboard">
+    <div id="dashContent"></div>
+  </div>
+
+  <!-- カレンダー -->
+  <div class="screen" id="screen-calendar">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px">
+      <button class="btn btn-secondary" onclick="calNav(-1)">&#8592;</button>
+      <span id="calTitle" style="font-weight:800;flex:1;text-align:center"></span>
+      <button class="btn btn-secondary" onclick="calNav(1)">&#8594;</button>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap"><p style="font-size:11px;color:var(--muted);margin:0;line-height:1.45;flex:1;min-width:140px">日付の下の「A 2」などは施設略称です。タップで編集できます。</p><button type="button" class="btn btn-secondary" style="font-size:12px;padding:8px 12px;white-space:nowrap" onclick="openCalFacLabelModal()">📝 施設略称</button></div>
+    <div id="calGrid"></div>
+  </div>
+
+  <!-- 設定・管理 -->
+  <div class="screen" id="screen-settings">
+    <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap;gap:2px 0">
+      <div class="settings-tab active" data-stab="patients" onclick="switchSettingsTab('patients')">👥 患者</div>
+      <div class="settings-tab" data-stab="facilities" onclick="switchSettingsTab('facilities')">🏥 施設</div>
+      <div class="settings-tab" data-stab="reports" onclick="switchSettingsTab('reports')">📄 日報・帳票</div>
+      <div class="settings-tab" data-stab="doctor" onclick="switchSettingsTab('doctor')">⚙️ 設定</div>
+    </div>
+    <style>
+      .settings-tab { flex:1;min-width:72px;padding:10px 4px;text-align:center;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent; }
+      .settings-tab.active { color:var(--accent);border-bottom-color:var(--accent); }
+      #faxDailyModal.modal-overlay.show,
+      #svListModal.modal-overlay.show,
+      #shareSheetModal.modal-overlay.show,
+      #monthCareModal.modal-overlay.show,
+      #visitTimetableModal.modal-overlay.show,
+      #kentaiReportModal.modal-overlay.show,
+      #personalSheetModal.modal-overlay.show,
+      #patientPpsModal.modal-overlay.show,
+      #ofpiModal.modal-overlay.show,
+      #shindanModal.modal-overlay.show { align-items: stretch; padding: 0; }
+      @media (min-width: 768px) {
+        #faxDailyModal.modal-overlay.show,
+        #svListModal.modal-overlay.show,
+        #shareSheetModal.modal-overlay.show,
+        #monthCareModal.modal-overlay.show,
+        #visitTimetableModal.modal-overlay.show,
+        #kentaiReportModal.modal-overlay.show,
+        #personalSheetModal.modal-overlay.show,
+        #patientPpsModal.modal-overlay.show,
+        #ofpiModal.modal-overlay.show,
+        #shindanModal.modal-overlay.show { align-items: center; padding: 8px; }
+      }
+      .ps-doc { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif; color: #111; font-size: 10pt; line-height: 1.45; }
+      .ps-doc table { border-collapse: collapse; width: 100%; }
+      .ps-doc td, .ps-doc th { border: 1px solid #000; padding: 4px 6px; vertical-align: top; }
+      .ps-doc .ps-lbl { background: #f8fafc; text-align: center; font-size: 9pt; font-weight: 700; width: 72px; white-space: nowrap; }
+      .ps-doc .ps-title { text-align: center; font-weight: 800; font-size: 14pt; letter-spacing: 0.08em; margin-bottom: 6px; }
+      .ps-doc .ps-entry-date { text-align: right; font-size: 9.5pt; margin-bottom: 4px; }
+      .ps-doc .ps-hdr-row td { text-align: center; font-size: 9pt; font-weight: 700; background: #f8fafc; }
+      .ps-doc .ps-teeth-wrap { padding: 4px; vertical-align: top; }
+      .ps-doc .ps-teeth-chart-embed { overflow-x: auto; max-width: 100%; }
+      .ps-doc .ps-bullet-cell .rpt-edit-multiline { display: block; min-height: 2.8em; white-space: pre-wrap; line-height: 1.55; }
+      .ps-doc .rpt-edit-multiline { display: block; min-height: 2.8em; white-space: pre-wrap; line-height: 1.5; }
+      .ps-doc .ps-plan-cell { min-height: 120px; }
+      #patientPpsPreviewInner .teeth-chart-root { min-width: max-content; }
+      #patientPpsPreviewInner .rpt-edit:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+      .fax-daily-modal-sheet {
+        max-height: min(96dvh, 96vh);
+        max-width: min(1100px, 98vw);
+        width: 100%;
+        margin: 0 auto;
+        border-radius: 18px 18px 0 0;
+        display: flex;
+        flex-direction: column;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+      }
+      @media (min-width: 768px) {
+        .fax-daily-modal-sheet { border-radius: 18px; margin: 6px auto; }
+      }
+      .report-preview-scroll {
+        flex: 1 1 auto;
+        min-height: min(62vh, calc(96dvh - 220px));
+        max-height: min(78vh, calc(96dvh - 160px));
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        background: #fafafa;
+      }
+      .report-preview-form-pane {
+        flex: 1 1 auto;
+        min-height: min(52vh, calc(96dvh - 240px));
+        max-height: min(62vh, calc(96dvh - 200px));
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-right: 4px;
+        margin-bottom: 8px;
+      }
+      #shareSheetModal .report-preview-split { min-height: 0; flex: 1 1 auto; overflow: hidden; gap: 8px; }
+      #shareSheetModal .fax-daily-modal-sheet { overflow: hidden; max-width: min(1280px, 98vw); }
+      #shareSheetModal .iss-modal-head-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px 12px;
+        margin-bottom: 8px;
+        flex-shrink: 0;
+      }
+      #shareSheetModal .iss-modal-head-text { flex: 1 1 200px; min-width: 0; }
+      #shareSheetModal .iss-modal-head-text .modal-title { margin-bottom: 4px; font-size: 17px; }
+      #shareSheetModal .iss-modal-head-text #issFacLabel { margin: 0 !important; }
+      #shareSheetModal .iss-modal-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        border: none;
+        box-shadow: none;
+        flex: 0 0 auto;
+      }
+      #shareSheetModal .iss-modal-toolbar .btn,
+      #shareSheetModal .iss-modal-toolbar .btn-cancel,
+      #shareSheetModal .iss-modal-toolbar .btn-ok {
+        flex: 0 0 auto;
+        width: auto;
+        min-width: 0;
+        padding: 7px 11px;
+        font-size: 12px;
+        font-weight: 700;
+        border-radius: 8px;
+        white-space: nowrap;
+      }
+      #shareSheetModal .report-preview-form-pane {
+        flex: 0 1 auto;
+        min-height: 0;
+        max-height: min(38vh, calc(96dvh - 220px));
+      }
+      #shareSheetModal .iss-preview-pane {
+        flex: 1 1 auto;
+        min-height: 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #shareSheetModal #issPreviewScroll.report-preview-scroll {
+        flex: 1 1 auto;
+        min-height: min(32vh, 280px);
+        max-height: none;
+        margin-bottom: 0;
+      }
+      @media (min-width: 900px) {
+        #shareSheetModal .report-preview-split { flex-direction: row; align-items: stretch; gap: 12px; }
+        #shareSheetModal .report-preview-form-pane {
+          flex: 0 0 30%;
+          max-width: 340px;
+          max-height: calc(96dvh - 120px);
+        }
+        #shareSheetModal .iss-preview-pane { flex: 1 1 70%; }
+        #shareSheetModal .rpt-preview-hint { display: none; }
+        #shareSheetModal #issPreviewScroll.report-preview-scroll {
+          min-height: calc(96dvh - 130px);
+        }
+      }
+      #visitTimetableModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
+      @media (min-width: 900px) {
+        #visitTimetableModal .report-preview-split { flex-direction: row; gap: 12px; }
+        #visitTimetableModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
+        #visitTimetableModal .report-preview-scroll { min-height: min(52vh, calc(96dvh - 200px)); }
+      #ofpiModal.modal-overlay.show { align-items: flex-end; }
+      @media (min-width: 720px) {
+        #ofpiModal.modal-overlay.show { align-items: center; padding: 12px; }
+        #ofpiModal .modal-sheet { max-width: 960px; max-height: 96dvh; border-radius: 16px; }
+      }
+      #ofpiModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
+      @media (min-width: 720px) {
+        #ofpiModal .report-preview-split { flex-direction: row; gap: 12px; }
+        #ofpiModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
+        #ofpiModal .report-preview-scroll { min-height: min(52vh, calc(96dvh - 200px)); }
+      #shindanModal.modal-overlay.show { align-items: flex-end; }
+      @media (min-width: 768px) {
+        #shindanModal.modal-overlay.show { align-items: center; padding: 12px; }
+        #shindanModal .modal-sheet { max-width: 960px; max-height: 96dvh; border-radius: 16px; }
+      }
+      #shindanModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
+      @media (min-width: 768px) {
+        #shindanModal .report-preview-split { flex-direction: row; gap: 12px; }
+        #shindanModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
+        #shindanModal .report-preview-scroll { min-height: min(52vh, calc(96dvh - 200px)); }
+      }
+      }
+      }
+      .tt-preview-host { transform-origin: top left; }
+      .tt-preview-host .tt-doc { font-size: 9pt; }
+      .tt-preview-host .tt-dr-sel { font-size: 11px; min-width: 5.5em; }
+      .settings-lines-list { display: flex; flex-direction: column; gap: 8px; }
+      .settings-line-row { display: flex; gap: 8px; align-items: center; }
+      .iss-pill-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 18px; margin-bottom: 12px; }
+      .iss-pill-row-preview { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 14px; }
+      .iss-pill-label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; font-size: 12px; font-weight: 700; white-space: nowrap; }
+      .iss-pill-section-title { font-size: 12px; font-weight: 800; color: var(--muted); margin-bottom: 6px; text-align: center; }
+      .iss-staff-pill-row { margin-bottom: 12px; }
+      .iss-notes-ed {
+        min-height: 6em;
+        margin-top: 8px;
+        padding: 10px;
+        border: 1.5px solid var(--border);
+        border-radius: 8px;
+        font-size: 14px;
+        line-height: 1.55;
+        font-family: inherit;
+        background: #fff;
+      }
+      .iss-notes-ed:empty::before { content: attr(data-placeholder); color: #94a3b8; pointer-events: none; }
+      .iss-notes-ed .fax-em-red { color: #dc2626; font-weight: 800; }
+      .iss-notes-ed .fax-em-hl { background: #fef08a; padding: 1px 3px; }
+      .inage-doc-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 6px;
+        border: 1.5px solid var(--idb-bd, #93c5fd);
+        background: var(--idb-bg, #eff6ff);
+        color: var(--idb-fg, #1e40af);
+        white-space: nowrap;
+        vertical-align: middle;
+      }
+      .inage-doc-badge--settings { flex-shrink: 0; min-width: 2.8em; text-align: center; }
+      .iss-fac-patient-pick { margin: 10px 0; padding: 10px; border: 1px dashed #94a3b8; border-radius: 10px; background: #f8fafc; max-height: 32vh; overflow-y: auto; }
+      #issFacPatientPickList { display: flex; flex-direction: column; gap: 12px; }
+      .iss-doc-group { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; background: #fff; }
+      .iss-doc-group-head { margin-bottom: 8px; display: flex; align-items: center; justify-content: flex-start; }
+      .iss-doc-group-title { font-size: 12px; font-weight: 800; color: #475569; }
+      .iss-doc-group-patients { display: flex; flex-wrap: wrap; gap: 6px; }
+      .iss-fac-patient-btn { font-size: 12px; font-weight: 700; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--border); background: #fff; cursor: pointer; font-family: inherit; }
+      .iss-fac-patient-btn--on { opacity: 0.55; cursor: default; border-color: #86efac; background: #f0fdf4; }
+      .iss-doc .iss-fac-line { text-align: center; font-size: 10pt; font-weight: 700; color: #475569; margin-bottom: 4px; }
+      .iss-doc .iss-staff-line.iss-pill-row-preview { justify-content: center; }
+      .iss-doc .iss-notes-rich { white-space: pre-wrap; word-break: break-word; }
+      .report-preview-split { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+      .report-preview-modal-footer { flex-shrink: 0; margin-top: auto; }
+      .report-preview-compact-ta { max-height: min(22vh, 200px); }
+      .fax-doc { font-size: 11pt; color: #111; line-height: 1.55; font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; }
+      .fax-doc .fax-table-top { display: flex; justify-content: flex-end; margin: 0 0 6px; }
+      .fax-doc .fax-clinic { text-align: right; font-weight: 800; font-size: 13pt; letter-spacing: 0.02em; }
+      .fax-doc .fax-to { font-weight: 800; margin: 0 0 8px; }
+      .fax-doc .fax-greet { margin: 0 0 8px; line-height: 1.75; }
+      .fax-doc .fax-lead { margin: 0 0 8px; line-height: 1.75; }
+      .fax-doc .fax-lead-date { font-weight: 700; }
+      .fax-doc .fax-closing { margin: 0 0 12px; }
+      .fax-doc .fax-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; }
+      .fax-doc .fax-table th, .fax-doc .fax-table td { border: 1px solid #334155; padding: 6px 7px; vertical-align: top; word-break: break-word; }
+      .fax-doc .fax-table th { background: #e2e8f0; font-weight: 800; font-size: 9pt; }
+      .fax-doc .fax-note { font-size: 9pt; margin: 4px 0 0; line-height: 1.45; }
+      .fax-doc .fax-footer-comment-block { margin-top: 10px; }
+      .fax-doc .fax-footer-comment-body { min-height: 4.5em; line-height: 1.75; font-size: 11pt; padding: 8px 10px; border: 1.5px dashed #94a3b8; border-radius: 8px; background: #fafafa; }
+      .fax-doc .fax-footer-comment-body.rpt-edit-rich { display: block; }
+      .fax-doc .fax-cell-rich { display: block; min-height: 1.35em; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+      .fax-doc .fax-em-red { color: #dc2626; font-weight: 800; }
+      .fax-doc .fax-em-hl { background: #fef08a; padding: 1px 3px; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+      .fax-doc .fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; line-height: 1.45; margin: 2px 0; }
+      .fax-em-bar { display: none; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 4px; padding: 8px 10px; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; }
+      .fax-em-bar.show { display: flex; }
+      .fax-em-bar-label { font-size: 11px; font-weight: 800; color: #475569; width: 100%; margin-bottom: 2px; }
+      .fax-em-btn { padding: 8px 12px; min-height: 40px; border-radius: 8px; border: 1.5px solid var(--border); background: #fff; font-size: 12px; font-weight: 800; font-family: inherit; cursor: pointer; touch-action: manipulation; }
+      .fax-em-btn-red { color: #dc2626; border-color: #fca5a5; background: #fef2f2; }
+      .fax-em-btn-hl { background: #fef9c3; border-color: #fde047; }
+      .fax-em-btn-box { border-color: #dc2626; border-width: 2px; }
+      .fax-em-btn-clear { color: #64748b; }
+      .sv-doc { font-size: 10.5pt; color: #111; line-height: 1.45; font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; }
+      .sv-doc .sv-title { text-align: center; font-weight: 800; font-size: 12.5pt; margin: 8px 0 6px; letter-spacing: 0.03em; }
+      .sv-doc .sv-date-line { text-align: center; font-size: 11pt; margin-bottom: 14px; color: #334155; }
+      .sv-doc .sv-fac-head { font-weight: 800; font-size: 11pt; margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 2px solid #334155; }
+      .sv-doc .sv-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; table-layout: fixed; }
+      .sv-doc .sv-table th, .sv-doc .sv-table td { border: 1px solid #475569; padding: 4px 6px; vertical-align: top; word-break: break-word; }
+      .sv-doc .sv-table th { background: #e2e8f0; font-weight: 800; font-size: 8.5pt; }
+      .sv-doc .sv-room { width: 56px; }
+      .sv-doc .sv-td-treat-memo { line-height: 1.5; }
+      .sv-doc .sv-row-notes { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1; font-size: 10pt; color: #334155; }
+      .sv-doc .sv-notes-body { display: block; white-space: pre-wrap; word-break: break-word; }
+      .notes-rich-wrap { margin-bottom: 4px; }
+      .notes-rich-ed {
+        min-height: 5em;
+        max-height: 40vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        width: 100%;
+        padding: 13px 50px 13px 14px;
+        border: 1.5px solid var(--border);
+        border-radius: 10px;
+        font-size: 16px;
+        font-family: inherit;
+        line-height: 1.55;
+        background: #fff;
+        box-sizing: border-box;
+      }
+      .notes-rich-ed:empty::before { content: attr(data-placeholder); color: #94a3b8; pointer-events: none; }
+      .notes-rich-ed .fax-em-red { color: #dc2626; font-weight: 800; }
+      .notes-rich-ed .fax-em-hl { background: #fef08a; padding: 1px 3px; border-radius: 2px; }
+      .notes-rich-ed .fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
+      .notes-em-bar { margin-bottom: 8px; }
+      .sv-doc .sv-foot { margin-top: 16px; font-size: 9.5pt; color: #475569; line-height: 1.55; }
+      .sv-doc .sv-free-block { margin-top: 10px; }
+      .sv-doc .sv-free-body { min-height: 4em; line-height: 1.75; font-size: 10.5pt; padding: 8px 10px; border: 1.5px dashed #94a3b8; border-radius: 8px; background: #fafafa; }
+      .sv-doc .fax-em-red { color: #dc2626; font-weight: 800; }
+      .sv-doc .fax-em-hl { background: #fef08a; padding: 1px 3px; border-radius: 2px; }
+      .sv-doc .fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
+      .iss-doc { font-size: 10pt; color: #111; line-height: 1.5; font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; }
+      .iss-doc .iss-header-block { text-align: center; margin-bottom: 12px; }
+      .iss-doc .iss-main-title { font-size: 14pt; font-weight: 800; letter-spacing: 0.12em; margin-bottom: 6px; }
+      .iss-doc .iss-entry-date { font-size: 10.5pt; font-weight: 700; color: #1e293b; }
+      .iss-doc .iss-cats { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 10px 0 12px; font-size: 9.5pt; align-items: center; }
+      .iss-doc .iss-cat { padding: 2px 6px; border-radius: 6px; border: 1.5px solid transparent; }
+      .iss-doc .iss-cat-sel { border-color: var(--accent, #2563eb); font-weight: 800; background: var(--accent-light, #dbeafe); }
+      .iss-doc .iss-staff-line { margin-bottom: 12px; font-size: 9.5pt; line-height: 1.6; }
+      .iss-doc .iss-staff-item { margin-right: 10px; white-space: nowrap; }
+      .iss-doc .iss-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 4px; }
+      .iss-doc .iss-table th, .iss-doc .iss-table td { border: 1.5px solid #1e293b; padding: 6px 8px; vertical-align: top; word-break: break-word; }
+      .iss-doc .iss-table th { background: #e2e8f0; font-size: 9pt; font-weight: 800; }
+      .iss-doc .iss-td-room { width: 56px; }
+      .iss-doc .iss-td-name { width: 22%; }
+      .iss-doc .iss-td-notes { font-size: 9.5pt; line-height: 1.55; }
+      .iss-doc .iss-td-footer { min-height: 72px; background: #fafafa; font-size: 9.5pt; line-height: 1.6; white-space: pre-wrap; }
+      .iss-doc .iss-free-block { margin-top: 14px; padding-top: 10px; border-top: 2px solid #cbd5e1; }
+      .iss-doc .iss-free-title { font-size: 11pt; font-weight: 800; color: #334155; margin-bottom: 8px; }
+      .iss-doc .iss-free-text-rich { min-height: 3em; font-size: 9.5pt; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+      #issPreviewInner .iss-td-notes,
+      #issPreviewInner .iss-td-footer { overflow: visible; }
+      #issPreviewInner .iss-photos-wrap { margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; clear: both; }
+      #issPreviewInner .iss-row-toolbar,
+      #issPreviewInner .iss-footer-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 6px; }
+      #issPreviewInner .iss-row-label { font-size: 10px; font-weight: 700; color: #64748b; }
+      #issPreviewInner .iss-row-photo,
+      #issPreviewInner .iss-footer-photo {
+        font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 8px;
+        border: 1px solid #cbd5e1; background: #fff; color: #334155; cursor: pointer; font-family: inherit;
+      }
+      #issPreviewInner .iss-photos {
+        position: relative; margin-top: 6px; min-height: 72px; background: #f8fafc;
+        border: 1px dashed #cbd5e1; border-radius: 8px; box-sizing: border-box; overflow: visible; width: 100%;
+      }
+      #issPreviewInner .iss-photos-empty { font-size: 11px; color: #94a3b8; padding: 12px; text-align: center; }
+      #issPreviewInner .iss-photo-widget { position: absolute; z-index: 2; box-sizing: border-box; touch-action: none; cursor: move; }
+      #issPreviewInner .iss-photo-widget--active,
+      #issPreviewInner .iss-photo-widget--manipulating {
+        z-index: 12; outline: 2px solid #2563eb; outline-offset: 2px;
+      }
+      #issPreviewInner .iss-photo-widget--manipulating { cursor: grabbing; }
+      #issPreviewInner .iss-photo-img-wrap { position: relative; transform-origin: center center; overflow: visible; }
+      #issPreviewInner .iss-photo-img-wrap img { width: 100%; height: auto; display: block; border: 1px solid #94a3b8; border-radius: 4px; background: #fff; pointer-events: none; user-select: none; }
+      #issPreviewInner .iss-photo-handles { pointer-events: none; }
+      #issPreviewInner .iss-photo-handle {
+        position: absolute; pointer-events: auto; touch-action: none;
+        background: #2563eb; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+      }
+      #issPreviewInner .iss-photo-handle-br { right: -7px; bottom: -7px; width: 12px; height: 12px; border-radius: 2px; cursor: nwse-resize; }
+      #issPreviewInner .iss-photo-handle-rot { top: 2px; left: 50%; margin-left: -7px; width: 14px; height: 14px; border-radius: 50%; cursor: grab; }
+      #issPreviewInner .iss-photo-handle { display: none !important; }
+      #issPreviewInner .iss-photo-widget--active .iss-photo-handle,
+      #issPreviewInner .iss-photo-widget--manipulating .iss-photo-handle { display: block !important; }
+      #issPreviewInner .iss-photo-actions { display: none; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+      #issPreviewInner .iss-photo-widget--active .iss-photo-actions { display: flex; }
+      #issPreviewInner .iss-photo-crop,
+      #issPreviewInner .iss-photo-del {
+        flex: 1 1 auto; font-size: 10px; font-weight: 800; padding: 4px 6px; border-radius: 6px;
+        cursor: pointer; font-family: inherit; pointer-events: auto; touch-action: manipulation;
+        border: 1px solid #cbd5e1; background: #fff; color: #334155;
+      }
+      #issPreviewInner .iss-photo-del { border-color: #fca5a5; color: #991b1b; }
+      .iss-doc .iss-red { color: #dc2626; font-weight: 800; }
+      #monthCarePreviewInner .mc-loading-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; padding: 20px; color: var(--muted, #64748b); gap: 8px; }
+      #monthCarePreviewInner .mc-loading-msg { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; }
+      #monthCarePreviewInner .mc-loading-dots { font-size: 20px; line-height: 1; animation: mc-loading-pulse 0.9s ease-in-out infinite; }
+      @keyframes mc-loading-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+      .settings-panel { display:none; }
+      .settings-panel.active { display:block; }
+      .manage-item { background:white;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px; }
+      .icon-btn { width:34px;height:34px;border-radius:8px;border:1.5px solid var(--border);background:white;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+      .status-badge { padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;flex-shrink:0; }
+      .report-hub-lead { font-size: 13px; color: #475569; line-height: 1.55; margin-bottom: 12px; }
+      .report-out-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 4px; }
+      @media (min-width: 520px) { .report-out-grid { grid-template-columns: 1fr 1fr; } }
+      .report-out-btn {
+        display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+        text-align: left; padding: 16px 14px; border-radius: 14px;
+        border: 2px solid var(--border); background: #fff; cursor: pointer;
+        font-family: inherit; min-height: 86px; width: 100%;
+        box-sizing: border-box; transition: border-color .15s, box-shadow .15s, transform .06s;
+      }
+      .report-out-btn:hover { border-color: var(--accent); box-shadow: 0 4px 16px rgba(37, 99, 235, 0.12); }
+      .report-out-btn:active { transform: scale(0.99); }
+      .report-out-btn-busy { opacity: 0.72; pointer-events: none; border-color: var(--accent) !important; background: #eff6ff !important; }
+      .report-out-btn-flash { animation: report-out-flash 0.65s ease; }
+      @keyframes report-out-flash { 0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45); } 100% { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); } }
+      .fax-loading-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 140px; padding: 20px; color: var(--muted); gap: 8px; text-align: center; }
+      .fax-loading-msg { font-size: 14px; font-weight: 700; line-height: 1.5; }
+      .fax-loading-dots { font-size: 20px; animation: mc-loading-pulse 0.9s ease-in-out infinite; }
+      .fax-doc .fax-body { margin-top: 6px; line-height: 1.85; font-size: 11pt; white-space: pre-wrap; min-height: 4em; }
+      .report-out-btn .rob-num { font-size: 11px; font-weight: 800; color: var(--accent); letter-spacing: 0.06em; }
+      .report-out-btn .rob-title { font-size: 15px; font-weight: 800; color: #0f172a; line-height: 1.25; }
+      .report-out-btn .rob-sub { font-size: 12px; color: #64748b; line-height: 1.4; font-weight: 600; }
+      .report-out-btn-accent { border-color: #93c5fd; background: linear-gradient(180deg, #eff6ff 0%, #fff 55%); }
+      .report-out-btn-muted { background: #f8fafc; }
+      .report-hub-details { margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fafafa; font-size: 12px; color: #64748b; line-height: 1.55; }
+      .report-hub-details summary { font-weight: 800; color: #334155; cursor: pointer; }
+      .rpt-preview-hint { font-size: 11px; color: var(--muted); margin: 0 0 8px; line-height: 1.45; }
+      .rpt-edit { outline: none; border-radius: 3px; min-width: 0.4em; cursor: text; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; touch-action: manipulation; }
+      .rpt-edit:hover { background: rgba(37, 99, 235, 0.07); }
+      .rpt-edit:focus { background: #eff6ff; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.28); }
+      .iss-inp, .iss-ta { touch-action: manipulation; -webkit-user-select: text; user-select: text; }
+      .cal-fac-chip { font-size: 9px; font-weight: 800; line-height: 1.25; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .cal-fac-chip-btn { border: none; background: rgba(255,255,255,.85); border-radius: 4px; padding: 1px 4px; cursor: pointer; touch-action: manipulation; font: inherit; max-width: 100%; }
+      .cal-fac-chip-btn:active { opacity: 0.75; }
+      .cal-fac-label-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+      .cal-fac-label-row input { width: 56px; flex-shrink: 0; padding: 10px 8px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 16px; font-weight: 800; text-align: center; font-family: inherit; }
+      .cal-fac-label-row .cal-fl-meta { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; }
+      .dash-target-inp { width: 44px; padding: 2px 4px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 700; text-align: center; font-family: inherit; }
+      #spanel-reports select, #spanel-reports input, #spanel-reports textarea { touch-action: manipulation; }
+      .report-patient-select-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; clip: rect(0,0,0,0); }
+      .rpt-patient-pick-btn { width: 100%; padding: 14px 16px; border-radius: 10px; border: 1.5px solid var(--accent); background: var(--accent-light); color: var(--accent); font-size: 15px; font-weight: 800; font-family: inherit; cursor: pointer; touch-action: manipulation; min-height: 48px; }
+      .rpt-patient-pick-lbl { font-size: 13px; font-weight: 700; color: #334155; margin: 8px 0 0; line-height: 1.45; }
+      .report-patient-pick-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; text-align: left; padding: 14px 16px; margin-bottom: 8px; border-radius: 10px; border: 1.5px solid var(--border); background: white; font-family: inherit; cursor: pointer; touch-action: manipulation; }
+      .report-patient-pick-row:active { background: var(--accent-light); border-color: var(--accent); }
+      .rpt-edit-block { display: block; width: 100%; }
+      .fax-doc .fax-clinic.rpt-edit-block { text-align: right; width: 100%; max-width: 100%; }
+      .mc-doc .mc-title.rpt-edit-block, .mc-doc .mc-clinic.rpt-edit-block { text-align: center; }
+      .cm-doc .cm-body.rpt-edit-block { min-height: 4em; }
+      .tt-doc { font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; color: #111; font-size: 10pt; }
+      .tt-doc .tt-title { text-align: center; font-size: 14pt; font-weight: 800; letter-spacing: 0.04em; margin: 0 0 5px; }
+      .tt-doc .tt-meta { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: 10.5pt; font-weight: 700; }
+      .tt-doc .tt-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; }
+      .tt-doc .tt-table th, .tt-doc .tt-table td { border: 1px solid #000; padding: 0; vertical-align: middle; }
+      .tt-doc .tt-table th { background: #fff; font-size: 9.5pt; font-weight: 800; text-align: center; height: 7mm; }
+      .tt-doc .tt-cell-inner { display: flex; align-items: center; justify-content: center; padding: 1px 4px; box-sizing: border-box; text-align: center; line-height: 1.2; }
+      .tt-doc .tt-col-mark .tt-cell-inner { font-size: 10pt; }
+      .tt-doc .tt-col-name .tt-cell-inner { font-size: 10pt; }
+      .tt-doc .tt-col-time .tt-cell-inner { font-size: 11pt; letter-spacing: 0.08em; padding: 1px 6px; }
+      .tt-doc .tt-table thead th .tt-cell-inner { justify-content: center; text-align: center; }
+      .tt-doc .tt-table tbody td.tt-col-treat .tt-cell-inner { font-size: 10pt; justify-content: flex-start; text-align: left; padding-left: 8px; padding-right: 4px; }
+      .tt-preview-host .tt-doc .tt-table tbody td.tt-col-treat .tt-cell-inner { justify-content: flex-start; text-align: left; }
+      .tt-layout-toggle { display: flex; gap: 8px; margin-bottom: 8px; flex-shrink: 0; }
+      .tt-layout-btn { flex: 1; padding: 10px 8px; border-radius: 10px; border: 1.5px solid var(--border); background: #fff; font-size: 12px; font-weight: 800; font-family: inherit; cursor: pointer; color: var(--muted); }
+      .tt-layout-btn.on { border-color: var(--accent); background: var(--accent-light, #eff6ff); color: var(--accent); }
+      .tt-sheet { page-break-inside: avoid; break-inside: avoid; }
+      .tt-edit-wrap.report-preview-scroll { padding: 0; }
+      .tt-edit-wrap.report-preview-scroll .tt-edit-table { margin: 0; }
+      .tt-edit-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; background: #fff; }
+      .tt-edit-table th, .tt-edit-table td { border: 1px solid #94a3b8; padding: 0; vertical-align: middle; }
+      .tt-edit-table th { background: #fff; font-size: 11px; font-weight: 800; text-align: center; }
+      .tt-edit-table input.tt-inp { width: 100%; box-sizing: border-box; border: none; background: transparent; font-size: 13px; font-family: inherit; text-align: center; padding: 8px 4px; min-height: 36px; margin: 0; }
+      .tt-edit-table .tt-inp-m0-auto { display: block; width: 100%; box-sizing: border-box; font-size: 13px; font-weight: 800; text-align: center; padding: 8px 4px; min-height: 36px; color: #334155; }
+      .tt-edit-table .tt-inp-master { display: block; width: 100%; box-sizing: border-box; font-size: 13px; padding: 8px 4px; min-height: 36px; color: #334155; }
+      .tt-edit-table .tt-inp-master.tt-inp-name { text-align: left; padding-left: 10px; padding-right: 6px; }
+      .tt-edit-table .tt-inp-master:not(.tt-inp-name) { text-align: center; font-weight: 800; }
+      .tt-edit-table input.tt-inp-treat { text-align: left; padding-left: 10px; padding-right: 6px; }
+      .tt-edit-table input.tt-inp-name { text-align: left; padding-left: 10px; padding-right: 6px; }
+      .tt-edit-table input.tt-inp:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: #fff; }
+      .tt-edit-table input.tt-inp-left { text-align: center; }
+      .tt-edit-table .tt-name-readonly { display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 6px; text-align: center; font-size: 13px; line-height: 1.25; }
+    </style>
+    <div class="settings-panel active" id="spanel-patients">
+      <input type="text" id="mgmt-search" placeholder="患者名で検索…" oninput="renderMgmtPatients()"
+        style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:10px;font-size:14px;font-family:inherit">
+      <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">施設で絞り込み</label>
+      <select id="mgmt-fac-filter" onchange="onMgmtFacFilterChange_()"
+        style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:10px;font-size:14px;font-family:inherit">
+        <option value="all">全施設（施設ごとの見出し付き）</option>
+      </select>
+      <div id="mgmt-inage-doctor-filter-wrap" style="display:none;margin-bottom:10px">
+        <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">サニーライフ稲毛：担当ドクターで絞る</label>
+        <select id="mgmt-inage-doctor-filter" onchange="renderMgmtPatients()"
+          style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit">
+          <option value="">（すべて）</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <button id="st-active" onclick="toggleStatusFilter('active')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--green);background:var(--green-light);color:var(--green);font-size:12px;font-weight:700;cursor:pointer">✓ 有効</button>
+        <button id="st-left" onclick="toggleStatusFilter('left')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">退去</button>
+        <button id="st-deceased" onclick="toggleStatusFilter('deceased')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">逝去</button>
+      </div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.45;margin:0 0 8px">各行の <strong>📋</strong> から、診療記録を開かずに<strong>要介護・既往・服薬・アレルギー</strong>を編集できます（✏️ は氏名・施設などのマスタ項目）。</p>
+      <div id="mgmt-patient-list"></div>
+      <button onclick="openPatientModal(null)" style="width:100%;padding:12px;border-radius:10px;border:1.5px dashed var(--border);background:white;font-size:13px;font-weight:700;color:var(--accent);cursor:pointer;margin-top:4px">＋ 新しい患者を追加</button>
+    </div>
+    <div class="settings-panel" id="spanel-facilities">
+      <p style="font-size:12px;color:var(--muted);line-height:1.5;margin:0 0 10px">施設を<strong>任意の名前のグループ</strong>にまとめられます。グループは画面上部のタブと、各施設の「所属グループ」から使います。</p>
+      <div id="facility-groups-list" style="margin-bottom:12px"></div>
+      <button type="button" onclick="addFacilityGroup_()" style="width:100%;padding:11px;border-radius:10px;border:1.5px dashed #93c5fd;background:#eff6ff;font-size:13px;font-weight:700;color:var(--accent);cursor:pointer;margin-bottom:14px">＋ グループを追加</button>
+      <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px">施設一覧</div>
+      <div id="mgmt-facility-list"></div>
+      <button onclick="openFacModal(null)" style="width:100%;padding:12px;border-radius:10px;border:1.5px dashed var(--border);background:white;font-size:13px;font-weight:700;color:var(--accent);cursor:pointer;margin-top:4px">＋ 新しい施設を追加</button>
+    </div>
+    <div class="settings-panel" id="spanel-reports">
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:6px 10px;font-size:12px"
+          data-undo-btn title="元に戻す（Ctrl+Z）" onclick="performUndo_()" disabled>↩ 戻す</button>
+        <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:6px 10px;font-size:12px"
+          data-redo-btn title="やり直す（Ctrl+Y）" onclick="performRedo_()" disabled>↪ やり直し</button>
+      </div>
+      <p class="report-hub-lead">まず<strong>条件</strong>を選び、下の<strong>大きなボタン</strong>で出力します。<strong>施設</strong>と<strong>患者</strong>は共通の選択欄を使います。<strong>①</strong>は「診療日」のみ（その日の全施設を一括）、<strong>③・⑧</strong>は「診療日＋施設」、<strong>②</strong>は「診療日」、<strong>④〜⑥</strong>は「月次用の施設・年月」（⑤は患者1名・⑥は施設の全患者一覧）を使います。</p>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:10px">診療日（①②③で使用）</div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">診療日</label>
+        <input type="date" id="reportVisitDate" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:10px">施設（①③④⑤⑥⑦⑧⑨⑩ 共通）</div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">施設</label>
+        <select id="reportFac" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit"></select>
+      </div>
+
+      <div class="card" style="margin-bottom:12px">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:10px">④〜⑥ 月次用（年月。⑥は施設の全患者一覧）</div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin:10px 0 6px">対象年月</label>
+        <input type="month" id="monthCareYm" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+        <div id="report-inage-doctor-filter-wrap" style="display:none;margin-top:14px">
+          <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">サニーライフ稲毛：担当ドクターで絞る</label>
+          <select id="report-inage-doctor-filter" onchange="onReportInageDoctorFilterChange_()"
+            style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+            <option value="">（すべて）</option>
+          </select>
+        </div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin:14px 0 6px">患者（⑤⑦⑨⑩）</label>
+        <select id="reportPatient" class="report-patient-select-hidden" tabindex="-1" aria-hidden="true"></select>
+        <button type="button" class="rpt-patient-pick-btn" id="reportPatientBtn" onclick="openReportPatientPicker('report')">タップして患者を選択</button>
+        <div id="reportPatientLbl" class="rpt-patient-pick-lbl">未選択</div>
+      </div>
+
+      <div class="section-title" style="margin:6px 0 10px">出力（タップ）</div>
+      <div style="margin-bottom:10px">
+        <button type="button" class="btn btn-secondary" style="width:100%;padding:12px;font-size:14px;font-weight:800" onclick="openDocumentArchiveModal_()">📁 書類履歴（保存済みを確認・復元）</button>
+      </div>
+      <div class="report-out-grid">
+        <button type="button" class="report-out-btn report-out-btn-accent" onclick="reportOutTap(event, () => openFaxDailyPreviewModal(), '① 施設日報を準備しています…')">
+          <span class="rob-num">①</span>
+          <span class="rob-title">施設FAX日報</span>
+          <span class="rob-sub">診療日 → その日の全施設（追加・削除可）→ プレビュー・印刷</span>
+        </button>
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openSupervisorListModal(), '② リストを準備しています…')">
+          <span class="rob-num">②</span>
+          <span class="rob-title">上司向け・全施設リスト</span>
+          <span class="rob-sub">診療日の全施設を一覧 → 印刷／PDF</span>
+        </button>
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openShareSheetModal(), '③ 情報共有シートを開いています…')">
+          <span class="rob-num">③</span>
+          <span class="rob-title">情報共有シート</span>
+          <span class="rob-sub">チーム向け伝達用紙 → 入力後 印刷／PDF</span>
+        </button>
+        <button type="button" class="report-out-btn report-out-btn-accent" onclick="reportOutTap(event, () => openMonthCareReportModal(), '④ 月次帳票を開いています…')">
+          <span class="rob-num">④</span>
+          <span class="rob-title">ケアマネ向け・月次（平易）</span>
+          <span class="rob-sub">施設・年月・患者 → 4マス下書き・全員一括印刷</span>
+        </button>
+        <button type="button" class="report-out-btn report-out-btn-accent" id="patientPpsBtn" onclick="reportOutTap(event, () => openPatientPpsModal(), '⑤ 患者パーソナルシートを開いています…')">
+          <span class="rob-num">⑤</span>
+          <span class="rob-title">患者パーソナルシート</span>
+          <span class="rob-sub">施設・患者・年月 → 治療・管理計画書・印刷</span>
+        </button>
+        <button type="button" class="report-out-btn report-out-btn-accent" id="personalSheetBtn" onclick="reportOutTap(event, () => openPersonalSheetModal(), '⑥ 施設月次報告書を開いています…')">
+          <span class="rob-num">⑥</span>
+          <span class="rob-title">施設月次報告書</span>
+          <span class="rob-sub">施設・年月 → 全患者を3列表に・追記・写真・除外・印刷</span>
+        </button>
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openKentaiReportModal(), '⑦ 検診票を開いています…')">
+          <span class="rob-num">⑦</span>
+          <span class="rob-title">歯科検診票（無料検診）</span>
+          <span class="rob-sub">患者を選び下書き→確認→印刷（共通の患者欄を使用）</span>
+        </button>
+        <button type="button" class="report-out-btn report-out-btn-accent" onclick="reportOutTap(event, () => openVisitTimetableModal(), '⑧ タイムテーブルを開いています…')">
+          <span class="rob-num">⑧</span>
+          <span class="rob-title">訪問タイムテーブル（手書き用）</span>
+          <span class="rob-sub">診療日＋①の施設 → 入力・保存 → 印刷（次回出力まで保持）</span>
+        </button>
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openOralFunctionPrecisionModal(), '⑨ 精密検査を開いています…')">
+          <span class="rob-num">⑨</span>
+          <span class="rob-title">口腔機能精密検査</span>
+          <span class="rob-sub">患者・検査日（⑦と同じ患者欄）→ 4項目入力 → 印刷</span>
+        </button>
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openShindanModal(), '⑩ 診断書を開いています…')">
+          <span class="rob-num">⑩</span>
+          <span class="rob-title">診断書</span>
+          <span class="rob-sub">患者・記載日 → 病名テンプレから選択 → プレビュー編集 → 印刷</span>
+        </button>
+      </div>
+      <p class="report-hub-tone-hint" style="font-size:11px;color:var(--muted);margin:10px 0 0;line-height:1.55">青い枠（①④⑤⑥⑧）は<strong>よく使う出力を目立たせたデザイン</strong>です。選択中・ロックなどの状態表示ではありません。</p>
+
+      <details class="report-hub-details">
+        <summary>補足（体裁・設定）</summary>
+        <p style="margin:8px 0 0">④の本文は、提出用PDF（五香様式）に合わせ、<strong>対象月 → 診療日時 → 施設名 部屋番号 利用者氏名 → 本日の治療内容（連絡事項）→ 次回の治療内容 → 担当医確認 印</strong>の順です。帯見出しは <code>report_title</code>（例：居宅療養管理指導報告書 （歯科医師））。施設名に <code>month_report_hide_time_facility_substr</code> の文字列が含まれると診療日のみ（歯科訪問診療報告書）、それ以外は日時付きです。<strong>⑤</strong>は患者1名の「歯科治療・管理計画書」、<strong>⑥</strong>は施設全患者の月次一覧表です。</p>
+      </details>
+    </div>
+    <div class="settings-panel" id="spanel-doctor">
+      <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">担当医名</label><input type="text" id="doctor-name" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
+      <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">医院名</label><input type="text" id="clinic-name" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
+      <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">診断書用・医院住所</label><input type="text" id="clinic-address" placeholder="例: 埼玉県行田市川崎7丁目21番地7" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
+      <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">診断書用・建物内の所在地</label><input type="text" id="clinic-location-detail" placeholder="例: イオンモール行田4階 メディモール内" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
+      <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">診断書用・電話番号</label><input type="text" id="clinic-tel" placeholder="例: Tel:044-540-5135" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
+      <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">印刷用・医院名の候補（1行に1つ。プレビューで選べます）</label>
+        <input type="hidden" id="clinic-names-store">
+        <div id="clinic-names-settings-list" class="settings-lines-list"></div>
+        <button type="button" class="btn btn-secondary" style="margin-top:8px;width:100%" onclick="clinicNameSettingAdd_()">＋ 候補を追加</button>
+      </div>
+      <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">情報共有シートのスタッフ（1行に1名。チェック欄に出ます）</label>
+        <input type="hidden" id="share-sheet-staff-store">
+        <div id="iss-staff-settings-list" class="settings-lines-list"></div>
+        <button type="button" class="btn btn-secondary" style="margin-top:8px;width:100%" onclick="issStaffSettingAdd_()">＋ スタッフを追加</button>
+      </div>
+      <div class="card">
+        <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">サニーライフ稲毛：担当ドクター名（色は患者リスト・③追加欄と同じ）</label>
+        <input type="hidden" id="inage-doctor-names-store">
+        <div id="inage-doctor-settings-list" class="settings-lines-list"></div>
+        <button type="button" class="btn btn-secondary" style="margin-top:8px;width:100%" onclick="inageDoctorSettingAdd_()">＋ ドクターを追加</button>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">施設名に「サニーライフ稲毛」が含まれる施設の患者だけ、担当ドクターを記録できます。左の色チップは患者名横のタグ色と対応します。未入力時は「ドクター1」などの仮表示になります。</p>
+      </div>
+      <div class="card" id="cat-order-settings-card">
+        <div style="font-size:13px;font-weight:800;color:#334155;margin-bottom:6px">疾患・服薬のカテゴリ表示順</div>
+        <p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.45">診療画面の<strong>カテゴリータブ</strong>の並びです。<strong>↑↓</strong>で入れ替えるとすぐにサーバーへ保存され、診療画面にも反映されます。</p>
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin:4px 0 6px">全身疾患・既往歴</div>
+        <ul id="cat-order-list-diseases" class="cat-order-list"></ul>
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 6px">服薬情報</div>
+        <ul id="cat-order-list-meds" class="cat-order-list"></ul>
+        <button type="button" class="btn btn-secondary" style="margin-top:8px;width:100%" onclick="resetCategoryDisplayOrderDefaults()">↺ 表示順をシステム既定に戻す</button>
+      </div>
+      <div id="doctorSettingsSaveProgress" class="record-save-progress" role="progressbar" aria-valuetext="設定を保存中" style="width:100%;margin-top:8px"></div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:8px 12px;font-size:12px;flex:1;min-width:120px"
+          data-undo-btn title="元に戻す（Ctrl+Z）" onclick="performUndo_()" disabled>↩ 戻す</button>
+        <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:8px 12px;font-size:12px;flex:1;min-width:120px"
+          data-redo-btn title="やり直す（Ctrl+Y）" onclick="performRedo_()" disabled>↪ やり直し</button>
+        <button type="button" class="btn btn-primary" id="doctorSettingsSaveBtn" style="flex:2;min-width:160px" onclick="saveDoctorSettings()">💾 保存</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /screen-wrap -->
+</div><!-- /main-col -->
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <button class="bnav-btn active" id="bnav-patients" onclick="switchScreen('patients')"><span class="bnav-icon">👥</span>患者</button>
+  <button class="bnav-btn" id="bnav-dashboard" onclick="switchScreen('dashboard')"><span class="bnav-icon">📊</span>集計</button>
+  <button class="bnav-btn" id="bnav-calendar" onclick="switchScreen('calendar')"><span class="bnav-icon">📅</span>予定</button>
+  <button class="bnav-btn" id="bnav-settings" onclick="switchScreen('settings')"><span class="bnav-icon">⚙️</span>設定</button>
+</div>
+
+<!-- PATIENT MODAL -->
+<div class="modal-overlay" id="patientModal">
+  <div class="modal-sheet patient-edit-modal" role="dialog" aria-modal="true" aria-labelledby="pm-title" style="width:min(960px,96vw);max-width:96vw;max-height:96vh;display:flex;flex-direction:column;margin:0 auto">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <div class="modal-title" id="pm-title" style="margin:0">患者を追加</div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:6px 10px;font-size:12px"
+          data-undo-btn title="元に戻す（Ctrl+Z）" onclick="performUndo_()" disabled>↩ 戻す</button>
+        <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:6px 10px;font-size:12px"
+          data-redo-btn title="やり直す（Ctrl+Y）" onclick="performRedo_()" disabled>↪ やり直し</button>
+      </div>
+    </div>
+    <input type="hidden" id="pm-id">
+    <div class="form-group"><label>患者名</label><input type="text" id="pm-name" placeholder="田中 太郎"></div>
+    <div class="form-group"><label>フリガナ</label><input type="text" id="pm-furi" placeholder="タナカ タロウ"></div>
+    <div class="form-group"><label>住所（診断書など・任意）</label><input type="text" id="pm-address" placeholder="例: 埼玉県行田市上岩瀬28-12-44サンマルク203号室" style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit"></div>
+    <div class="form-group">
+      <label>生年月日（満年齢の自動計算）</label>
+      <div style="display:flex;gap:14px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer">
+          <input type="radio" name="pm-birth-m" value="iso" checked onchange="setPatientBirthMode('iso')"> 西暦
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer">
+          <input type="radio" name="pm-birth-m" value="wareki" onchange="setPatientBirthMode('wareki')"> 和暦
+        </label>
+      </div>
+      <div id="pm-birth-iso-wrap">
+        <input type="date" id="pm-birth-iso" onchange="syncPatientAgeFromBirth()"
+          style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
+      </div>
+      <div id="pm-birth-wareki-wrap" style="display:none;margin-top:4px">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <select id="pm-w-era" style="padding:10px 12px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;font-family:inherit">
+            <option value="R">令和</option>
+            <option value="H">平成</option>
+            <option value="S">昭和</option>
+            <option value="T">大正</option>
+          </select>
+          <input type="number" id="pm-w-y" min="1" max="99" placeholder="年" style="width:64px;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px">
+          <span style="font-size:13px;font-weight:700">年</span>
+          <input type="number" id="pm-w-m" min="1" max="12" placeholder="月" style="width:56px;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px">
+          <span style="font-size:13px;font-weight:700">月</span>
+          <input type="number" id="pm-w-d" min="1" max="31" placeholder="日" style="width:56px;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px">
+          <span style="font-size:13px;font-weight:700">日</span>
+        </div>
+        <button type="button" class="btn btn-secondary" style="margin-top:8px;font-size:13px;padding:8px 12px" onclick="applyPatientWarekiBirth()">和暦を西暦に反映</button>
+      </div>
+      <button type="button" class="btn btn-secondary" style="margin-top:6px;font-size:12px;padding:6px 10px" onclick="unlockPatientManualAge()">生年月日をクリアして年齢を手入力</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div>
+        <div class="form-group"><label>年齢（満年齢）</label><input type="number" id="pm-age" placeholder="81" min="0" max="130"></div>
+        <div class="form-group"><label>性別</label>
+          <select id="pm-gender" style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
+            <option value="">未選択</option>
+            <option value="男">男</option>
+            <option value="女">女</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>居室</label><input type="text" id="pm-room" placeholder="203"></div>
+    </div>
+    <div class="form-group"><label>施設</label><select id="pm-fac" onchange="onPmFacChange_()"></select></div>
+    <div class="form-group" id="pm-inage-doctor-wrap" style="display:none">
+      <label>担当ドクター（サニーライフ稲毛）</label>
+      <select id="pm-assigned-doctor" style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
+        <option value="">（未設定）</option>
+      </select>
+    </div>
+    <div class="form-group"><label>保険区分（帳票の「区分」に自動反映）</label>
+      <select id="pm-coverage" style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
+        <option value="">未選択（帳票では「—」）</option>
+        <option value="介護+医療">介護+医療（介護保険＋医療保険）</option>
+        <option value="医療のみ">医療のみ</option>
+        <option value="生保">生保（生活保護）</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>月の受診回数上限（任意）</label>
+      <input type="number" id="pm-monthly-visit-limit" min="1" max="31" inputmode="numeric" placeholder="未設定＝制限なし"
+        style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
+      <p style="font-size:11px;color:var(--muted);margin:6px 0 0;line-height:1.45">例：2 と入れると「月2回」タグが付き、今月の診療が上限に達すると患者リストで<strong>ハイライト</strong>されます。</p>
+    </div>
+    <div class="form-group"><label>ケアマネ</label><input type="text" id="pm-cm" placeholder="鈴木 一郎"></div>
+    <div class="form-group"><label>メモ・所見・特記（患者マスタ）</label>
+      <textarea id="pm-notes" rows="3" placeholder="手術歴、行動面の配慮、訪問上の注意、義歯の扱いなど（任意）"
+        style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit;resize:vertical;line-height:1.45"></textarea>
+    </div>
+    <div class="form-group"><label>ステータス</label>
+      <select id="pm-status"><option value="active">有効</option><option value="left">退去</option><option value="deceased">逝去</option></select>
+    </div>
+    <div class="form-group"><label>受診前（無料検診）</label>
+      <select id="pm-intake-stage" style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
+        <option value="">通常</option>
+        <option value="musho_kenshin">無料検診</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:10px;font-weight:700;cursor:pointer">
+        <input type="checkbox" id="pm-in-hospital" style="width:18px;height:18px;accent-color:#7c3aed">
+        <span>入院中（患者リストにラベル表示）</span>
+      </label>
+    </div>
+
+    <div id="pm-clinical-section" style="display:none;border-top:1.5px solid var(--border);margin-top:4px;padding-top:12px">
+      <div id="pm-clinical-slot"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:4px;flex-shrink:0;border-top:1px solid var(--border);padding-top:10px;flex-direction:column;align-items:stretch">
+      <div id="pmSaveProgress" class="record-save-progress" role="progressbar" aria-valuetext="保存処理中" style="width:100%;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;width:100%">
+        <button type="button" class="btn-cancel" id="pmSaveCancelBtn" onclick="closePatientEditModal(false)">キャンセル</button>
+        <button type="button" class="btn-ok" id="pmSaveBtn" onclick="savePatientModal()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 設定・管理：歯式・写真・医療（左カラムブロックをモーダルに移動して編集） -->
+<div class="modal-overlay" id="patientCareModal">
+  <div class="modal-sheet patient-care-modal" role="dialog" aria-modal="true" aria-labelledby="pcm-title" style="width:min(960px,96vw);max-width:96vw;max-height:96vh;display:flex;flex-direction:column;margin:0 auto">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="pcm-title">歯式・写真・医療</div>
+    <div id="medical-modal-slot" style="flex:1;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px"></div>
+    <div class="modal-actions" style="margin-top:4px;flex-shrink:0;border-top:1px solid var(--border);padding-top:10px">
+      <button type="button" class="btn-cancel" onclick="closePatientCareModal(false)">キャンセル</button>
+      <button type="button" class="btn-ok" onclick="closePatientCareModal(true)">保存して閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- FACILITY MODAL -->
+<div class="modal-overlay" id="facilityModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="fm-title">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="fm-title">施設を追加</div>
+    <input type="hidden" id="fm-id">
+    <div class="form-group"><label>施設名</label><input type="text" id="fm-name" placeholder="あおぞら苑"></div>
+    <div class="form-group"><label>FAX番号</label><input type="text" id="fm-fax" placeholder="03-XXXX-XXXX"></div>
+    <div class="form-group"><label>訪問曜日</label><input type="text" id="fm-days" placeholder="火・金"></div>
+    <div class="form-group"><label>担当ケアマネ</label><input type="text" id="fm-cm" placeholder="鈴木 一郎"></div>
+    <div class="form-group"><label>略称・カレンダー表示（A・B など1〜4文字）</label><input type="text" id="fm-short" maxlength="4" placeholder="例：A" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:inherit"></div>
+    <div class="form-group"><label>月の目標人数（ダッシュボード用）</label><input type="number" id="fm-target" min="1" max="999" inputmode="numeric" placeholder="10" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="document.getElementById('facilityModal').classList.remove('show')">キャンセル</button>
+      <button class="btn-ok" onclick="saveFacilityModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- PHOTO VIEWER -->
+<div id="photoViewer">
+  <button id="photoViewerClose" onclick="document.getElementById('photoViewer').classList.remove('show')">✕</button>
+  <div id="photoViewerStage">
+    <img id="photoViewerImg" src="" alt="">
+  </div>
+  <div id="photoViewerInfo">
+    <span id="photoViewerMeta"></span>
+    <button onclick="deleteCurrentPhoto()" style="color:#f87171;background:none;border:none;font-size:13px;font-weight:700;cursor:pointer">🗑 削除</button>
+  </div>
+</div>
+
+<!-- PHOTO CATEGORY MODAL -->
+<div class="modal-overlay" id="photoCatModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="photoCatModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="photoCatModalTitle">カテゴリを選択</div>
+    <div style="display:flex;flex-direction:column;gap:8px" id="photoCatOptions"></div>
+    <button class="btn-cancel" style="width:100%;margin-top:12px" onclick="document.getElementById('photoCatModal').classList.remove('show')">キャンセル</button>
+  </div>
+</div>
+
+<!-- CALENDAR DAY MODAL -->
+<!-- カレンダー：施設略称 -->
+<div class="modal-overlay" id="calFacLabelModal" onclick="if(event.target===this)closeCalFacLabelModal()">
+  <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="calFacLabelModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="calFacLabelModalTitle">カレンダーの施設略称</div>
+    <p style="font-size:11px;color:var(--muted);margin:-4px 0 12px;line-height:1.45">各日付に表示する省略名（1〜4文字）。例：A、あお、ひま。設定→施設からも編集できます。</p>
+    <div id="calFacLabelList" style="max-height:52vh;overflow-y:auto;padding-right:4px"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button type="button" class="btn-cancel" onclick="closeCalFacLabelModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="saveAllCalFacLabels_()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="calDayModal"<div class="modal-overlay" id="calDayModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="calDayTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="calDayTitle"></div>
+    <div id="calDayContent"></div>
+    <button class="btn-cancel" style="width:100%;margin-top:12px" onclick="document.getElementById('calDayModal').classList.remove('show')">閉じる</button>
+  </div>
+</div>
+
+<!-- 歯式編集モーダル -->
+<div class="modal-overlay" id="teethEditModal" onclick="if(event.target===this)document.getElementById('teethEditModal').classList.remove('show')">
+  <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="teethEditTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="teethEditTitle">歯の記録</div>
+    <p style="font-size:11px;color:var(--muted);margin:-8px 0 10px;line-height:1.5">記号は<strong>タップ</strong>でその場で選択／解除（複数可）→内容が決まったら<strong>反映</strong>。1つだけ素早く入れたいときは記号を<strong>長押し</strong>するとそのまま歯式に反映して閉じます。記号同士は <strong>+</strong> でつながります（例：<code style="font-size:10px">In+C2</code>）。自由文は句読点のあとに続けて入力。欠損の <strong>✕</strong> はタップでチェック連動、<strong>長押し</strong>で即反映も可。健全は記号なしで「反映」。</p>
+    <div id="teethSymbolPicker" aria-label="歯式記号の選択"></div>
+    <div id="teethRedPicker" style="margin-bottom:12px"></div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>所見（記号＋自由入力）</label>
+      <input type="text" id="teethEditCond" placeholder="例：In+C2、咬耗" maxlength="80"
+        oninput="onTeethEditCondInput()"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();applyTeethEditModal();}">
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <input type="checkbox" id="teethEditMiss" style="width:20px;height:20px" onchange="renderTeethSymbolPicker()">
+      <label for="teethEditMiss" style="margin:0;font-weight:700">欠損（喪失歯）／✕と同じ</label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-cancel" onclick="document.getElementById('teethEditModal').classList.remove('show')">閉じる</button>
+      <button type="button" class="btn-cancel" onclick="clearCurrentToothAndClose()">削除</button>
+      <button type="button" class="btn-ok" onclick="applyTeethEditModal()">反映</button>
+    </div>
+  </div>
+</div>
+
+<!-- STATUS MODAL -->
+<div class="modal-overlay" id="statusModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="sm-title">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="sm-title">ステータス変更</div>
+    <input type="hidden" id="sm-pid">
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">診療記録は保持されます。</p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button onclick="applyStatus('active')" style="padding:14px;border-radius:10px;border:1.5px solid var(--green);background:var(--green-light);color:var(--green);font-size:14px;font-weight:700;cursor:pointer">✅ 有効（在籍中）</button>
+      <button onclick="applyStatus('left')" style="padding:14px;border-radius:10px;border:1.5px solid var(--border);background:#f1f5f9;color:var(--muted);font-size:14px;font-weight:700;cursor:pointer">🚪 退去</button>
+      <button onclick="applyStatus('deceased')" style="padding:14px;border-radius:10px;border:1.5px solid #cbd5e1;background:#f8fafc;color:#475569;font-size:14px;font-weight:700;cursor:pointer">🕊 逝去</button>
+    </div>
+    <button class="btn-cancel" style="width:100%;margin-top:10px" onclick="document.getElementById('statusModal').classList.remove('show')">キャンセル</button>
+  </div>
+</div>
+
+<!-- 施設日報（FAX用）プレビュー -->
+<div class="modal-overlay" id="faxDailyModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="faxDailyModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="faxDailyModalTitle">施設日報（FAX用）</div>
+    <div id="faxDailyModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+    <p class="rpt-preview-hint">プレビュー内をタップして編集できます。<strong>医院名は施設ごとに別々</strong>に設定できます（下の施設チップを選んでからドロップダウンで変更するか、各ページ右下を直接編集）。表の「治療内容」「次回予定」や注記下の欄では赤字・黄マーカー・枠が使えます。患者行は<strong>右端の×</strong>で表から外せます。</p>
+    <div class="rpt-clinic-bar" style="flex-wrap:wrap">
+      <label for="faxDailyClinicSelect">医院名（選択中の施設）</label>
+      <select id="faxDailyClinicSelect" onchange="onRptClinicSelectChange_('faxDaily')"></select>
+      <input type="text" id="faxDailyClinicFree" placeholder="候補以外も直接入力可" autocomplete="off"
+        style="flex:1;min-width:160px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit"
+        oninput="onFaxDailyClinicFreeInput_()">
+    </div>
+    <div id="faxDailyFacManage" class="fax-fac-manage">
+      <div style="font-size:12px;font-weight:800;color:var(--muted)">出力に含める施設（1施設1ページ・チップをタップで医院名の編集対象を切替）</div>
+      <div id="faxDailyFacChips" class="fax-fac-chips"></div>
+      <select id="faxDailyFacAdd" class="fax-fac-add-sel" onchange="faxDailyAddFacility_()">
+        <option value="">＋ 施設を追加…</option>
+      </select>
+    </div>
+    <div id="faxEmphasisBar" class="fax-em-bar" aria-hidden="true">
+      <span class="fax-em-bar-label">①表の欄または注記の下の欄をタップ → ②文字を選ぶ（指を離す）→ ③赤字などのボタン</span>
+      <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
+      <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
+      <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">枠で囲む</button>
+      <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
+    </div>
+    <div id="faxDailyPreviewScroll" class="report-preview-scroll">
+      <div id="faxDailyPreviewInner" class="fax-doc"></div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45">印刷ダイアログで<strong>送信先に「PDFに保存」</strong>を選ぶとPDF化できます。印刷時に<strong>確定保存</strong>され、端末内の下書きは消去されます。</p>
+    <p id="faxDailyDraftStatus" style="display:none;font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45"></p>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" id="faxDailyDraftBtn" onclick="insertFaxDailyLocalDraft_()">📝 施設コメント簡易下書き</button>
+      <button type="button" class="btn btn-secondary" onclick="saveFaxDailyPreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('faxDaily','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('faxDaily','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearFaxDailyPreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="closeFaxDailyModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printFaxDailyReport()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 訪問タイムテーブル（編集・プレビュー・印刷） -->
+<div class="modal-overlay" id="visitTimetableModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="visitTimetableModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="visitTimetableModalTitle">訪問タイムテーブル</div>
+    <p id="visitTimetableModalSub" style="font-size:12px;color:var(--muted);margin:-4px 0 10px;line-height:1.45"></p>
+    <div class="report-preview-split">
+      <div class="report-preview-form-pane">
+        <div class="card" style="margin-bottom:10px;padding:10px 12px">
+          <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">出力日（印刷に載る日付・初期値は今日）</label>
+          <input type="date" id="visitTimetableOutputDate" onchange="onVisitTimetableOutputDateChange_()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+        </div>
+        <div class="card" style="margin-bottom:10px;padding:10px 12px">
+          <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">帳票ヘッダーの担当Dr</label>
+          <div id="visitTimetableHeaderDrWrap">
+            <select id="visitTimetableHeaderDr" onchange="onVisitTimetableHeaderDoctorChange_()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit"></select>
+          </div>
+          <input type="text" id="visitTimetableHeaderDrText" placeholder="担当医名" oninput="onVisitTimetableHeaderDoctorChange_()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit;display:none">
+        </div>
+        <div class="tt-edit-wrap">
+          <table class="tt-edit-table" id="visitTimetableEditTable">
+            <colgroup>
+              <col style="width:10%"><col style="width:12%"><col style="width:24%"><col style="width:18%"><col style="width:36%">
+            </colgroup>
+            <thead>
+              <tr>
+                <th title="当月の診療回数（自動）">回</th><th>番号</th><th>患者氏名</th><th>時刻</th><th>治療内容</th>
+              </tr>
+            </thead>
+            <tbody id="visitTimetableEditBody"></tbody>
+          </table>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">患者行の<strong>番号・患者氏名</strong>は<strong>患者リストの最新データ</strong>を自動表示します（手入力の上書きは残りません）。<strong>時刻・治療内容</strong>は任意に修正できます。左端の<strong>当月診療回数</strong>も自動（0回は空欄）。稲毛施設は右プレビューで<strong>各行の担当Dr</strong>も変更できます。</p>
+      </div>
+      <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;flex-shrink:0">プレビュー（印刷イメージ）</div>
+        <div class="tt-layout-toggle">
+          <button type="button" class="tt-layout-btn on" id="visitTtLayoutOne" onclick="setVisitTimetablePageLayout_('one')">📄 1ページに圧縮</button>
+          <button type="button" class="tt-layout-btn" id="visitTtLayoutTwo" onclick="setVisitTimetablePageLayout_('two')">📑 2ページに分割</button>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.45;flex-shrink:0">ボタンで切り替えてから印刷してください。患者が多い施設は<strong>2ページ</strong>の方が行が広く書きやすいです。</p>
+        <div id="visitTimetablePreviewScroll" class="report-preview-scroll">
+          <div id="visitTimetablePreviewInner" class="tt-preview-host"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="saveVisitTimetablePreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('visitTt','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('visitTt','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearVisitTimetablePreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="closeVisitTimetableModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printVisitTimetableFromEditor()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 口腔機能精密検査（⑨） -->
+<div class="modal-overlay" id="ofpiModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="ofpiModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="ofpiModalTitle">口腔機能精密検査</div>
+    <p id="ofpiModalSub" style="font-size:12px;color:var(--muted);margin:-4px 0 10px;line-height:1.45"></p>
+    <div class="report-preview-split">
+      <div class="report-preview-form-pane">
+        <div class="card" style="margin-bottom:10px;padding:10px 12px">
+          <label for="ofpiExamDate" style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">検査日</label>
+          <input type="date" id="ofpiExamDate" onchange="onOfpiExamDateChange_()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+        </div>
+        <div class="card ofpi-form-section" style="margin-bottom:10px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:800;color:#334155;margin-bottom:8px">① 口腔衛生状態不良（TCI）</div>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.45">舌背9区画をタップして <strong>0→1→2</strong> を切替（0=なし / 1=薄い / 2=厚い）。合計<strong>9点以上</strong>で該当。</p>
+          <div id="ofpiTciChartHost" class="ofpi-tci-wrap" aria-label="TCI舌背9区画"></div>
+          <input type="hidden" id="ofpiTciTotal" value="">
+          <div id="ofpiTciTotalHint" class="ofpi-calc-hint"></div>
+        </div>
+        <div class="card ofpi-form-section" style="margin-bottom:10px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:800;color:#334155;margin-bottom:8px">② 咬合力低下（残存歯数）</div>
+          <label for="ofpiRemainingTeeth" style="font-size:11px;font-weight:700;color:var(--muted)">残存歯数（20歯未満＝19以下で該当）</label>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <input type="number" id="ofpiRemainingTeeth" min="0" max="32" inputmode="numeric" placeholder="例: 25"
+              oninput="scheduleOfpiDraftSave_()" style="flex:1;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
+            <button type="button" class="btn btn-secondary" style="flex-shrink:0;padding:10px 12px;font-size:12px" onclick="syncOfpiRemainingTeethFromChart_()">歯式から</button>
+          </div>
+        </div>
+        <div class="card ofpi-form-section" style="margin-bottom:10px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:800;color:#334155;margin-bottom:8px">③ 低舌圧（舌圧検査）</div>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.45">5回測定（1〜2回目＝練習、3〜5回目＝本番）。<strong>3〜5回目の平均</strong>が30kPa未満で該当（3〜5回目が1回のみの場合はその値）。</p>
+          <div class="ofpi-form-grid ofpi-form-grid-5">
+            <div><span class="ofpi-meas-lbl">1回目</span><input type="number" class="ofpi-tongue-inp" data-ofpi-tongue="0" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="scheduleOfpiDraftSave_()"></div>
+            <div><span class="ofpi-meas-lbl">2回目</span><input type="number" class="ofpi-tongue-inp" data-ofpi-tongue="1" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="scheduleOfpiDraftSave_()"></div>
+            <div><span class="ofpi-meas-lbl">3回目</span><input type="number" class="ofpi-tongue-inp" data-ofpi-tongue="2" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="scheduleOfpiDraftSave_()"></div>
+            <div><span class="ofpi-meas-lbl">4回目</span><input type="number" class="ofpi-tongue-inp" data-ofpi-tongue="3" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="scheduleOfpiDraftSave_()"></div>
+            <div><span class="ofpi-meas-lbl">5回目</span><input type="number" class="ofpi-tongue-inp" data-ofpi-tongue="4" step="0.1" min="0" inputmode="decimal" placeholder="kPa" oninput="scheduleOfpiDraftSave_()"></div>
+          </div>
+          <div id="ofpiTongueAvgHint" class="ofpi-calc-hint"></div>
+        </div>
+        <div class="card ofpi-form-section" style="margin-bottom:10px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:800;color:#334155;margin-bottom:8px">④ 口腔乾燥（口腔水分計）</div>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 8px;line-height:1.45">連続3回測定。<strong>中央値</strong>が27.0未満で該当。</p>
+          <div class="ofpi-form-grid ofpi-form-grid-3">
+            <div><span class="ofpi-meas-lbl">1回目</span><input type="number" class="ofpi-moisture-inp" data-ofpi-moisture="0" step="0.1" min="0" inputmode="decimal" placeholder="例: 28.3" oninput="scheduleOfpiDraftSave_()"></div>
+            <div><span class="ofpi-meas-lbl">2回目</span><input type="number" class="ofpi-moisture-inp" data-ofpi-moisture="1" step="0.1" min="0" inputmode="decimal" placeholder="例: 27.5" oninput="scheduleOfpiDraftSave_()"></div>
+            <div><span class="ofpi-meas-lbl">3回目</span><input type="number" class="ofpi-moisture-inp" data-ofpi-moisture="2" step="0.1" min="0" inputmode="decimal" placeholder="例: 26.1" oninput="scheduleOfpiDraftSave_()"></div>
+          </div>
+          <div id="ofpiMoistureMedianHint" class="ofpi-calc-hint"></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;flex-shrink:0">プレビュー（印刷イメージ）</div>
+        <div id="ofpiPreviewScroll" class="report-preview-scroll">
+          <div id="ofpiPreviewInner" class="ofpi-preview-host"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="saveOfpiPreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('ofpi','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('ofpi','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearOfpiPreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="closeOralFunctionPrecisionModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printOralFunctionPrecision_()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 診断書（⑩） -->
+<div class="modal-overlay" id="shindanModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="shindanModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="shindanModalTitle">診断書</div>
+    <p id="shindanModalSub" style="font-size:12px;color:var(--muted);margin:-4px 0 10px;line-height:1.45">プレビュー内の<strong>すべての項目</strong>をタップして編集できます。病名は左のテンプレートから追記するか、プレビューで直接入力・削除してください。</p>
+    <div class="report-preview-split">
+      <div class="report-preview-form-pane">
+        <div class="card" style="margin-bottom:10px;padding:10px 12px">
+          <label for="shindanIssueDate" style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">記載日</label>
+          <input type="date" id="shindanIssueDate" onchange="onShindanIssueDateChange_()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+        </div>
+        <div class="rpt-clinic-bar" style="margin-bottom:10px;flex-wrap:wrap">
+          <label for="shindanClinicSelect">医院名</label>
+          <select id="shindanClinicSelect" onchange="onShindanClinicSelectChange_()"></select>
+        </div>
+        <div class="card shindan-tpl-pane" style="margin-bottom:10px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:800;color:#334155;margin-bottom:8px">病名テンプレート</div>
+          <input type="search" id="shindanTplSearch" placeholder="病名・読みで検索" oninput="renderShindanTemplateList_()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:8px">
+          <select id="shindanTplCategory" onchange="renderShindanTemplateList_()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:8px"></select>
+          <div id="shindanTplList" class="shindan-tpl-list" aria-label="病名一覧"></div>
+          <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">行をタップで<strong>病名</strong>欄に追記します（重複は追加しません）。</p>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <button type="button" class="btn btn-secondary" style="flex:1;min-width:120px;font-size:12px;padding:8px" onclick="shindanInsertMedicalHistoryHint_()">既往歴を診断内容へ</button>
+          <button type="button" class="btn btn-secondary" style="flex:1;min-width:120px;font-size:12px;padding:8px" onclick="refreshShindanPreview_()">プレビュー更新</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;flex-shrink:0">プレビュー（印刷イメージ）</div>
+        <div id="shindanPreviewScroll" class="report-preview-scroll">
+          <div id="shindanPreviewInner" class="shindan-preview-host"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="saveShindanPreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('shindan','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('shindan','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearShindanPreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="closeShindanModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printShindan_()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 帳票：患者選択（タップ式・スマホ向け） -->
+<div class="modal-overlay" id="reportPatientPickerModal" onclick="if(event.target===this)closeReportPatientPicker()">
+  <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="reportPatientPickerTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="reportPatientPickerTitle">患者を選択</div>
+    <p id="reportPatientPickerHint" style="font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.45">行をタップして選んでください。</p>
+    <div id="reportPatientPickerList" style="max-height:55vh;overflow-y:auto;padding-right:4px"></div>
+    <button type="button" class="btn-cancel" style="width:100%;margin-top:12px" onclick="closeReportPatientPicker()">キャンセル</button>
+  </div>
+</div>
+
+<!-- 無料検診・歯科検診票 -->
+<div class="modal-overlay" id="kentaiReportModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="kentaiModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="kentaiModalTitle">歯科検診票（無料検診）</div>
+    <p style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">プレビュー内を直接タップ・編集できます。あり/なし・テキスト・患者名・性別などをその場で修正してから印刷してください。</p>
+    <input type="hidden" id="kentai-modal-pid">
+    <div class="form-group"><label>検診日</label>
+      <input type="date" id="kentai-checkup-date" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <button type="button" class="btn btn-secondary" onclick="refreshKentaiPreviewDom()">プレビュー更新</button>
+      <button type="button" class="btn btn-secondary" onclick="importKentaiTeethFromChart_()">カルテから歯式取り込み</button>
+      <button type="button" class="btn btn-secondary" onclick="addKentaiFreeAnnotation_()">自由注記を追加</button>
+    </div>
+    <!-- 各項目のあり/なし・テキストはプレビュー内で直接編集できます（下書き保存にも反映されます） -->
+    <div style="display:none">
+      <select id="kentai-need-oral"><option value="あり">あり</option><option value="なし" selected>なし</option></select>
+      <select id="kentai-need-denture"><option value="あり">あり</option><option value="なし" selected>なし</option></select>
+      <select id="kentai-need-perio"><option value="あり">あり</option><option value="なし" selected>なし</option></select>
+      <select id="kentai-need-caries"><option value="あり">あり</option><option value="なし" selected>なし</option></select>
+      <textarea id="kentai-text-oral"></textarea>
+      <textarea id="kentai-text-denture"></textarea>
+      <textarea id="kentai-text-perio"></textarea>
+      <textarea id="kentai-text-caries"></textarea>
+      <textarea id="kentai-text-overall"></textarea>
+    </div>
+    <div class="form-group"><label>プレビュー（印刷イメージ）</label>
+      <div class="rpt-clinic-bar" style="margin-bottom:8px">
+        <label for="kentaiClinicSelect">医院名</label>
+        <select id="kentaiClinicSelect" onchange="onRptClinicSelectChange_('kentai')"></select>
+      </div>
+      <p class="rpt-preview-hint" style="margin:0 0 6px">プレビュー内の<strong>医院名・患者名・性別</strong>などをタップして直せます。歯式は<strong>歯をタップ</strong>で記号を選び（最大3つ）、<strong>＋ブリッジ線</strong>で線を追加し、●をドラッグして調整できます。</p>
+      <div class="kentai-teeth-edit-bar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 10px" onclick="kentaiBridgeAddModeStart_()">＋ ブリッジ線</button>
+        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 10px" onclick="kentaiBridgeDeleteSelected_()">－ 選択ブリッジ削除</button>
+      </div>
+      <div id="kentai-preview-host" class="report-preview-scroll kentai-preview-scroll-host" style="padding:8px"></div>
+    </div>
+    <div class="modal-actions report-preview-modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="saveKentaiPreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('kentai','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('kentai','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearKentaiPreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="document.getElementById('kentaiReportModal').classList.remove('show')">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printKentaiReport()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 上司向け・全施設本日診療リスト -->
+<div class="modal-overlay" id="svListModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="svListModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="svListModalTitle">上司向け・全施設リスト</div>
+    <div id="svListModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+    <p class="rpt-preview-hint">プレビュー内の<strong>患者名・治療内容・最下部のメモ</strong>などをタップして直せます。不要な患者行は右の<strong>×</strong>で表から外し、上のプルダウンから戻せます。<strong>本日の治療・メモ</strong>欄では、診療記録の<strong>初診・入院中・退所・ご逝去</strong>および<strong>無料検診</strong>が自動で<strong style="color:#dc2626">赤字</strong>になります（手動の赤字・黄マーカー・枠も使えます）。<strong>ご逝去・入院中・退所/退去</strong>は合計人数に含めません。</p>
+    <div id="svListEmphasisBar" class="fax-em-bar" aria-hidden="true">
+      <span class="fax-em-bar-label">①欄をタップ → ②文字を選ぶ（指を離す）→ ③赤字などのボタン</span>
+      <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
+      <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
+      <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">枠で囲む</button>
+      <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
+    </div>
+    <div id="svListPreviewScroll" class="report-preview-scroll">
+      <div id="svListPreviewInner" class="sv-doc"></div>
+    </div>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="saveSvListPreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('svList','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('svList','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearSvListPreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="closeSvListModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printSupervisorListReport()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 情報共有シート -->
+<div class="modal-overlay" id="shareSheetModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="shareSheetModalTitle">
+    <div class="modal-handle"></div>
+    <div class="iss-modal-head-row">
+      <div class="iss-modal-head-text">
+        <div class="modal-title" id="shareSheetModalTitle">情報共有シート</div>
+        <p id="issFacLabel" style="font-size:12px;color:var(--muted);line-height:1.45"></p>
+      </div>
+      <div class="modal-actions iss-modal-toolbar">
+        <button type="button" class="btn btn-secondary" onclick="saveIssPreviewDraft_()">💾 下書き保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('shareSheet','overwrite')">📁 確定保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('shareSheet','new')">📁 別名</button>
+        <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+        <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearIssPreviewDraft_()">🗑 下書き消去</button>
+        <button type="button" class="btn-cancel" onclick="closeShareSheetModal()">閉じる</button>
+        <button type="button" class="btn-ok" onclick="issPrint()">🖨 印刷</button>
+      </div>
+    </div>
+    <div class="report-preview-split">
+    <div class="report-preview-form-pane">
+      <div class="card" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">記入日</label>
+        <input type="date" id="issEntryDate" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+      </div>
+      <div class="iss-pill-section-title">区分（複数選択可）</div>
+      <div id="issCatRadios"></div>
+      <div id="issStaffChecks"></div>
+      <div id="issEmphasisBar" class="fax-em-bar" aria-hidden="true">
+        <span class="fax-em-bar-label">①内容欄をタップ → ②文字を選ぶ → ③赤字など</span>
+        <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
+        <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
+        <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">枠で囲む</button>
+        <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <button type="button" class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px;padding:10px" onclick="issAddEmptyRow()">＋ 空行を追加</button>
+        <button type="button" class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px;padding:10px" onclick="issFillFromVisitDate()">📋 診療した患者を再読込</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin:-4px 0 8px;line-height:1.45">開いたときに<strong>居室・氏名だけ</strong>自動で入れます（内容欄は空欄のまま）。行の「削除」で外せます。</p>
+      <div id="issRows"></div>
+      <div class="iss-fac-patient-pick">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px">施設の全患者（担当Dr.ごとに表示・タップで行に追加）</div>
+        <div id="issFacPatientPickList"></div>
+      </div>
+      <label style="display:block;font-size:12px;font-weight:700;color:var(--muted);margin:12px 0 6px">全体・特記（入院・初診案内など表の下段）</label>
+      <textarea id="issFooter" rows="5" placeholder="例：201 猪瀬 勝江 → 入院（脳外科）&#10;326 石井 富美子 初診入りました。…" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;line-height:1.55"></textarea>
+      <label style="display:block;font-size:12px;font-weight:800;color:var(--muted);margin:16px 0 6px">メモ欄</label>
+      <p style="font-size:11px;color:var(--muted);margin:-2px 0 8px;line-height:1.45">テキストはここで入力。写真は下のボタンか<strong>プレビュー</strong>の📷から追加し、移動・拡大縮小・✂️トリミングできます（赤字などの強調も可）。</p>
+      <div id="issFreeTextEd" class="iss-notes-ed rpt-edit-rich" contenteditable="true" data-rpt-rich="1" spellcheck="false" data-placeholder="施設への連絡メモ、写真付きの記録など自由に記入…"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0">
+        <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="issPickPhotoForZone_('free_area')">📷 写真を追加</button>
+      </div>
+      <input type="file" id="issFreePhotoInput" accept="image/*" multiple style="display:none" onchange="issHandlePhotoUpload(this)">
+    </div>
+    <p class="rpt-preview-hint" style="flex-shrink:0">上の入力と<strong>プレビュー</strong>は同期します。内容欄・メモ欄は<strong>赤字・黄マーカー・枠</strong>が使えます。写真はプレビューで<strong>一度タップして選択</strong>→ドラッグ移動・右下＝サイズ・上＝回転・✂️トリミング。</p>
+    <div class="iss-preview-pane">
+    <p style="font-size:12px;font-weight:800;color:var(--muted);margin:0 0 6px;flex-shrink:0">プレビュー</p>
+    <div id="issPreviewScroll" class="report-preview-scroll">
+      <div id="issPreviewInner" class="iss-doc"></div>
+    </div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<!-- 月次ケア報告（下書き） -->
+<div class="modal-overlay" id="monthCareModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="monthCareModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="monthCareModalTitle">月次報告（五香様式・4マス）</div>
+    <div id="monthCareModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+    <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・対象年月</strong>で<strong>下書きを再生成</strong>すると、診療記録のある全患者が居室順で4マスプレビューに並びます。印刷しない患者はプレビューで「除外」できます（退所・ご逝去の記録日より前まで）。</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <button type="button" id="monthCareRegenBtn" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="generateMonthCareDraft()">🔄 下書きを再生成</button>
+    </div>
+    <p class="rpt-preview-hint" id="monthCarePreviewHint">プレビューの<strong>チェック</strong>をタップでオン/オフ、<strong>コメント欄</strong>をタップで編集できます。</p>
+    <div class="rpt-clinic-bar" style="margin-bottom:8px">
+      <label for="monthCareClinicSelect">医院名</label>
+      <select id="monthCareClinicSelect" onchange="onRptClinicSelectChange_('monthCare')"></select>
+    </div>
+    <div id="monthCarePreviewScroll" class="report-preview-scroll" style="margin-bottom:12px">
+      <div id="monthCarePreviewInner"></div>
+    </div>
+    <div id="monthCareBodyTaWrap" style="display:none">
+    <label for="monthCareBodyTa" style="display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">本文（ケアマネ・ご家族向け・編集可）</label>
+    <textarea id="monthCareBodyTa" class="report-preview-compact-ta" rows="8" placeholder="下書きを生成するとここに入ります。文体や表現をそのまま修正してください。" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;line-height:1.65;font-family:inherit;resize:vertical"></textarea>
+    </div>
+    <div id="monthCareRefPanel" style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:12px;background:#f8fafc">
+      <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px">参考コメント（カテゴリから挿入）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <label for="monthCareRefCat" style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">カテゴリ</label>
+        <select id="monthCareRefCat" style="flex:1;min-width:160px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit"></select>
+      </div>
+      <input type="search" id="monthCareRefFilter" placeholder="文言を絞り込み…" autocomplete="off"
+        style="width:100%;margin-top:8px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit">
+      <div id="monthCareRefChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;max-height:min(18vh,140px);overflow:auto;padding:2px 0"></div>
+      <p id="monthCareRefNote" style="font-size:10px;color:var(--muted);margin:8px 0 0;line-height:1.45">タップで<strong>編集中のコメント欄</strong>（または1マス目）へ挿入します。</p>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45">※診療記録からの自動生成です。医学的表現のまま残したい箇所はそのまま、伝わりやすい言い換えはご自由に加えてください。</p>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="saveMonthCarePreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('monthCare','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('monthCare','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearMonthCarePreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="closeMonthCareReportModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printMonthCareReport()">🖨 印刷</button>
+    </div>
+  </div>
+</div>
+
+<!-- ⑤ 患者パーソナルシート（歯科治療・管理計画書） -->
+<div class="modal-overlay" id="patientPpsModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="patientPpsModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="patientPpsModalTitle">患者パーソナルシート</div>
+    <div id="patientPpsModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+    <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・患者（⑤）・対象年月</strong>から、患者データ・診療記録を反映した「歯科治療・管理計画書」をプレビューします。外側をタップしても閉じません。</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="reloadPatientPpsFromServer_()">🔄 診療記録から再読み込み</button>
+    </div>
+    <div style="margin-bottom:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc">
+      <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px">治療計画・管理計画（報告書カテゴリ・④と連動）</div>
+      <div id="patientPpsCatPillsHost" class="notes-tone-pills-wrap" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+      <label for="patientPpsPlanComment" style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">コメント（自由記述・プレビューと同期）</label>
+      <textarea id="patientPpsPlanComment" rows="3" placeholder="対象月の処置・次回予定の要約が入ります。追記・修正できます。" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;line-height:1.55;font-family:inherit;resize:vertical" oninput="onPatientPpsPlanInput_()"></textarea>
+      <p style="font-size:10px;color:var(--muted);margin:6px 0 0;line-height:1.45">カテゴリを選ぶとプレビューの治療計画欄に反映されます。プレビュー内でも直接編集できます。</p>
+    </div>
+    <div id="patientPpsPreviewScroll" class="report-preview-scroll" style="margin-bottom:12px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px;overflow-x:auto">
+      <div id="patientPpsPreviewInner"></div>
+    </div>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="savePatientPpsPreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('patientPps','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('patientPps','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearPatientPpsPreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="closePatientPpsModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printPatientPpsReport()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ⑥ 施設月次報告書（3列グリッド・模範PDF準拠） -->
+<div class="modal-overlay" id="personalSheetModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="personalSheetModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="personalSheetModalTitle">施設月次報告書</div>
+    <div id="personalSheetModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+    <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・対象年月</strong>（④と共通）から、その月に診療のあった全患者を<strong>居室順</strong>で一覧表にします。模範PDF（部屋番号／氏名／治療内容）に沿ったレイアウトです。外側をタップしても閉じません。</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="reloadPersonalSheetFromServer_()">🔄 診療記録から再読み込み</button>
+    </div>
+    <div class="rpt-clinic-bar" style="margin-bottom:8px;flex-wrap:wrap">
+      <label for="personalSheetClinicSelect">医院名（ヘッダー）</label>
+      <select id="personalSheetClinicSelect" onchange="onPersonalSheetClinicSelectChange_()"></select>
+      <input type="text" id="personalSheetClinicFree" placeholder="候補以外も直接入力可" autocomplete="off"
+        style="flex:1;min-width:160px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit"
+        oninput="onPersonalSheetClinicFreeInput_()">
+    </div>
+    <div id="personalSheetEmphasisBar" class="fax-em-bar" aria-hidden="true">
+      <span class="fax-em-bar-label">治療内容欄をタップ → 文字を選ぶ → 赤字など</span>
+      <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
+      <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
+      <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">枠で囲む</button>
+      <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
+    </div>
+    <p class="rpt-preview-hint">表の<strong>治療内容・追記</strong>をタップして編集・<strong>赤字などの強調</strong>が使えます。写真は<strong>一度タップして選択</strong>→ドラッグ移動・右下■でサイズ・<strong>写真上の丸</strong>で回転・<strong>✂️ トリミング</strong>で切り抜き。</p>
+    <div id="personalSheetPreviewScroll" class="report-preview-scroll ps-grid-preview-scroll" style="margin-bottom:12px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px;overflow-x:auto">
+      <div id="personalSheetPreviewInner"></div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:0;line-height:1.45">※治療内容は「日付 時刻  処置内容」の1行形式です。写真は<strong>📷を押すたびに追加</strong>（1回で複数枚選択も可）。位置・サイズ・角度は下書きに保存され、印刷にも反映されます（1枚4MBまで）。</p>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="savePersonalSheetPreviewDraft_()">💾 下書き保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('personalSheet','overwrite')">📁 確定保存</button>
+      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('personalSheet','new')">📁 別名</button>
+      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearPersonalSheetPreviewDraft_()">🗑 下書き消去</button>
+      <button type="button" class="btn-cancel" onclick="closePersonalSheetModal()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printPersonalSheetReport()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 写真トリミング（⑥施設月次・③情報共有シート 共通） -->
+<div class="modal-overlay" id="psPhotoCropModal" aria-hidden="true">
+  <div class="modal-sheet ps-crop-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="psPhotoCropModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="psPhotoCropModalTitle">写真をトリミング</div>
+    <p style="font-size:12px;color:var(--muted);line-height:1.45;margin-bottom:10px">枠をドラッグして位置を変え、右下の■で範囲を調整します。「適用」で写真を切り抜きます（元の写真は置き換わります）。</p>
+    <div id="psCropStage" class="ps-crop-stage" tabindex="-1">
+      <div id="psCropInner" class="ps-crop-inner">
+        <img id="psCropImage" alt="" draggable="false">
+        <div id="psCropBox" class="ps-crop-box" aria-hidden="true">
+          <span class="ps-crop-handle ps-crop-handle-br" title="範囲を変更"></span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button type="button" class="btn-cancel" onclick="closePsPhotoCropModal_()">キャンセル</button>
+      <button type="button" class="btn-ok" onclick="applyPsPhotoCrop_()">適用</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- 書類履歴（確定保存アーカイブ） -->
+<div class="modal-overlay" id="docArchiveModal" onclick="if(event.target===this)closeDocumentArchiveModal_()">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="docArchiveModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="docArchiveModalTitle">📁 書類履歴</div>
+    <p style="font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.45">「📁 確定保存」または印刷時に保存された書類です。<strong>開く</strong>でプレビューを復元できます。</p>
+    <div class="card" style="margin-bottom:10px;padding:10px 12px">
+      <div style="display:grid;gap:8px">
+        <div>
+          <label for="docArchiveFilterKind" style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">帳票種別</label>
+          <select id="docArchiveFilterKind" onchange="refreshDocumentArchiveList_()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit">
+            <option value="">（すべて）</option>
+            <option value="faxDaily">① FAX日報</option>
+            <option value="svList">② 上司リスト</option>
+            <option value="shareSheet">③ 情報共有</option>
+            <option value="monthCare">④ 月次（ケアマネ）</option>
+            <option value="patientPps">⑤ 管理計画書</option>
+            <option value="personalSheet">⑥ 施設月次</option>
+            <option value="kentai">⑦ 検診票</option>
+            <option value="visitTt">⑧ タイムテーブル</option>
+            <option value="ofpi">⑨ 精密検査</option>
+            <option value="shindan">⑩ 診断書</option>
+          </select>
+        </div>
+        <div>
+          <label for="docArchiveFilterPeriod" style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">期間（年月または日付の先頭一致）</label>
+          <input type="text" id="docArchiveFilterPeriod" placeholder="例: 2026-06 または 2026-06-29" onchange="refreshDocumentArchiveList_()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit">
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary" style="width:100%;margin-top:10px;padding:10px;font-weight:800" onclick="refreshDocumentArchiveList_()">🔍 再検索</button>
+    </div>
+    <div id="docArchiveList"></div>
+    <button type="button" class="btn-cancel" style="width:100%;margin-top:12px" onclick="closeDocumentArchiveModal_()">閉じる</button>
+  </div>
+</div>

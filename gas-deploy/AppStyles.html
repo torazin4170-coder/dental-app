@@ -1,0 +1,1192 @@
+/* ── 変数 ── */
+:root {
+  --accent: #2563eb; --accent-light: #dbeafe;
+  --green: #16a34a; --green-light: #dcfce7;
+  --red: #dc2626;   --red-light: #fee2e2;
+  --yellow: #ca8a04;--yellow-light: #fef9c3;
+  --border: #e2e8f0; --bg: #f8fafc; --muted: #94a3b8;
+  --bottom-h: 62px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: "Hiragino Kaku Gothic ProN",system-ui,sans-serif; background: var(--bg); color: #1e293b; font-size: 16px; -webkit-text-size-adjust: 100%; }
+
+/* ── Layout ── */
+.top-header { position: sticky; top: 0; z-index: 20; background: white; border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+.fac-tabs { display: flex; overflow-x: auto; background: white; border-bottom: 1px solid var(--border); padding: 0 12px; gap: 4px; scrollbar-width: none; }
+.fac-tabs::-webkit-scrollbar { display: none; }
+.fac-tab { padding: 12px 16px; border-radius: 6px 6px 0 0; font-size: 14px; font-weight: 700; white-space: nowrap; cursor: pointer; color: var(--muted); border-bottom: 3px solid transparent; }
+.fac-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.fac-tab.fac-tab-group { font-weight: 800; background: linear-gradient(180deg, #f8fafc 0%, #fff 100%); }
+.fac-tab.fac-tab-group.active { background: #eff6ff; }
+.patient-grp-heading { font-size: 12px; font-weight: 800; color: #475569; margin: 14px 0 6px; padding: 6px 10px; background: #f1f5f9; border-radius: 8px; border-left: 4px solid #64748b; }
+.facility-group-card { background: #fff; border: 1.5px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.facility-group-card .fg-name-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.facility-group-card .fg-name-row input { flex: 1; padding: 10px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; }
+.facility-group-card .fg-meta { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+
+.sidebar { display: none; }
+.screen-wrap { padding: 14px 16px; padding-bottom: calc(var(--bottom-h) + 12px); max-width: 520px; margin: 0 auto; }
+.screen { display: none; }
+.screen.active { display: block; }
+
+.bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; height: var(--bottom-h); background: white; border-top: 1px solid var(--border); display: flex; z-index: 20; }
+.bnav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; color: var(--muted); cursor: pointer; border: none; background: none; gap: 3px; font-weight: 700; }
+.bnav-btn.active { color: var(--accent); }
+.bnav-icon { font-size: 24px; }
+
+/* 768〜1023px はタブレット／スマホ横でも「スマホUI」（サイドバーなし）を維持し歯式の横幅を確保 */
+@media (min-width: 1024px) {
+  body { display: flex; }
+  .sidebar { display: flex; flex-direction: column; width: 200px; min-height: 100vh; background: white; border-right: 1px solid var(--border); position: sticky; top: 0; height: 100vh; overflow-y: auto; flex-shrink: 0; }
+  .sidebar-logo { padding: 18px 16px 10px; font-size: 13px; font-weight: 700; color: var(--accent); }
+  .sidebar-nav-item { padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 8px; margin: 2px 8px; display: flex; align-items: center; gap: 8px; }
+  .sidebar-nav-item:hover { background: var(--bg); }
+  .sidebar-nav-item.active { background: var(--accent-light); color: var(--accent); }
+  .main-col { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .screen-wrap { padding: 16px 24px; max-width: 900px; padding-bottom: 24px; }
+  .bottom-nav { display: none; }
+}
+
+/* ── Cards ── */
+.card { background: white; border: 1.5px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+.section-title { font-size: 14px; font-weight: 800; color: var(--muted); letter-spacing: .3px; margin: 16px 0 10px; }
+.btn { padding: 12px 18px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-secondary { background: white; border: 1.5px solid var(--border); color: #1e293b; }
+
+/* ── Patient list ── */
+.patient-card { background: white; border: 1.5px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.patient-card:hover { border-color: var(--accent); }
+.patient-card.p-ist-musho_kenshin { border-left: 4px solid #0d9488; }
+.patient-card.p-in-hospital { border-left: 4px solid #7c3aed; }
+.pif-btn { padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--border); background: white; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.pif-btn.on { background: var(--accent); color: white; border-color: var(--accent); }
+.pif-badge { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle; }
+.pif-badge.mk { background: #ccfbf1; color: #0f766e; }
+.pif-badge.ih { background: #ede9fe; color: #5b21b6; }
+.pif-badge.dec { background: #f1f5f9; color: #475569; }
+.pif-badge.lft { background: #f1f5f9; color: #64748b; }
+.patient-card.p-deceased { border-left: 4px solid #94a3b8; }
+.patient-card.p-left { border-left: 4px solid #cbd5e1; }
+.inage-doc-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1.5px solid var(--idb-bd, #93c5fd);
+  background: var(--idb-bg, #eff6ff);
+  color: var(--idb-fg, #1e40af);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.inage-doc-badge--settings { flex-shrink: 0; min-width: 2.8em; text-align: center; }
+.pvl-badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 6px;
+  margin-left: 4px;
+  vertical-align: middle;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+}
+.pvl-badge--reached {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: #fcd34d;
+}
+.patient-card.p-monthly-limit-reached {
+  background: #fffbeb;
+  border-color: #fbbf24;
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+.manage-item.mgmt-row-limit-reached {
+  background: #fffbeb;
+  border-radius: 10px;
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+.settings-lines-list { display: flex; flex-direction: column; gap: 8px; }
+.settings-line-row { display: flex; gap: 8px; align-items: center; }
+.patient-fac-group { margin-bottom: 16px; }
+.patient-fac-heading { font-size: 12px; font-weight: 800; color: #334155; padding: 8px 4px 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-bottom: 2px solid #e2e8f0; margin-bottom: 8px; }
+.patient-fac-heading-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.mgmt-fac-group { margin-bottom: 18px; }
+.mgmt-fac-heading { font-size: 12px; font-weight: 800; color: #334155; padding: 8px 6px 6px; border-bottom: 1.5px solid #cbd5e1; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mgmt-fac-heading-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.visit-dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; }
+.exam-inputs-wrap { background: #f8fafc; border: 1.5px solid var(--border); border-radius: 12px; padding: 12px; margin-top: 10px; }
+.exam-input-row { margin-bottom: 10px; }
+.exam-input-row:last-child { margin-bottom: 0; }
+.exam-input-row label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.exam-input-row input[type="number"],
+.exam-input-row input[type="text"] { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 16px; font-family: inherit; }
+.exam-fkyoku-sync-btn { margin-top: 8px; width: 100%; padding: 8px 12px; font-size: 12px; }
+.exam-calc-hint { font-size: 12px; font-weight: 700; color: #334155; margin-top: 8px; padding: 8px 10px; background: #f1f5f9; border-radius: 8px; line-height: 1.45; }
+.exam-history-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.exam-history-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 280px; }
+.exam-history-table th { text-align: left; font-weight: 800; color: #475569; padding: 6px 8px; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+.exam-history-table td { padding: 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; line-height: 1.4; }
+.exam-history-row { cursor: pointer; }
+.exam-history-row:active { background: #f1f5f9; }
+.ofpi-form-section { border: 1.5px solid var(--border); border-radius: 12px; }
+.ofpi-form-grid { display: grid; gap: 8px; }
+.ofpi-form-grid-5 { grid-template-columns: repeat(2, 1fr); }
+.ofpi-form-grid-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 420px) {
+  .ofpi-form-grid-5 { grid-template-columns: 1fr 1fr; }
+  .ofpi-form-grid-3 { grid-template-columns: 1fr; }
+}
+.ofpi-meas-lbl { display: block; font-size: 10px; font-weight: 800; color: var(--muted); margin-bottom: 4px; }
+.ofpi-form-grid input { width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 15px; font-family: inherit; }
+.ofpi-calc-hint { font-size: 12px; font-weight: 700; color: #334155; margin-top: 8px; padding: 8px 10px; background: #f1f5f9; border-radius: 8px; line-height: 1.45; }
+.ofpi-calc-hint.ofpi-applicable { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.ofpi-tci-wrap { margin: 4px 0 8px; }
+.ofpi-tci-tongue-shape {
+  max-width: 240px;
+  margin: 0 auto;
+  padding: 14px 10px 18px;
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
+  border: 2px solid #fda4af;
+  border-radius: 48% 48% 42% 42% / 55% 55% 45% 45%;
+  box-shadow: inset 0 -4px 12px rgba(244, 63, 94, 0.08);
+}
+.ofpi-tci-tip-lbl { text-align: center; font-size: 10px; font-weight: 800; color: #9f1239; margin-bottom: 6px; letter-spacing: 0.08em; }
+.ofpi-tci-end-lbl { text-align: center; font-size: 10px; font-weight: 800; color: #9f1239; letter-spacing: 0.06em; margin-bottom: 6px; }
+.ofpi-tci-end-lbl.ofpi-tci-end-tip { margin-bottom: 0; margin-top: 6px; }
+.ofpi-tci-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.ofpi-tci-cell {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 52px; padding: 4px 2px; border-radius: 10px; border: 2px solid;
+  font-weight: 800; font-size: 18px; line-height: 1.1; cursor: pointer;
+  font-family: inherit; touch-action: manipulation; transition: transform 0.08s ease;
+}
+.ofpi-doc .ofpi-tci-print-wrap { max-width: 200px; margin: 0 auto; }
+.ofpi-doc .ofpi-tci-print-end { text-align: center; font-size: 8pt; font-weight: 800; color: #475569; margin: 2px 0; }
+.ofpi-doc .ofpi-tci-print-tongue {
+  padding: 6px 5px 8px; border: 1.5px solid #fda4af; border-radius: 40% 40% 38% 38% / 48% 48% 42% 42%;
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
+}
+.ofpi-doc .ofpi-tci-print-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.ofpi-doc .ofpi-tci-print-cell {
+  text-align: center; padding: 3px 1px; border-radius: 5px; border: 1.5px solid;
+  font-weight: 800; line-height: 1.15;
+}
+.ofpi-doc .ofpi-tci-print-score { font-size: 11pt; }
+.ofpi-doc .ofpi-tci-print-zone { font-size: 6.5pt; font-weight: 700; margin-top: 1px; }
+.ofpi-doc .ofpi-tci-print-legend { text-align: center; font-size: 7pt; color: #64748b; margin-top: 4px; }
+.ofpi-tci-cell:active { transform: scale(0.96); }
+.ofpi-tci-cell .ofpi-tci-zone { font-size: 9px; font-weight: 700; opacity: 0.85; margin-top: 2px; }
+.ofpi-tci-cell[data-score="0"] { background: #fecdd3; border-color: #f472b6; color: #9f1239; }
+.ofpi-tci-cell[data-score="1"] { background: #fef9c3; border-color: #eab308; color: #854d0e; }
+.ofpi-tci-cell[data-score="2"] { background: #fde047; border-color: #ca8a04; color: #713f12; }
+.ofpi-tci-legend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; font-size: 10px; color: var(--muted); }
+.ofpi-tci-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.ofpi-tci-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.15); }
+.ofpi-preview-host { padding: 4px; }
+.ofpi-doc { font-size: 11pt; color: #111; line-height: 1.45; }
+.ofpi-doc .ofpi-title { text-align: center; font-size: 14pt; font-weight: 800; margin-bottom: 8px; }
+.ofpi-doc .ofpi-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: 10.5pt; }
+.ofpi-doc table.ofpi-main { width: 100%; border-collapse: collapse; font-size: 10pt; }
+.ofpi-doc table.ofpi-main th,
+.ofpi-doc table.ofpi-main td { border: 1px solid #333; padding: 5px 6px; vertical-align: middle; }
+.ofpi-doc table.ofpi-main th { background: #f8fafc; font-weight: 800; text-align: center; }
+.ofpi-doc .ofpi-check { text-align: center; font-size: 14pt; line-height: 1; }
+.ofpi-doc .ofpi-sub-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 9.5pt; }
+.ofpi-doc .ofpi-sub-table td { border: 1px solid #666; padding: 3px 5px; }
+.ofpi-doc .ofpi-sub-lbl { font-size: 9pt; color: #475569; text-align: center; }
+.ofpi-doc .ofpi-foot { margin-top: 12px; font-size: 10pt; line-height: 1.55; }
+.patient-name { font-size: 16px; font-weight: 700; }
+.patient-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+/* ── Modal ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 50; display: none; align-items: flex-end; }
+.modal-overlay.show { display: flex; }
+.modal-sheet { background: white; border-radius: 18px 18px 0 0; padding: 20px 16px; width: 100%; max-height: 90vh; overflow-y: auto; }
+.modal-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
+.modal-title { font-size: 18px; font-weight: 800; margin-bottom: 16px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+.btn-cancel { flex: 1; padding: 14px; border-radius: 10px; border: 1.5px solid var(--border); background: white; font-size: 15px; font-weight: 700; cursor: pointer; }
+.btn-ok { flex: 2; padding: 14px; border-radius: 10px; border: none; background: var(--accent); color: white; font-size: 15px; font-weight: 700; cursor: pointer; }
+
+/* 診療記録：保存中インジケータ */
+.record-save-progress {
+  display: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+.record-save-progress.is-on { display: block; }
+.record-save-progress::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 38%;
+  background: linear-gradient(90deg, var(--accent), #38bdf8);
+  border-radius: 4px;
+  animation: recordSaveBarSlide 1.05s ease-in-out infinite;
+}
+@keyframes recordSaveBarSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+#saveRecordBtn.is-loading,
+#pmSaveBtn.is-loading,
+#doctorSettingsSaveBtn.is-loading { opacity: 0.92; cursor: wait; }
+.record-duplicate-warn {
+  display: none;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid #dc2626;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+.record-duplicate-warn.is-on { display: block; }
+.modal-actions .btn-cancel:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ── Form ── */
+.form-group { margin-bottom: 14px; }
+.form-group label { font-size: 13px; font-weight: 700; color: var(--muted); display: block; margin-bottom: 6px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 13px 14px; border: 1.5px solid var(--border); border-radius: 10px;
+  font-size: 16px; font-family: inherit;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); }
+.form-group input[type="hidden"] { display: none !important; width: 0 !important; height: 0 !important; padding: 0 !important; margin: 0 !important; border: none !important; position: absolute; opacity: 0; pointer-events: none; }
+.visit-time-digital { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; max-width: 100%; }
+.visit-time-digital-part {
+  width: 56px; max-width: 56px; flex: 0 0 auto; text-align: center; padding: 10px 6px !important;
+  font-size: 18px !important; font-weight: 700; border-radius: 10px; border: 1.5px solid var(--border); font-family: inherit;
+  -moz-appearance: textfield;
+}
+.visit-time-digital-part::-webkit-outer-spin-button,
+.visit-time-digital-part::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.visit-time-colon { font-size: 20px; font-weight: 800; color: var(--muted); line-height: 1; user-select: none; flex-shrink: 0; }
+
+/* ── Chips ── */
+.chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 10px 16px; border-radius: 20px; border: 1.5px solid var(--border); font-size: 14px; font-weight: 600; cursor: pointer;
+  min-height: 48px; display: inline-flex; align-items: center; gap: 4px; touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(37, 99, 235, 0.12);
+}
+.chip.sel { background: var(--red-light); border-color: var(--red); color: var(--red); }
+.chip.chip-musho-kenshin { border-color: #14b8a6; color: #0f766e; }
+.chip.chip-musho-kenshin.sel { background: #ccfbf1; border-color: #0d9488; color: #0f766e; }
+.chip.chip-patient-status { border-color: #fca5a5; color: #991b1b; font-weight: 800; }
+.chip.chip-patient-status.sel { background: #fef2f2; border-color: #dc2626; color: #991b1b; box-shadow: 0 0 0 1px #fecaca; }
+.chip.restricted { background: #fef9c3; border-color: #f59e0b; color: #92400e; opacity: .92; cursor: not-allowed; }
+.chip.chip-quarterly-eligible { background: #ecfdf5; border-color: #10b981; color: #065f46; box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25); }
+.chip.chip-has-qmeta { flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 12px; min-height: 54px; }
+.chip .chip-q-label { line-height: 1.2; }
+.chip .chip-q-meta { display: block; font-size: 9px; font-weight: 800; line-height: 1.25; white-space: nowrap; }
+.chip .chip-q-wait { color: #b45309; }
+.chip .chip-q-ok { color: #047857; }
+.chip.chip-quarterly-eligible.sel { background: #d1fae5; border-color: #059669; color: #065f46; }
+.chip.next-sel { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+.history-card { background: white; border: 1.5px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+.history-date { font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
+.history-date-link { background: none; border: none; padding: 0; margin: 0; font: inherit; cursor: pointer; color: var(--accent); font-weight: 800; text-decoration: underline; text-underline-offset: 2px; text-align: left; }
+.history-date-link:hover { color: #1d4ed8; }
+.history-treat-scroll { display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding-bottom: 6px; margin-bottom: 4px; scrollbar-width: thin; }
+.history-treat-scroll::-webkit-scrollbar { height: 6px; }
+.history-treat-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.history-treat { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.undo-bar-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.undo-bar-btn:not(:disabled):active { transform: scale(0.97); }
+.cal-day-rec-card { cursor: pointer; transition: background .15s, outline-color .15s; }
+.cal-day-rec-card:hover { background: #e8f0fe !important; outline: 2px solid var(--accent); outline-offset: 0; }
+.cal-day-rec-card:active { background: #dbeafe !important; }
+
+/* ── 写真エリア ── */
+.photo-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 10px; }
+.photo-thumb { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: #f1f5f9; cursor: pointer; border: 1.5px solid var(--border); touch-action: manipulation; }
+.photo-thumb-del { position: absolute; top: 4px; right: 4px; z-index: 5; width: 32px; height: 32px; border-radius: 50%; border: none; background: rgba(0,0,0,.55); color: white; font-size: 14px; font-weight: 800; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; touch-action: manipulation; }
+.photo-thumb-del:active { background: rgba(220,38,38,.9); }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-thumb .photo-meta { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.55); color: white; font-size: 9px; padding: 3px 5px; line-height: 1.3; }
+.photo-thumb .photo-cat { position: absolute; top: 4px; left: 4px; background: var(--accent); color: white; font-size: 9px; font-weight: 700; border-radius: 4px; padding: 1px 5px; }
+.photo-add-btn { aspect-ratio: 1; border-radius: 8px; border: 2px dashed var(--border); background: white; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; font-weight: 700; color: var(--muted); gap: 4px; touch-action: manipulation; }
+.photo-add-btn:active { background: var(--accent-light); }
+.pcat-btn {
+  flex-shrink: 0; min-height: 40px; padding: 8px 14px; border-radius: 16px; border: 1.5px solid var(--border);
+  background: white; color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; touch-action: manipulation;
+}
+
+/* ── 歯式エディタ ── */
+.teeth-cell { cursor: pointer; user-select: none; transition: background .12s, border-color .12s; }
+.teeth-cell:active { background: var(--accent-light) !important; }
+.teeth-type-btn { padding: 6px 12px; border-radius: 16px; border: 1.5px solid var(--border); background: white; font-size: 12px; font-weight: 700; cursor: pointer; color: #475569; }
+.teeth-type-btn.on { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+
+/* 歯式ブロック：横スクロールバーと下顎歯の誤タップを減らす（下余白＋太めのスクロールバー） */
+#teethChartBlock {
+  position: relative;
+  z-index: 0;
+  padding-bottom: 28px !important;
+  scrollbar-width: auto;
+  scrollbar-color: #64748b #e2e8f0;
+}
+#teethChartBlock::-webkit-scrollbar {
+  height: 16px;
+}
+#teethChartBlock::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 10px;
+  margin: 0 6px;
+}
+#teethChartBlock::-webkit-scrollbar-thumb {
+  background-color: #64748b;
+  border-radius: 10px;
+  border: 4px solid #f1f5f9;
+  background-clip: padding-box;
+  min-height: 16px;
+}
+
+.notes-tone-pill {
+  padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+  border: 1.5px solid var(--ntp-bd, #94a3b8); background: var(--ntp-bg, #f1f5f9); color: var(--ntp-fg, #334155);
+  -webkit-tap-highlight-color: transparent;
+  display: inline-flex; align-items: center; gap: 6px; user-select: none; touch-action: manipulation;
+  position: relative;
+  min-height: 44px;
+}
+.notes-tone-pill input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.notes-tone-pill--on {
+  box-shadow: inset 0 0 0 2px var(--ntp-bd, #94a3b8);
+  font-weight: 800;
+}
+.notes-tone-pill:active { filter: brightness(0.97); transform: scale(0.98); }
+
+#teethSymbolPicker { max-height: 42vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 10px; padding-right: 2px; }
+.teeth-sym-chip {
+  min-width: 50px; min-height: 48px; padding: 6px 4px; border-radius: 10px; border: 1.5px solid var(--border);
+  background: white; cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font: inherit; -webkit-tap-highlight-color: transparent;
+}
+.teeth-sym-chip .tsc-sym { font-size: 17px; font-weight: 800; color: #1e293b; line-height: 1; }
+.teeth-sym-chip .tsc-lab { font-size: 9px; color: var(--muted); font-weight: 600; max-width: 58px; text-align: center; line-height: 1.15; }
+.teeth-sym-chip.sel { background: var(--accent-light); border-color: var(--accent); }
+.teeth-sym-chip.sel .tsc-sym { color: var(--accent); }
+.teeth-sym-chip.sel .tsc-lab { color: #1d4ed8; }
+.teeth-miss-chip.sel { background: #fee2e2; border-color: var(--red); }
+.teeth-miss-chip.sel .tsc-sym { color: var(--red); }
+
+/* 歯セル：番号・黒所見・赤（処置後）を縦に分離して重なりを防ぐ */
+.teeth-cell-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  gap: 3px;
+}
+.teeth-cell-line--red {
+  width: 100%;
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--red);
+  line-height: 1.25;
+  word-break: break-word;
+  text-align: center;
+  min-height: 0.4em;
+}
+.teeth-cell-line--blk {
+  width: 100%;
+  font-size: 10px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.25;
+  word-break: break-word;
+  white-space: normal;
+  text-align: center;
+  min-height: 0.4em;
+}
+/* 欠損歯（喪失）：セルを黒塗り、番号は白で視認性向上 */
+.teeth-cell.teeth-cell--miss {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+.teeth-cell.teeth-cell--miss .teeth-cell-line--red {
+  color: #fecaca;
+}
+.teeth-cell.teeth-cell--miss .teeth-cell-line--blk {
+  color: #e2e8f0;
+}
+
+/* 設定・管理モーダル：歯式を大きく（画面の半分以上を歯式ブロックに） */
+#patientCareModal .modal-sheet.patient-care-modal {
+  width: min(960px, 96vw) !important;
+  max-width: 96vw !important;
+  max-height: 96vh !important;
+}
+#patientCareModal #medical-modal-slot {
+  min-height: 52vh;
+}
+#patientCareModal #teethChartBlock {
+  min-height: 50vh;
+  display: flex;
+  flex-direction: column;
+}
+#patientCareModal #teethChartFitWrap {
+  flex: 1;
+  min-height: 0;
+  align-self: stretch;
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+#patientModal .modal-sheet.patient-edit-modal { overflow-y:auto; -webkit-overflow-scrolling:touch; }
+#patientModal #pm-clinical-slot { min-height:0; overflow-x:auto; overflow-y:visible; -webkit-overflow-scrolling:touch; min-width:0; width:100%; box-sizing:border-box; }
+#patientModal #teethChartBlock { min-height:0; display:block; }
+#patientModal #teethChartFitWrap { min-height:0; display:block; width:max-content; min-width:100%; margin:0 auto; box-sizing:border-box; }
+
+/* ── アコーディオン ── */
+.acc-wrap { border:1.5px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden; }
+.acc-header {
+  display: flex; align-items: center; justify-content: space-between; min-height: 48px;
+  padding: 13px 16px; background: white; cursor: pointer; user-select: none; touch-action: manipulation;
+}
+.acc-header:active { background:var(--bg); }
+.acc-title { font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px; }
+.acc-badge { font-size:11px;font-weight:700;background:var(--accent);color:white;border-radius:10px;padding:1px 7px;min-width:18px;text-align:center; }
+.acc-arrow { font-size:12px;color:var(--muted);transition:.2s; }
+.acc-arrow.open { transform:rotate(180deg); }
+.acc-body { display:none;padding:12px 14px;background:var(--bg);border-top:1px solid var(--border); }
+.acc-body.open { display:block; }
+
+/* ── 医療検索 ── */
+.med-search-wrap { display:flex;gap:6px;margin-bottom:8px; }
+.med-search { flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:inherit; }
+.med-search:focus { outline:none;border-color:var(--accent); }
+.med-cat-bar { display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:8px;margin-bottom:8px;scrollbar-width:thin; }
+.med-cat-bar::-webkit-scrollbar { height:6px; }
+.med-cat-bar::-webkit-scrollbar-thumb { background:#cbd5e1;border-radius:4px; }
+#photoCatFilter::-webkit-scrollbar { height:6px; }
+#photoCatFilter::-webkit-scrollbar-thumb { background:#cbd5e1;border-radius:4px; }
+.med-cat-btn {
+  flex-shrink: 0; min-height: 40px; padding: 6px 12px; border-radius: 12px; border: 1.5px solid var(--border);
+  background: white; font-size: 11px; font-weight: 700; color: var(--muted); cursor: pointer; touch-action: manipulation;
+}
+.med-cat-btn.active { background:var(--accent);border-color:var(--accent);color:white; }
+.med-master-actions { display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px; }
+.med-master-action-btn {
+  padding: 8px 11px; min-height: 40px; border-radius: 9px; border: 1.5px solid var(--border); background: white;
+  color: #475569; font-size: 11px; font-weight: 800; cursor: pointer; touch-action: manipulation;
+}
+.med-master-action-btn:active { background:#f1f5f9; }
+.med-items { display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow-y:auto;margin-bottom:8px;touch-action:pan-y; }
+.med-item { position:relative;padding:7px 12px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;background:white;-webkit-tap-highlight-color:transparent;touch-action:manipulation; }
+.med-item.sel { background:var(--accent-light);border-color:var(--accent);color:var(--accent); }
+.med-item.with-del:not(.with-master-actions) { padding-right:38px; }
+/* マスタ「名称」「✕」あり：flex で病名と重ならない（選択後ブロックは .med-sel-* のまま） */
+.med-item.with-master-actions {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:7px 10px 7px 12px;
+}
+.med-item.with-master-actions .med-item-label {
+  flex:1;
+  min-width:0;
+  word-break:break-word;
+  overflow-wrap:anywhere;
+  line-height:1.35;
+  text-align:left;
+}
+.med-item.with-master-actions .med-item-del,
+.med-item.with-master-actions .med-item-rename {
+  position:static;
+  transform:none;
+  flex-shrink:0;
+}
+.med-item-del { position:absolute;top:50%;right:4px;transform:translateY(-50%);width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:var(--red);font-size:12px;font-weight:800;line-height:1;cursor:pointer;padding:0;touch-action:manipulation; }
+.med-item-rename { position:absolute;top:50%;right:28px;transform:translateY(-50%);padding:4px 8px;min-height:28px;border:none;border-radius:6px;background:#f1f5f9;color:#475569;font-size:10px;font-weight:800;line-height:1.1;cursor:pointer;white-space:nowrap;touch-action:manipulation; }
+.med-item-rename:hover { background:#e2e8f0;color:var(--accent); }
+.med-item-del:active { background:#fecaca; }
+.med-item-brand { font-size:10px;color:var(--muted);display:block;margin-top:1px; }
+.med-selected { display:flex;flex-wrap:wrap;gap:4px;margin-top:6px; }
+.med-sel-block--disease { display:flex;flex-direction:column;gap:8px;margin-bottom:10px;font-size:12px;width:100%;min-width:0;box-sizing:border-box; }
+.med-sel-disease-row { display:flex;flex-direction:row;align-items:flex-start;gap:8px;width:100%;min-width:0; }
+.med-sel-disease-row .med-tag { flex:1;min-width:0;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;display:inline-flex;flex-wrap:wrap;align-items:center;line-height:1.35; }
+.med-sel-onset-row { display:flex;flex-wrap:wrap;align-items:center;gap:6px; }
+.med-tag { padding:5px 10px;border-radius:16px;background:var(--accent-light);border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px; }
+.med-sel-block--med { position:relative;padding:6px 8px 6px 10px;border-radius:14px;background:linear-gradient(90deg,var(--med-cat-color,#2563eb) 0 5px,#fff 5px 100%);border:1px solid #dbe4f0;box-shadow:0 1px 2px rgba(15,23,42,.04); }
+.med-sel-block--med .med-tag { background:transparent;border:none;color:#1e293b;padding:0;border-radius:0;font-size:13px; }
+.med-rename-btn { font-size:11px;font-weight:700;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:3px 9px;cursor:pointer;line-height:1.2;flex-shrink:0; }
+.med-rename-btn:hover { color:var(--accent);border-color:#cbd5e1;background:#fff; }
+.med-cat-pill { display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:999px;background:color-mix(in srgb,var(--med-cat-color,#2563eb) 14%,white);border:1px solid color-mix(in srgb,var(--med-cat-color,#2563eb) 34%,white);color:color-mix(in srgb,var(--med-cat-color,#2563eb) 78%,#0f172a);font-size:10px;font-weight:800;line-height:1;white-space:nowrap; }
+.med-add-row { display:flex;gap:6px;margin-top:6px;align-items:center; }
+.med-add-btn { padding:8px 12px;min-height:44px;border-radius:8px;border:none;background:var(--green);color:white;font-size:13px;font-weight:700;cursor:pointer;touch-action:manipulation; }
+
+#acc-allergy button { touch-action: manipulation; }
+
+.cat-order-list { list-style:none;padding:0;margin:0; }
+.cat-order-item { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;margin-bottom:6px;background:#fff;box-sizing:border-box; }
+.cat-order-label { font-size:13px;font-weight:700;color:#1e293b;flex:1;min-width:0;word-break:break-word;overflow-wrap:anywhere;line-height:1.35; }
+.cat-order-actions { display:flex;gap:6px;flex-shrink:0; }
+.cat-order-move { min-width:42px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:#f8fafc;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;line-height:1; }
+.cat-order-move:disabled { opacity:.35;cursor:not-allowed; }
+
+/* ── 要介護・自立度ボタン ── */
+.care-group { margin-bottom:10px; }
+.care-group-label { font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px;display:block; }
+.care-btns { display:flex;flex-wrap:wrap;gap:5px; }
+.care-btn {
+  padding: 10px 14px; min-height: 44px; border-radius: 8px; border: 1.5px solid var(--border); background: white;
+  font-size: 13px; font-weight: 700; cursor: pointer; color: #475569; touch-action: manipulation;
+}
+.care-btn.sel { background:var(--accent);border-color:var(--accent);color:white; }
+.care-divider { display:inline-flex;align-items:center;padding:0 6px;color:var(--muted);font-weight:800;font-size:14px;user-select:none; }
+
+/* ══ PC最適化モード ══ */
+body.pc-mode .screen-wrap { max-width: 1280px; padding: 20px 32px; }
+body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(--accent); }
+
+/* 記録画面：SP でも幅計算が崩れないよう min-width:0 */
+.record-left, .record-right { min-width: 0; }
+/* スマホ：歯式（transform あり）と処置チップの誤重なりでタップが下に抜けるのを防ぐ */
+@media (max-width: 1023px) {
+  .record-left { position: relative; z-index: 0; }
+  .record-right { position: relative; z-index: 2; }
+}
+
+/* PC表示トグル時のグリッド・2カラムは「本当に広い画面」でのみ有効（スマホ横＋PC表示で歯式が潰れないように） */
+@media (min-width: 1024px) {
+  body.pc-mode .patient-fac-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: stretch; }
+  body.pc-mode .patient-fac-heading { grid-column: 1 / -1; margin-bottom: 0; }
+  body.pc-mode .patient-fac-group .patient-card { margin-bottom: 0; }
+  body.pc-mode .dash-stats { grid-template-columns:repeat(4,1fr) !important; }
+  body.pc-mode .dash-fac-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+  body.pc-mode .dash-fac-grid > div { margin-bottom:0; }
+  body.pc-mode #calGrid > div { min-height:80px;font-size:15px; }
+  body.pc-mode #calGrid .cal-day-num { font-size:16px; }
+  body.pc-mode .record-cols { display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start; }
+  body.pc-mode .settings-cols { display:grid;grid-template-columns:1fr 1fr;gap:16px; }
+  body.pc-mode .med-items { max-height:260px;display:grid;grid-template-columns:repeat(3,1fr); }
+  body.pc-mode .modal-overlay { align-items:center; }
+  body.pc-mode .modal-sheet { border-radius:16px;max-width:560px;margin:0 auto; }
+}
+
+/* ── リスクアラート ── */
+.risk-banner { border-radius:10px;padding:10px 14px;margin-bottom:6px;display:flex;gap:10px;align-items:flex-start; }
+.risk-danger { background:#fef2f2;border:1.5px solid #fca5a5; }
+.risk-warning { background:#fffbeb;border:1.5px solid #fcd34d; }
+.risk-icon { font-size:18px;flex-shrink:0; }
+.risk-msg { font-size:12px;font-weight:600;line-height:1.5; }
+
+/* ── 写真全画面モーダル ── */
+#photoViewer { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 200; display: none; flex-direction: column; overflow: hidden; }
+#photoViewer.show { display: flex; }
+#photoViewerStage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 52px 20px 12px;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+#photoViewerImg {
+  flex: none;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+#photoViewerInfo { flex: 0 0 auto; color: white; padding: 12px 16px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+#photoViewerClose { position: absolute; top: 12px; right: 16px; z-index: 2; color: white; font-size: 28px; cursor: pointer; background: none; border: none; }
+
+/* ── 帳票プレビュー：医院名・施設選択・下書き ── */
+.rpt-clinic-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.rpt-clinic-bar label { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.rpt-clinic-bar select { flex: 1; min-width: 160px; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; }
+.fax-fac-manage { margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #f8fafc; }
+.fax-fac-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.fax-fac-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: #e0f2fe; color: #0c4a6e; font-size: 12px; font-weight: 700; border: 2px solid transparent; cursor: pointer; font-family: inherit; }
+.fax-fac-chip--selected { border-color: #0284c7; background: #bae6fd; box-shadow: 0 0 0 1px #0284c7; }
+.fax-fac-chip-del { border: none; background: transparent; color: #64748b; font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.fax-pat-manage { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: #f8fafc; border: 1px dashed #cbd5e1; font-size: 11px; line-height: 1.45; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fax-pat-manage-lbl { font-weight: 800; color: var(--muted); white-space: nowrap; }
+.fax-pat-manage-hint { color: var(--muted); flex: 1; min-width: 140px; }
+.fax-pat-restore-sel { min-width: 180px; max-width: 100%; padding: 6px 8px; border-radius: 8px; border: 1.5px solid var(--border); font-size: 12px; font-family: inherit; }
+.fax-row-exclude-cell { text-align: center; vertical-align: middle; padding: 4px 2px !important; }
+.fax-row-exclude-btn { border: none; background: #fee2e2; color: #b91c1c; font-size: 16px; font-weight: 800; line-height: 1; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; touch-action: manipulation; }
+.fax-row-exclude-btn:active { background: #fecaca; }
+.fax-fac-add-sel { width: 100%; margin-top: 4px; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff; }
+.fax-page-wrap + .fax-page-wrap { margin-top: 24px; padding-top: 24px; border-top: 2px dashed #cbd5e1; }
+.report-preview-modal-footer { flex-wrap: wrap; gap: 8px; }
+.report-preview-modal-footer .btn-secondary { flex: 1 1 auto; min-width: 120px; }
+.report-preview-modal-footer .btn-rpt-draft-clear { color: #991b1b; border-color: #fca5a5; }
+
+/* ── ⑦ 歯科検診票プレビュー ── */
+#kentai-preview-host .kentai-doc-page {
+  font-family: Hiragino Kaku Gothic ProN, Hiragino Sans, Meiryo, sans-serif;
+  color: #111;
+  font-size: 10pt;
+  line-height: 1.45;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+#kentai-preview-host .kentai-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+#kentai-preview-host .kentai-title {
+  font-size: 17pt;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+#kentai-preview-host .kentai-header-meta {
+  text-align: right;
+  font-size: 9pt;
+}
+#kentai-preview-host .kentai-meta-lbl { font-weight: 700; }
+#kentai-preview-host .kentai-patient-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+  margin-bottom: 6px;
+}
+#kentai-preview-host .kentai-patient-grid th,
+#kentai-preview-host .kentai-patient-grid td {
+  border: 1px solid #333;
+  padding: 4px 6px;
+  text-align: center;
+  vertical-align: middle;
+}
+#kentai-preview-host .kentai-patient-grid th {
+  background: #f8fafc;
+  font-weight: 700;
+  font-size: 8.5pt;
+}
+#kentai-preview-host .kentai-main-split {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+#kentai-preview-host .kentai-teeth-col { flex: 0 0 54%; min-width: 0; }
+#kentai-preview-host .kentai-assess-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#kentai-preview-host .kentai-assess-box {
+  border: 1px solid #555;
+  border-radius: 10px;
+  padding: 5px 7px;
+  font-size: 8.5pt;
+}
+#kentai-preview-host .kentai-assess-title { font-weight: 800; font-size: 9pt; margin-bottom: 2px; }
+#kentai-preview-host .kentai-assess-yesno { margin-bottom: 3px; }
+#kentai-preview-host .kentai-yesno-pick,
+#kentai-preview-host .kentai-gender-pick {
+  display: inline-block;
+  border: 1px solid #333;
+  border-radius: 999px;
+  padding: 1px 10px;
+  margin-right: 4px;
+  font-size: 8.5pt;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+#kentai-preview-host .kentai-yesno-pick.on,
+#kentai-preview-host .kentai-gender-pick.on {
+  font-weight: 800;
+  box-shadow: 0 0 0 1.5px #111;
+}
+#kentai-preview-host .kentai-summary-box {
+  border: 1px solid #555;
+  border-radius: 10px;
+  padding: 6px 9px;
+  font-size: 9pt;
+  line-height: 1.5;
+  margin-bottom: 4px;
+  min-height: auto;
+}
+#kentai-preview-host .kentai-assess-edit { min-height: 2.5em; outline: none; }
+#kentai-preview-host .kentai-assess-edit:focus { box-shadow: inset 0 0 0 1px #94a3b8; border-radius: 4px; }
+#kentai-preview-host .kentai-summary-edit { min-height: 3em; outline: none; }
+#kentai-preview-host .kentai-edu-footer-wrap { margin: 4px 0 0; padding: 0; line-height: 0; }
+#kentai-preview-host .kentai-edu-footer { width: 100%; height: auto; display: block; margin: 0; padding: 0; border: 0; vertical-align: top; }
+#kentai-preview-host .kentai-doc-page { padding-bottom: 0; }
+#kentai-preview-host .kentai-annot-hint { font-size: 8px; color: var(--muted); margin: 2px 0 0; line-height: 1.35; text-align: center; }
+#kentai-preview-host .kentai-ft-annot--edit { cursor: move; user-select: none; }
+#kentai-preview-host .kentai-family-teeth { overflow: visible; display: block; }
+#kentai-preview-host .kentai-ft-tooth--edit { cursor: pointer; }
+#kentai-preview-host .kentai-bridge-line { cursor: pointer; }
+#kentai-preview-host .kentai-bridge-line--sel line { stroke: #2563eb; stroke-width: 2; }
+#kentai-preview-host .kentai-bridge-handle { cursor: grab; }
+#kentai-preview-host .kentai-bridge-handle:active { cursor: grabbing; }
+.kentai-tooth-symbol-popover {
+  position: fixed;
+  z-index: 100010;
+  min-width: 200px;
+  max-width: min(92vw, 320px);
+  padding: 10px 12px;
+  background: #fff;
+  border: 1.5px solid var(--border, #cbd5e1);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.18);
+}
+.kentai-tooth-symbol-popover-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted, #64748b);
+  margin-bottom: 8px;
+}
+.kentai-tooth-symbol-popover-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kentai-tooth-symbol-btn {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1.5px solid #cbd5e1;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.kentai-tooth-symbol-btn.on {
+  background: #dbeafe;
+  border-color: #2563eb;
+  color: #1e40af;
+}
+.kentai-tooth-symbol-clear {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+#kentai-preview-host .kentai-yesno-mini.on { font-weight: 800; text-decoration: underline; }
+#kentai-preview-host .kentai-yesno-mini { cursor: default; }
+#kentai-preview-host .kentai-yesno-mini.kentai-denture-pick { cursor: pointer; }
+#kentaiReportModal .kentai-preview-scroll-host {
+  overflow-x: auto;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  max-height: min(52vh, calc(96dvh - 320px));
+  min-height: 0;
+}
+#kentaiReportModal .modal-actions.report-preview-modal-footer {
+  flex-shrink: 0;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  background: #fff;
+  position: relative;
+  z-index: 2;
+}
+
+/* ── Toast ── */
+#toast { position: fixed; bottom: calc(var(--bottom-h) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: #1e293b; color: white; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; opacity: 0; transition: .25s; pointer-events: none; z-index: 100; white-space: nowrap; }
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── Loading ── */
+#loading { position: fixed; inset: 0; background: rgba(255,255,255,.85); display: flex; align-items: center; justify-content: center; z-index: 200; font-size: 16px; font-weight: 700; color: var(--accent); }
+
+/* ── ④ 五香様式 4マス月次報告（プレビュー＝編集用・印刷サイズより大きく表示） ── */
+#monthCarePreviewScroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+#monthCarePreviewInner .mc-matrix-doc--preview {
+  width: min(794px, 100%);
+  min-width: 320px;
+  margin: 0 auto;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #111;
+}
+#monthCarePreviewInner .mc-matrix-pages-hint { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 10px; text-align: center; }
+#monthCarePreviewInner .mc-matrix-page { border: none; padding: 4px 0; margin-bottom: 20px; background: #fff; box-sizing: border-box; }
+#monthCarePreviewInner .mc-matrix-page-num { font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 6px; }
+#monthCarePreviewInner .mc-matrix-title-row { position: relative; text-align: center; margin-bottom: 6px; min-height: 36px; }
+#monthCarePreviewInner .mc-matrix-title { font-weight: 800; font-size: 15px; letter-spacing: 0.02em; }
+#monthCarePreviewInner .mc-matrix-stamp { position: absolute; right: 0; top: 0; text-align: center; font-size: 9px; line-height: 1.1; }
+#monthCarePreviewInner .mc-matrix-stamp-circle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border: 1px solid #dc2626; border-radius: 50%;
+  color: #dc2626; padding: 0; margin: 0; box-sizing: border-box; overflow: hidden; line-height: 1;
+}
+#monthCarePreviewInner .mc-matrix-stamp-char {
+  display: block; font-weight: 800; font-size: 26px; line-height: 0.9; margin: 0; padding: 0;
+  font-family: "Hiragino Mincho ProN","Yu Mincho",serif;
+}
+#monthCarePreviewInner .mc-matrix-info-row { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 11px; font-weight: 700; margin-bottom: 6px; align-items: baseline; }
+#monthCarePreviewInner .mc-matrix-ym { margin-left: auto; }
+#monthCarePreviewInner .mc-matrix-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; border: none; }
+#monthCarePreviewInner .mc-matrix-cell { border: 1px solid #111; padding: 6px 7px; display: flex; flex-direction: column; min-height: 280px; }
+#monthCarePreviewInner .mc-matrix-cell-head { display: flex; justify-content: space-between; font-weight: 800; font-size: 12px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px; flex: 0 0 auto; }
+#monthCarePreviewInner .mc-matrix-section-label { font-weight: 800; font-size: 10px; margin: 0 0 2px; line-height: 1.2; }
+#monthCarePreviewInner .mc-matrix-today-label { margin-top: 6px; }
+#monthCarePreviewInner .mc-matrix-next-label { margin-top: 5px; padding-top: 4px; border-top: 1px solid #999; }
+#monthCarePreviewInner .mc-matrix-comment-label { margin-top: 5px; padding-top: 4px; border-top: 1px solid #999; }
+#monthCarePreviewInner .mc-matrix-today-form { flex: 0 1 auto; min-height: 0; }
+#monthCarePreviewInner .mc-gokan-cat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; margin-bottom: 2px; line-height: 1.25; }
+#monthCarePreviewInner .mc-gokan-check { display: inline-flex; align-items: center; gap: 2px; border: none; background: none; padding: 2px 0; margin: 0; font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; min-height: 22px; }
+#monthCarePreviewInner .mc-gokan-cat-main .mc-gokan-lbl { font-weight: 800; font-size: 10px; margin-right: 3px; }
+#monthCarePreviewInner .mc-gokan-sub .mc-gokan-lbl { font-size: 9.5px; margin-right: 3px; }
+#monthCarePreviewInner .mc-gokan-next .mc-gokan-lbl { font-size: 9px; margin-right: 3px; }
+#monthCarePreviewInner .mc-gokan-box { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1px solid #111; font-size: 10px; line-height: 1; flex-shrink: 0; }
+#monthCarePreviewInner .mc-gokan-box--on { font-weight: 800; }
+#monthCarePreviewInner .mc-matrix-next-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px 4px; margin: 0; flex: 0 0 auto; }
+#monthCarePreviewInner .mc-gokan-other-txt {
+  display: inline-block; min-width: 48px; max-width: 120px; border-bottom: 1px solid #666;
+  font-size: 10px; line-height: 1.3; margin-left: 2px; vertical-align: bottom; word-break: break-all;
+}
+#monthCarePreviewInner .mc-gokan-other-txt--empty { min-width: 56px; min-height: 1.1em; }
+#monthCarePreviewInner .mc-gokan-other-txt.rpt-edit:focus { background: #eff6ff; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.28); border-radius: 2px; }
+#monthCarePreviewInner .mc-matrix-patient-block { margin-bottom: 18px; }
+#monthCarePreviewInner .mc-matrix-patient-bar {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 8px 10px; margin-bottom: 8px; background: #f1f5f9; border-radius: 8px;
+}
+#monthCarePreviewInner .mc-matrix-patient-label { font-weight: 800; font-size: 13px; }
+#monthCarePreviewInner .mc-matrix-patient-del {
+  font-size: 12px; padding: 6px 10px; border-radius: 8px; border: 1px solid #cbd5e1;
+  background: #fff; color: #475569; cursor: pointer; touch-action: manipulation;
+}
+#monthCarePreviewInner .mc-matrix-comment {
+  flex: 1 1 auto; min-height: 72px; height: auto; max-height: none; margin-top: 2px;
+  font-size: 14px; line-height: 1.55; border-top: none; padding-top: 2px;
+  overflow: visible; word-break: break-word; white-space: pre-wrap;
+}
+#monthCarePreviewInner .mc-matrix-comment-edit.rpt-edit {
+  min-height: 64px; max-height: none; height: auto; overflow: visible;
+  display: block; width: 100%; font-size: 14px; line-height: 1.55; padding: 4px 2px;
+}
+@media (min-width: 768px) {
+  #monthCarePreviewInner .mc-matrix-doc--preview { font-size: 11px; }
+  #monthCarePreviewInner .mc-matrix-cell { min-height: 320px; }
+  #monthCarePreviewInner .mc-matrix-comment,
+  #monthCarePreviewInner .mc-matrix-comment-edit.rpt-edit { font-size: 15px; min-height: 80px; }
+}
+
+/* ── ⑥ 施設月次報告書（3列グリッド） ── */
+.ps-grid-preview-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+#personalSheetPreviewInner .ps-grid-doc {
+  width: min(794px, 100%);
+  min-width: 300px;
+  margin: 0 auto;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: #111;
+}
+#personalSheetPreviewInner .ps-grid-title { text-align: center; font-weight: 800; font-size: 14px; letter-spacing: 0.06em; margin-bottom: 4px; }
+#personalSheetPreviewInner .ps-grid-ym { text-align: center; font-size: 12px; font-weight: 700; margin-bottom: 2px; }
+#personalSheetPreviewInner .ps-grid-clinic { text-align: center; font-size: 11px; color: #334155; margin-bottom: 8px; }
+#personalSheetPreviewInner .ps-grid-hint { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; text-align: center; }
+#personalSheetPreviewInner .ps-grid-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+#personalSheetPreviewInner .ps-grid-table th,
+#personalSheetPreviewInner .ps-grid-table td { border: 1px solid #111; padding: 4px 5px; vertical-align: top; }
+#personalSheetPreviewInner .ps-grid-table thead th { background: #f1f5f9; font-size: 9px; font-weight: 800; text-align: center; }
+#personalSheetPreviewInner .ps-col-room { width: 11%; }
+#personalSheetPreviewInner .ps-col-name { width: 17%; }
+#personalSheetPreviewInner .ps-cell-center { text-align: center; min-height: 1.2em; }
+#personalSheetPreviewInner .ps-body-text,
+#personalSheetPreviewInner .ps-extra-comment { white-space: pre-wrap; word-break: break-word; line-height: 1.5; font-size: 11px; min-height: 2.5em; }
+#personalSheetPreviewInner .ps-extra-comment { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #94a3b8; color: #334155; }
+#personalSheetPreviewInner .ps-toolbar-row td { border: none; padding: 0 0 4px; background: transparent; }
+#personalSheetPreviewInner .ps-row-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+  padding: 8px 10px; background: #f1f5f9; border-radius: 8px; margin: 10px 0 4px;
+}
+#personalSheetPreviewInner .ps-row-label { font-weight: 800; font-size: 12px; flex: 1 1 120px; }
+#personalSheetPreviewInner .ps-row-del,
+#personalSheetPreviewInner .ps-row-photo,
+#personalSheetPreviewInner .ps-row-comment {
+  font-size: 12px; padding: 6px 10px; border-radius: 8px; border: 1px solid #cbd5e1;
+  background: #fff; color: #475569; cursor: pointer; touch-action: manipulation;
+}
+#personalSheetPreviewInner .ps-content-cell { vertical-align: top; overflow: visible; }
+#personalSheetPreviewInner .ps-text-block { margin-bottom: 4px; }
+#personalSheetPreviewInner .ps-photos-wrap {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #cbd5e1; clear: both;
+}
+#personalSheetPreviewInner .ps-photos-caption {
+  font-size: 10px; font-weight: 700; color: #64748b; margin-bottom: 6px;
+}
+#personalSheetPreviewInner .ps-photos {
+  position: relative; margin: 0; min-height: 72px;
+  border: 1px dashed #cbd5e1; border-radius: 8px; background: #fafbfc;
+  box-sizing: border-box; overflow: visible; width: 100%;
+}
+#personalSheetPreviewInner .ps-photo-widget {
+  position: absolute; z-index: 2; box-sizing: border-box;
+  cursor: move; touch-action: none;
+}
+#personalSheetPreviewInner .ps-photo-img-wrap {
+  position: relative; transform-origin: center center; overflow: visible;
+}
+#personalSheetPreviewInner .ps-photo-widget--active,
+#personalSheetPreviewInner .ps-photo-widget--manipulating {
+  z-index: 12; outline: 2px solid #2563eb; outline-offset: 2px;
+}
+#personalSheetPreviewInner .fax-em-red,
+#personalSheetPreviewInner .ps-body-text .fax-em-red,
+#personalSheetPreviewInner .ps-extra-comment .fax-em-red { color: #dc2626 !important; font-weight: 800; }
+#personalSheetPreviewInner .fax-em-hl,
+#personalSheetPreviewInner .ps-body-text .fax-em-hl,
+#personalSheetPreviewInner .ps-extra-comment .fax-em-hl { background: #fef08a !important; padding: 0 2px; }
+#personalSheetPreviewInner .fax-em-box,
+#personalSheetPreviewInner .ps-body-text .fax-em-box,
+#personalSheetPreviewInner .ps-extra-comment .fax-em-box {
+  border: 1px solid #334155 !important; padding: 1px 4px; display: inline-block;
+}
+#personalSheetPreviewInner .ps-photo-img-wrap img {
+  width: 100%; height: auto; display: block; pointer-events: none; user-select: none;
+  border: 1px solid #94a3b8; border-radius: 4px; background: #fff;
+}
+#personalSheetPreviewInner .ps-photo-handles { pointer-events: none; }
+#personalSheetPreviewInner .ps-photo-handle {
+  position: absolute; pointer-events: auto; touch-action: none;
+  background: #2563eb; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+#personalSheetPreviewInner .ps-photo-handle-br {
+  right: -7px; bottom: -7px; width: 12px; height: 12px; border-radius: 2px; cursor: nwse-resize;
+}
+#personalSheetPreviewInner .ps-photo-handle-rot {
+  top: 2px; left: 50%; margin-left: -7px; width: 14px; height: 14px;
+  border-radius: 50%; cursor: grab;
+}
+#personalSheetPreviewInner .ps-photo-handle { display: none !important; }
+#personalSheetPreviewInner .ps-photo-widget--active .ps-photo-handle,
+#personalSheetPreviewInner .ps-photo-widget--manipulating .ps-photo-handle { display: block !important; }
+#personalSheetPreviewInner .ps-body-text.fax-cell-rich,
+#personalSheetPreviewInner .ps-extra-comment.fax-cell-rich { min-height: 2.5em; font-size: 11px; line-height: 1.5; }
+#personalSheetPreviewInner .ps-photo-actions {
+  display: none; flex-wrap: wrap; gap: 4px; margin-top: 4px;
+}
+#personalSheetPreviewInner .ps-photo-widget--active .ps-photo-actions { display: flex; }
+#personalSheetPreviewInner .ps-photo-crop,
+#personalSheetPreviewInner .ps-photo-del {
+  flex: 1 1 auto; font-size: 10px; padding: 4px 6px; border-radius: 6px;
+  border: 1px solid #cbd5e1; background: #fff; color: #334155; cursor: pointer;
+  pointer-events: auto; touch-action: manipulation;
+}
+#personalSheetPreviewInner .ps-photo-del {
+  border-color: #fca5a5; color: #991b1b;
+}
+#psPhotoCropModal .ps-crop-modal-sheet { max-width: min(520px, 96vw); }
+#psPhotoCropModal .ps-crop-stage {
+  display: flex; justify-content: center; align-items: flex-start;
+  max-height: min(70vh, 480px); overflow: auto;
+  background: #0f172a; border-radius: 10px; user-select: none; touch-action: none;
+}
+#psPhotoCropModal .ps-crop-inner {
+  position: relative; display: inline-block; line-height: 0; max-width: 100%;
+}
+#psPhotoCropModal .ps-crop-inner img {
+  display: block; max-width: min(480px, 92vw); max-height: min(70vh, 480px);
+  width: auto; height: auto;
+}
+#psPhotoCropModal .ps-crop-box {
+  position: absolute; border: 2px solid #fff; box-sizing: border-box;
+  cursor: move; box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.55), 0 0 0 1px rgba(0,0,0,.35);
+}
+#psPhotoCropModal .ps-crop-handle-br {
+  position: absolute; right: -8px; bottom: -8px; width: 14px; height: 14px;
+  background: #2563eb; border: 2px solid #fff; border-radius: 2px; cursor: nwse-resize;
+}
+
+/* ── ヘッダー切替ボタン ── */
+.header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.header-toggle-btn {
+  padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--border); background: white;
+  font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-family: inherit;
+  touch-action: manipulation;
+}
+.header-toggle-btn:active { filter: brightness(0.97); }
+body.pc-mode #pcModeBtn { background: var(--accent); color: white; border-color: var(--accent); }
+
+/* ══ ダークモード ══ */
+body.dark-mode {
+  color-scheme: dark;
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-2: #334155;
+  --text: #e2e8f0;
+  --border: #475569;
+  --muted: #94a3b8;
+  --accent-light: #1e3a8a;
+  --green-light: #14532d;
+  --red-light: #450a0a;
+  --yellow-light: #422006;
+  color: var(--text);
+}
+body.dark-mode .top-header,
+body.dark-mode .fac-tabs,
+body.dark-mode .sidebar,
+body.dark-mode .bottom-nav,
+body.dark-mode .card,
+body.dark-mode .patient-card,
+body.dark-mode .history-card,
+body.dark-mode .modal-sheet,
+body.dark-mode .facility-group-card,
+body.dark-mode .photo-add-btn,
+body.dark-mode .btn-secondary,
+body.dark-mode .btn-cancel,
+body.dark-mode .pif-btn,
+body.dark-mode .care-btn,
+body.dark-mode .teeth-type-btn,
+body.dark-mode .teeth-sym-chip,
+body.dark-mode .header-toggle-btn,
+body.dark-mode .cat-order-item,
+body.dark-mode .cat-order-move,
+body.dark-mode .exam-inputs-wrap,
+body.dark-mode .ofpi-form-section,
+body.dark-mode .fax-fac-manage,
+body.dark-mode .fax-pat-manage {
+  background: var(--surface);
+  color: var(--text);
+}
+body.dark-mode .btn-secondary,
+body.dark-mode .btn-cancel,
+body.dark-mode .header-toggle-btn { border-color: var(--border); }
+body.dark-mode #darkModeBtn.header-toggle-btn--on {
+  background: #334155; color: #fbbf24; border-color: #64748b;
+}
+body.dark-mode .patient-grp-heading,
+body.dark-mode .patient-fac-heading,
+body.dark-mode .mgmt-fac-heading {
+  background: var(--surface-2); color: var(--text); border-color: var(--border);
+}
+body.dark-mode .fac-tab { color: var(--muted); }
+body.dark-mode .fac-tab.active { color: #93c5fd; background: rgba(37, 99, 235, 0.12); }
+body.dark-mode .fac-tab.fac-tab-group { background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%); }
+body.dark-mode .sidebar-nav-item:hover { background: var(--surface-2); }
+body.dark-mode .sidebar-nav-item.active { background: var(--accent-light); color: #93c5fd; }
+body.dark-mode .chip:not(.sel):not(.next-sel):not(.restricted) {
+  background: var(--surface); color: var(--text); border-color: var(--border);
+}
+body.dark-mode .form-group input,
+body.dark-mode .form-group select,
+body.dark-mode .form-group textarea,
+body.dark-mode .exam-input-row input,
+body.dark-mode .ofpi-form-grid input,
+body.dark-mode .rpt-clinic-bar select,
+body.dark-mode .fax-fac-add-sel,
+body.dark-mode .fax-pat-restore-sel,
+body.dark-mode #searchInput,
+body.dark-mode #patient-fac-filter,
+body.dark-mode #patient-inage-doctor-filter,
+body.dark-mode .visit-time-digital-part,
+body.dark-mode .facility-group-card .fg-name-row input {
+  background: var(--surface-2); color: var(--text); border-color: var(--border);
+}
+body.dark-mode .form-group input::placeholder,
+body.dark-mode #searchInput::placeholder { color: #64748b; }
+body.dark-mode .exam-calc-hint,
+body.dark-mode .ofpi-calc-hint:not(.ofpi-applicable) {
+  background: var(--surface-2); color: var(--text); border-color: var(--border);
+}
+body.dark-mode .exam-history-table th { color: var(--muted); border-color: var(--border); }
+body.dark-mode .exam-history-table td { border-color: var(--border); }
+body.dark-mode .exam-history-row:active { background: var(--surface-2); }
+body.dark-mode .teeth-sym-chip .tsc-sym { color: var(--text); }
+body.dark-mode .med-sel-block--med {
+  background: linear-gradient(90deg, var(--med-cat-color, #2563eb) 0 5px, var(--surface) 5px 100%);
+  border-color: var(--border);
+}
+body.dark-mode .med-sel-block--med .med-tag { color: var(--text); }
+body.dark-mode .med-rename-btn { background: var(--surface-2); border-color: var(--border); color: var(--muted); }
+body.dark-mode .med-rename-btn:hover { background: var(--surface); color: #93c5fd; }
+body.dark-mode .med-item-rename { background: var(--surface-2); color: var(--muted); }
+body.dark-mode .cat-order-label { color: var(--text); }
+body.dark-mode #loading {
+  background: rgba(15, 23, 42, 0.92); color: #93c5fd;
+}
+body.dark-mode #teethChartBlock { background: var(--surface) !important; }
+body.dark-mode .cal-day-rec-card:hover { background: #1e3a8a !important; }
+body.dark-mode .cal-day-rec-card:active { background: #1d4ed8 !important; }
+body.dark-mode .history-treat-scroll::-webkit-scrollbar-thumb { background: #475569; }
+body.dark-mode .record-duplicate-warn { background: #450a0a; color: #fecaca; }
+body.dark-mode .risk-danger { background: #450a0a; border-color: #991b1b; color: #fecaca; }
+body.dark-mode .risk-warning { background: #422006; border-color: #a16207; color: #fde68a; }
+body.dark-mode .patient-card.p-monthly-limit-reached,
+body.dark-mode .manage-item.mgmt-row-limit-reached {
+  background: #422006; border-color: #b45309;
+}
+body.dark-mode .pif-btn.on { background: var(--accent); color: white; border-color: var(--accent); }
+body.dark-mode .care-btn.sel,
+body.dark-mode .chip.sel,
+body.dark-mode .chip.next-sel { color: white; }
+body.dark-mode #plist-st-active { background: var(--green-light); }
+body.dark-mode #plist-st-left,
+body.dark-mode #plist-st-deceased { background: var(--surface); color: var(--muted); }
+.shindan-doc .shindan-doctor-line { margin-top: 8px; font-weight: 600; }
+.shindan-tpl-list { max-height: min(36vh, 280px); overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.shindan-tpl-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; text-align: left; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: #fff; cursor: pointer; font-family: inherit;
+}
+.shindan-tpl-item:hover { border-color: var(--accent); background: #eff6ff; }
+.shindan-tpl-name { font-size: 13px; font-weight: 700; color: #0f172a; }
+.shindan-tpl-reading { font-size: 11px; color: var(--muted); }
+.shindan-preview-host .shindan-doc {
+  background: #fff; color: #111; padding: 20px 18px; border: 1px solid var(--border); border-radius: 8px;
+  font-family: "Yu Mincho", "Hiragino Mincho ProN", "MS PMincho", serif; font-size: 13px; line-height: 1.65;
+}
+.shindan-preview-host .shindan-title { text-align: center; font-size: 18px; font-weight: 700; letter-spacing: 0.75em; margin: 0 0 22px; text-indent: 0.75em; }
+.shindan-preview-host .shindan-line { margin-bottom: 6px; }
+.shindan-preview-host .shindan-line-topgap { margin-top: 12px; }
+.shindan-preview-host .shindan-disease-block,
+.shindan-preview-host .shindan-body-block { min-height: 2.5em; margin: 4px 0 0 3.5em; }
+.shindan-preview-host .shindan-clinic-block { margin-top: 28px; text-align: right; }
+.shindan-preview-host .shindan-clinic-lines { display: inline-block; text-align: left; margin-top: 6px; }
+.shindan-preview-host .rpt-edit { border-bottom: 1px dashed #cbd5e1; min-width: 2em; }
+.shindan-preview-host .rpt-edit-block { display: block; border-bottom: none; }
+.shindan-preview-host .shindan-multiline { min-height: 2.5em; padding: 4px 6px; border: 1px dashed #e2e8f0; border-radius: 4px; }
+
+/* 帳票プレビュー本体は紙のイメージのためライトのまま */
+body.dark-mode .ofpi-doc,
+body.dark-mode .shindan-doc,
+body.dark-mode .mc-matrix-doc,
+body.dark-mode .cm-doc,
+body.dark-mode #kentai-preview-host .kentai-doc-page,
+body.dark-mode #shindanPreviewInner .shindan-doc,
+body.dark-mode #personalSheetPreviewInner .ps-grid-doc,
+body.dark-mode .iss-doc {
+  background: #fff; color: #111;
+}
+body.dark-mode .rpt-clinic-bar,
+body.dark-mode .report-preview-modal-footer,
+body.dark-mode .mc-matrix-facility-preview > :not(.mc-matrix-doc):not(.ofpi-doc):not(.cm-doc) {
+  color: var(--text);
+}
+</style>

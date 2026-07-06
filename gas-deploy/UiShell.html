@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>訪問歯科カルテ</title>
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="訪問歯科">
+<meta name="mobile-web-app-capable" content="yes">
+</head>
+<body>
+<script>
+(function () {
+  try {
+    if (localStorage.getItem("darkMode") === "1") {
+      document.documentElement.classList.add("dark-mode-boot");
+      var s = document.createElement("style");
+      s.textContent = "html.dark-mode-boot body{background:#0f172a}html.dark-mode-boot #boot-loading{background:rgba(15,23,42,.95)!important;color:#93c5fd!important}";
+      document.head.appendChild(s);
+    }
+  } catch (e) {}
+})();
+</script>
+<div id="boot-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;font-size:16px;font-weight:700;color:#2563eb;background:rgba(255,255,255,.9);z-index:99999">読み込み中…</div>
+<div id="app-mount"></div>
+<script>
+(function () {
+  var CACHE_KEY = "visitDentalAppBundle_v39";
+
+  function injectStyle(css) {
+    var s = document.createElement("style");
+    s.textContent = css;
+    document.head.appendChild(s);
+  }
+  function injectBody(html) {
+    var mount = document.getElementById("app-mount");
+    if (!mount) return;
+    mount.insertAdjacentHTML("beforebegin", html);
+    mount.remove();
+  }
+  function injectScript(code) {
+    var s = document.createElement("script");
+    s.textContent = code;
+    document.body.appendChild(s);
+  }
+  function fail(msg) {
+    var el = document.getElementById("boot-loading");
+    if (el) {
+      el.style.color = "#b91c1c";
+      el.style.padding = "20px";
+      el.style.textAlign = "center";
+      el.style.whiteSpace = "pre-wrap";
+      el.textContent = "読み込みエラー:\n" + msg;
+    }
+  }
+  function applyBundle(bundle) {
+    if (!bundle || !bundle.body || !bundle.script) {
+      fail("画面データの取得に失敗しました");
+      return;
+    }
+    injectStyle(bundle.css || "");
+    injectBody(bundle.body || "");
+    injectScript(bundle.script || "");
+  }
+  function loadFromCache() {
+    try {
+      var raw = sessionStorage.getItem(CACHE_KEY);
+      if (!raw) return false;
+      var bundle = JSON.parse(raw);
+      if (!bundle || !bundle.body || !bundle.script) return false;
+      applyBundle(bundle);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  if (!loadFromCache()) {
+    google.script.run
+      .withSuccessHandler(function (bundle) {
+        try {
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(bundle));
+        } catch (e) { /* 容量超過時はキャッシュなしで続行 */ }
+        applyBundle(bundle);
+      })
+      .withFailureHandler(fail)
+      .getAppBundle();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,302 @@
+{
+  "title": "歯科病名テンプレート集",
+  "description": "診断書・カルテ等で使用される歯科の傷病名を分類別に整理した参考データ",
+  "sourceNote": "厚生労働省「標準歯科病名マスター」（令和6年4月改定版）の分類体系をベースに作成",
+  "categories": [
+    {
+      "categoryId": "caries",
+      "categoryName": "う蝕（むし歯）関連",
+      "diagnoses": [
+        {
+          "name": "う蝕症",
+          "reading": "うしょくしょう",
+          "description": "進行度によりC0〜C4に分類。エナメル質のみの初期段階から歯髄まで達した状態まで幅がある"
+        },
+        {
+          "name": "根面う蝕",
+          "reading": "こんめんうしょく",
+          "description": "歯茎が下がって露出した歯根部分に生じるむし歯。初期・進行の区分がある"
+        },
+        {
+          "name": "二次う蝕",
+          "reading": "にじうしょく",
+          "description": "詰め物や被せ物の下・境目に新たに生じたむし歯"
+        }
+      ]
+    },
+    {
+      "categoryId": "pulp_disease",
+      "categoryName": "歯髄疾患",
+      "diagnoses": [
+        {
+          "name": "急性歯髄炎",
+          "reading": "きゅうせいしずいえん",
+          "description": "歯の神経（歯髄）に急性の炎症が生じた状態"
+        },
+        {
+          "name": "壊疽性歯髄炎",
+          "reading": "えそせいしずいえん",
+          "description": "歯髄が壊死し腐敗が進行した状態"
+        },
+        {
+          "name": "血行性歯髄炎",
+          "reading": "けっこうせいしずいえん",
+          "description": "血液を介して感染が波及して生じる歯髄炎"
+        },
+        {
+          "name": "残髄炎",
+          "reading": "ざんずいえん",
+          "description": "根管治療後、取り残された歯髄組織に生じる炎症"
+        },
+        {
+          "name": "上行性歯髄炎",
+          "reading": "じょうこうせいしずいえん",
+          "description": "歯周組織側から根管を通じて歯髄に炎症が波及した状態"
+        },
+        {
+          "name": "慢性増殖性歯髄炎",
+          "reading": "まんせいぞうしょくせいしずいえん",
+          "description": "歯髄が慢性的に増殖性の炎症を起こしている状態"
+        }
+      ]
+    },
+    {
+      "categoryId": "periapical_disease",
+      "categoryName": "根尖性歯周疾患",
+      "diagnoses": [
+        {
+          "name": "急性化膿性歯根膜炎",
+          "reading": "きゅうせいかのうせいしこんまくえん",
+          "description": "歯根膜に急性の化膿性炎症が生じた状態"
+        },
+        {
+          "name": "急性根尖性歯周炎",
+          "reading": "きゅうせいこんせんせいししゅうえん",
+          "description": "歯根の先端（根尖）周囲組織に急性炎症が生じた状態"
+        },
+        {
+          "name": "慢性根尖性歯周炎",
+          "reading": "まんせいこんせんせいししゅうえん",
+          "description": "根尖周囲組織の慢性的な炎症"
+        },
+        {
+          "name": "歯根嚢胞",
+          "reading": "しこんのうほう",
+          "description": "根尖病変が進行し、膿の袋（嚢胞）を形成した状態"
+        }
+      ]
+    },
+    {
+      "categoryId": "periodontal_disease",
+      "categoryName": "歯周疾患（歯肉・歯周組織）",
+      "diagnoses": [
+        {
+          "name": "潰瘍性歯肉炎",
+          "reading": "かいようせいしにくえん",
+          "description": "歯肉に潰瘍を伴う炎症"
+        },
+        {
+          "name": "肥大性歯肉炎",
+          "reading": "ひだいせいしにくえん",
+          "description": "歯肉が炎症により肥大した状態"
+        },
+        {
+          "name": "慢性萎縮性老人性歯肉炎",
+          "reading": "まんせいいしゅくせいろうじんせいしにくえん",
+          "description": "加齢に伴う歯肉の萎縮性の慢性炎症"
+        },
+        {
+          "name": "慢性歯肉炎",
+          "reading": "まんせいしにくえん",
+          "description": "歯肉のみに炎症がとどまる慢性的な状態"
+        },
+        {
+          "name": "急性歯周炎",
+          "reading": "きゅうせいししゅうえん",
+          "description": "歯周組織に急性の炎症症状が現れた状態"
+        },
+        {
+          "name": "単純性歯周炎",
+          "reading": "たんじゅんせいししゅうえん",
+          "description": "他の全身疾患を伴わない歯周炎"
+        },
+        {
+          "name": "慢性歯周炎",
+          "reading": "まんせいししゅうえん",
+          "description": "歯を支える組織が慢性的に破壊されていく状態"
+        },
+        {
+          "name": "化膿性歯周炎",
+          "reading": "かのうせいししゅうえん",
+          "description": "歯周組織に化膿を伴う炎症"
+        },
+        {
+          "name": "歯周症",
+          "reading": "ししゅうしょう",
+          "description": "炎症よりも組織の変性が主体となる歯周疾患"
+        },
+        {
+          "name": "歯肉膿瘍",
+          "reading": "しにくのうよう",
+          "description": "歯肉に限局した膿の貯留"
+        },
+        {
+          "name": "智歯周囲炎",
+          "reading": "ちしゅうしゅういえん",
+          "description": "親知らず（智歯）周囲の歯肉に生じる炎症"
+        }
+      ]
+    },
+    {
+      "categoryId": "tmj_disorder",
+      "categoryName": "顎関節疾患",
+      "diagnoses": [
+        {
+          "name": "顎関節症I型（咀嚼筋痛障害）",
+          "reading": "がくかんせつしょう いちがた",
+          "description": "顎を動かす筋肉に痛みが生じるタイプ"
+        },
+        {
+          "name": "顎関節症II型（顎関節痛障害）",
+          "reading": "がくかんせつしょう にがた",
+          "description": "顎関節そのものに痛みが生じるタイプ"
+        },
+        {
+          "name": "顎関節症III型（関節円板障害）",
+          "reading": "がくかんせつしょう さんがた",
+          "description": "関節円板の位置異常によるタイプ。復位性・非復位性に分かれる"
+        },
+        {
+          "name": "顎関節症IV型（変形性顎関節症）",
+          "reading": "がくかんせつしょう よんがた",
+          "description": "関節の骨組織に変形が生じたタイプ"
+        }
+      ]
+    },
+    {
+      "categoryId": "oral_surgery_trauma",
+      "categoryName": "口腔外科・外傷系",
+      "diagnoses": [
+        {
+          "name": "埋伏歯",
+          "reading": "まいふくし",
+          "description": "骨や歯肉の中に埋まったまま萌出しない歯。智歯（親知らず）に多い"
+        },
+        {
+          "name": "顎骨骨折",
+          "reading": "がくこつこっせつ",
+          "description": "外傷等により上顎骨・下顎骨が折れた状態"
+        },
+        {
+          "name": "歯の脱臼",
+          "reading": "はのだっきゅう",
+          "description": "外傷により歯が本来の位置からずれる、または完全に抜け落ちた状態"
+        },
+        {
+          "name": "歯の破折",
+          "reading": "はのはせつ",
+          "description": "外傷等により歯冠・歯根が折れた状態"
+        },
+        {
+          "name": "顎骨嚢胞",
+          "reading": "がくこつのうほう",
+          "description": "顎の骨内にできる嚢胞。含歯性嚢胞などが含まれる"
+        },
+        {
+          "name": "口腔腫瘍（良性）",
+          "reading": "こうくうしゅよう りょうせい",
+          "description": "口腔内にできる良性の腫瘍"
+        },
+        {
+          "name": "口腔腫瘍（悪性）",
+          "reading": "こうくうしゅよう あくせい",
+          "description": "口腔内にできる悪性の腫瘍"
+        }
+      ]
+    },
+    {
+      "categoryId": "mucosal_disease",
+      "categoryName": "粘膜疾患",
+      "diagnoses": [
+        {
+          "name": "口内炎（アフタ性口内炎）",
+          "reading": "こうないえん あふたせい",
+          "description": "口腔粘膜にできる円形の炎症性潰瘍"
+        },
+        {
+          "name": "口腔カンジダ症",
+          "reading": "こうくうかんじだしょう",
+          "description": "カンジダ菌の増殖による口腔粘膜の感染症"
+        },
+        {
+          "name": "白板症",
+          "reading": "はくばんしょう",
+          "description": "口腔粘膜に生じる白色の病変。前癌病変とされる場合がある"
+        }
+      ]
+    },
+    {
+      "categoryId": "developmental_anomaly",
+      "categoryName": "歯・顎の発育異常",
+      "diagnoses": [
+        {
+          "name": "過剰歯",
+          "reading": "かじょうし",
+          "description": "通常の歯数より多く形成された歯"
+        },
+        {
+          "name": "エナメル質形成不全",
+          "reading": "えなめるしつけいせいふぜん",
+          "description": "エナメル質が正常に形成されなかった状態"
+        },
+        {
+          "name": "歯牙欠損（先天性）",
+          "reading": "しがけっそん せんてんせい",
+          "description": "生まれつき歯が形成されていない状態"
+        }
+      ]
+    },
+    {
+      "categoryId": "occlusion_prosthetic",
+      "categoryName": "咬合・補綴関連",
+      "diagnoses": [
+        {
+          "name": "咬合異常",
+          "reading": "こうごういじょう",
+          "description": "上下の歯の噛み合わせに異常がある状態"
+        },
+        {
+          "name": "歯列不正",
+          "reading": "しれつふせい",
+          "description": "歯並びに異常がある状態"
+        },
+        {
+          "name": "補綴物脱離",
+          "reading": "ほてつぶつだつり",
+          "description": "クラウンやブリッジ、義歯などが外れた状態"
+        },
+        {
+          "name": "補綴物破損",
+          "reading": "ほてつぶつはそん",
+          "description": "クラウンやブリッジ、義歯などが破損した状態"
+        }
+      ]
+    },
+    {
+      "categoryId": "others",
+      "categoryName": "その他",
+      "diagnoses": [
+        {
+          "name": "知覚過敏症",
+          "reading": "ちかくかびんしょう",
+          "description": "冷たいものや歯ブラシの刺激等で歯がしみる症状"
+        },
+        {
+          "name": "口腔習癖関連異常",
+          "reading": "こうくうしゅうへきかんれんいじょう",
+          "description": "指しゃぶりや歯ぎしり等の習癖に関連する異常"
+        }
+      ]
+    }
+  ]
+}
