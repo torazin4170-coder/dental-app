@@ -9876,7 +9876,13 @@ function onRptClinicSelectChange_(kind) {
     if (!sel) return;
     if (!lastKentaiPreviewHdr_) lastKentaiPreviewHdr_ = {};
     lastKentaiPreviewHdr_.clinic = sel.value;
-    refreshKentaiPreviewDom();
+    const host = document.getElementById("kentai-preview-host");
+    const clinicEl = host && host.querySelector('[data-rpt-path="clinic"]');
+    if (clinicEl) {
+      clinicEl.textContent = sel.value;
+    } else {
+      refreshKentaiPreviewDom();
+    }
     return;
   }
   if (kind === "shindan") {
@@ -13937,7 +13943,7 @@ function kentaiResetFormFields_() {
   });
   ["kentai-need-oral", "kentai-need-denture", "kentai-need-perio", "kentai-need-caries"].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.value = "なし";
+    if (el) el.value = "あり";
   });
 }
 
@@ -14100,7 +14106,7 @@ function openKentaiReportModal() {
       });
       ["kentai-need-oral", "kentai-need-denture", "kentai-need-perio", "kentai-need-caries"].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.value = "なし";
+        if (el) el.value = "あり";
       });
     }
     populateRptClinicSelect_(document.getElementById("kentaiClinicSelect"), (draft && draft.hdr && draft.hdr.clinic) || document.getElementById("clinic-name")?.value || "");
@@ -14321,10 +14327,28 @@ ${getRptPrintWhitespaceCss_()}
   showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
 }
 
+/** 患者に「初診」処置の記録があるか */
+function patientHasShoshinRecord_(pid) {
+  return (localRecords || []).some(r =>
+    String(r.patient_id || "") === String(pid || "") && recordHasTreatment_(r, "初診")
+  );
+}
+
+/** 無料検診済みだが初診前 → タイムテーブル対象外 */
+function isMushoKenshinAwaitingShoshin_(p) {
+  if (!p) return false;
+  if (patientHasShoshinRecord_(p.id)) return false;
+  if (isMushoKenshinIntake_(p.intake_stage)) return true;
+  return (localRecords || []).some(r =>
+    String(r.patient_id || "") === String(p.id || "") && recordHasTreatment_(r, MUSHO_KENSHIN_TREATMENT)
+  );
+}
+
 /** ⑧ 施設の有効患者（居室順・担当Dr絞り込み前） */
 function getVisitTimetablePatientsAll_(facId) {
   return (PATIENTS || [])
     .filter(p => (p.status || "active") === "active" && String(p.fac) === String(facId))
+    .filter(p => !isMushoKenshinAwaitingShoshin_(p))
     .slice()
     .sort(comparePatientRoom_);
 }
@@ -16714,7 +16738,7 @@ function clearKentaiPreviewDraft_() {
   });
   ["kentai-need-oral", "kentai-need-denture", "kentai-need-perio", "kentai-need-caries"].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.value = "なし";
+    if (el) el.value = "あり";
   });
   populateRptClinicSelect_(document.getElementById("kentaiClinicSelect"), document.getElementById("clinic-name")?.value || "");
   refreshKentaiPreviewDom();
