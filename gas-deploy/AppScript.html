@@ -2431,9 +2431,9 @@ function init() {
     if (initSettled) return;
     showInitError_(new Error(
       "データの読み込みがタイムアウトしました。\n"
-      + "・Vercel の Production URL を開いているか確認（dental-app.vercel.app は別アプリです）\n"
-      + "・/api/ping が {\"ok\":true} を返すか確認\n"
-      + "・GAS_WEBAPP_URL と GAS の「全員」アクセスを確認"
+      + "・ブラウザで /api/gas-check を開いて GAS 接続を確認\n"
+      + "・Vercel の GAS_WEBAPP_URL が GAS ウェブアプリの /exec URL か確認\n"
+      + "・GAS のアクセスが「全員」、Main.gs に doPost があるか確認"
     ));
   }, 45000);
   Promise.all([

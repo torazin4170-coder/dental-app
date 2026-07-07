@@ -36,7 +36,11 @@ Production URL が新しいカルテの入口になります。
 
 **重要:** `https://dental-app.vercel.app` は別の古いアプリです。必ず Vercel ダッシュボード → プロジェクト **dental-app**（Root Directory = `visit-dental-app`）→ **Visit** の URL を使ってください。タイトルが「訪問歯科カルテ」、起動画面が「読み込み中…」（日本語）であれば正しい版です。
 
-診断: `https://（Production URL）/api/ping` → `{"ok":true,"message":"API is running"}`
+診断:
+- `https://（Production URL）/api/ping` → `{"ok":true,"message":"API is running"}`
+- `https://（Production URL）/api/gas-check` → `{"ok":true,"message":"GAS 接続 OK"}`（GAS 設定の確認用）
+
+**GAS 404 エラーが出る場合:** Vercel → Settings → Environment Variables の `GAS_WEBAPP_URL` を、GAS エディタ → デプロイを管理 → ウェブアプリの **`/exec` URL** に更新し、**Redeploy** してください（スプレッドシートの URL では動きません）。
 
 ## GAS への手貼りは必要？
 
@@ -74,6 +78,6 @@ visit-dental-app/
 | 症状 | 確認 |
 |------|------|
 | 503 GAS_WEBAPP_URL is not set | Vercel の環境変数 / `.env.local` |
-| 502 / Unknown function | Main.gs が古い（`doPost` 未反映） |
+| 502 GAS が JSON 以外 (404) | `GAS_WEBAPP_URL` が古い/誤り（スプレッドシート URL 等）。`/api/gas-check` で確認 → `/exec` URL に更新して Redeploy |
 | データ空 | GAS の `SS_ID` / スプレッドシート接続 |
 | 502 HTML が返る | GAS URL が `/dev` ではなく `/exec` か、デプロイ権限 |

@@ -9,36 +9,28 @@ export type GasRpcResponse = {
   error?: string
 }
 
-/** 大きなデータは POST 必須 */
-const POST_ONLY_FUNCS = new Set([
-  'savePhoto',
-  'saveReportPreviewDraftSimple',
-  'saveReportPreviewDraftChunk',
-  'saveGeneratedDocumentSimple',
-  'saveGeneratedDocumentChunk',
-])
-
-function shouldUsePost(func: string, args: unknown[]): boolean {
-  if (POST_ONLY_FUNCS.has(func)) return true
-  try {
-    return JSON.stringify(args).length > 6000
-  } catch {
-    return true
+function normalizeGasWebAppUrl(raw: string): { url: string; error: string | null } {
+  let url = String(raw || '').trim().replace(/^[?=]+/, '')
+  if (!url) {
+    return { url: '', error: 'GAS_WEBAPP_URL が未設定です（Vercel の Environment Variables を確認）' }
   }
-}
-
-async function callGasViaGet(
-  gasUrl: string,
-  func: string,
-  args: unknown[],
-): Promise<GasRpcResponse> {
-  const url = new URL(gasUrl)
-  url.searchParams.set('rpc', '1')
-  url.searchParams.set('func', func)
-  url.searchParams.set('args', JSON.stringify(args))
-
-  const res = await fetch(url.toString(), { method: 'GET', redirect: 'follow' })
-  return parseGasResponse(res)
+  if (/docs\.google\.com|sheets\.google\.com|drive\.google\.com/i.test(url)) {
+    return {
+      url: '',
+      error: 'GAS_WEBAPP_URL がスプレッドシート/Drive の URL になっています。/exec のウェブアプリ URL を設定してください。',
+    }
+  }
+  if (!/script\.google\.com/i.test(url)) {
+    return { url: '', error: 'GAS_WEBAPP_URL は script.google.com の /exec URL である必要があります。' }
+  }
+  if (/\/dev\/?$/i.test(url)) {
+    return { url: '', error: 'GAS_WEBAPP_URL が /dev です。/exec URL を設定してください。' }
+  }
+  url = url.replace(/\/+$/, '')
+  if (!/\/exec$/i.test(url)) {
+    url += '/exec'
+  }
+  return { url, error: null }
 }
 
 async function callGasViaPost(
@@ -77,11 +69,14 @@ async function parseGasResponse(res: Response): Promise<GasRpcResponse> {
     }
     return parsed
   } catch {
-    const hint = text.includes('Page Not Found')
-      ? ' GAS URL が /exec か、doPost/doGet RPC が入った Main.gs を新バージョンでデプロイ済みか確認してください。'
-      : text.includes('Authorization')
-        ? ' GAS のアクセスを「全員」にしてください。'
-        : ''
+    const hint =
+      res.status === 404 || text.includes('Page Not Found')
+        ? ' GAS_WEBAPP_URL を最新の /exec に更新し Redeploy してください。'
+        : text.includes('Authorization')
+          ? ' GAS のアクセスを「全員」にしてください。'
+          : text.includes('<!DOCTYPE') || text.includes('<html')
+            ? ' Main.gs に doPost（RPC_ALLOWLIST_）を入れ、新バージョンでデプロイしてください。'
+            : ''
     return {
       ok: false,
       error: `GAS が JSON 以外を返しました (${res.status}): ${text.slice(0, 180)}${hint}`,
@@ -93,9 +88,9 @@ export async function forwardGasRpc(
   body: GasRpcRequest,
   gasUrl: string,
 ): Promise<GasRpcResponse> {
-  const url = String(gasUrl || '').trim()
-  if (!url) {
-    return { ok: false, error: 'GAS_WEBAPP_URL が未設定です（Vercel の Environment Variables を確認）' }
+  const normalized = normalizeGasWebAppUrl(gasUrl)
+  if (normalized.error) {
+    return { ok: false, error: normalized.error }
   }
   const func = String(body?.func || '').trim()
   if (!func) {
@@ -104,10 +99,7 @@ export async function forwardGasRpc(
   const args = Array.isArray(body.args) ? body.args : []
 
   try {
-    if (shouldUsePost(func, args)) {
-      return await callGasViaPost(url, func, args)
-    }
-    return await callGasViaGet(url, func, args)
+    return await callGasViaPost(normalized.url, func, args)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return { ok: false, error: `GAS への接続失敗: ${msg}` }
