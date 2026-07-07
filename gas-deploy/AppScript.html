@@ -2426,11 +2426,23 @@ function init() {
   ensureRecordDraftListeners();
   ensureUndoHooks_();
   const initYm = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  let initSettled = false;
+  const initTimeoutId = setTimeout(() => {
+    if (initSettled) return;
+    showInitError_(new Error(
+      "データの読み込みがタイムアウトしました。\n"
+      + "・Vercel の Production URL を開いているか確認（dental-app.vercel.app は別アプリです）\n"
+      + "・/api/ping が {\"ok\":true} を返すか確認\n"
+      + "・GAS_WEBAPP_URL と GAS の「全員」アクセスを確認"
+    ));
+  }, 45000);
   Promise.all([
     gasCall("getFacilities"),
     gasCall("getPatients", null),
     gasCall("getMonthlyRecords", initYm),
   ]).then(([facsJson, patientsJson, recsJson]) => {
+    initSettled = true;
+    clearTimeout(initTimeoutId);
     try {
       FACILITIES = JSON.parse(facsJson);
       PATIENTS = JSON.parse(patientsJson);
@@ -2471,7 +2483,11 @@ function init() {
     } catch (e) {
       showInitError_(e);
     }
-  }).catch(err => showInitError_(err));
+  }).catch(err => {
+    initSettled = true;
+    clearTimeout(initTimeoutId);
+    showInitError_(err);
+  });
   const now = new Date(); calYear = now.getFullYear(); calMonth = now.getMonth();
 }
 

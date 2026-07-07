@@ -34,7 +34,18 @@ npm run dev
 
 Production URL が新しいカルテの入口になります。
 
-## GAS 側の更新手順（UI を gas-deploy で直したあと）
+**重要:** `https://dental-app.vercel.app` は別の古いアプリです。必ず Vercel ダッシュボード → プロジェクト **dental-app**（Root Directory = `visit-dental-app`）→ **Visit** の URL を使ってください。タイトルが「訪問歯科カルテ」、起動画面が「読み込み中…」（日本語）であれば正しい版です。
+
+診断: `https://（Production URL）/api/ping` → `{"ok":true,"message":"API is running"}`
+
+## GAS への手貼りは必要？
+
+| 使い方 | UI（画面）の更新 | バックエンド（Main.gs） |
+|--------|------------------|-------------------------|
+| **Vercel 版だけ使う** | **不要**（git push で自動） | GAS で新バージョンデプロイ |
+| **GAS 単体版も使う** | gas-deploy 4ファイルを GAS に貼り替え | 同上 |
+
+今回の変更（タイムテーブル・検診票など）は **UI の変更** です。Vercel 版だけ使うなら **GAS への HTML 手貼りは不要** です。
 
 | 配信先 | やること |
 |--------|----------|

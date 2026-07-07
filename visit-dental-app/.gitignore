@@ -1,5 +1,6 @@
 node_modules
 dist
+vendor/gas-deploy
 .env.local
 .env*.local
 *.tsbuildinfo
