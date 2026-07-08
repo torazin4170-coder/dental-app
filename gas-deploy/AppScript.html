@@ -2480,6 +2480,7 @@ function init() {
       try { renderReportsTab(); } catch (e) { console.error(e); }
       const ld = document.getElementById("loading");
       if (ld) ld.style.display = "none";
+      if (typeof refreshAppHealthPanel_ === "function") refreshAppHealthPanel_();
     } catch (e) {
       showInitError_(e);
     }
@@ -2492,9 +2493,38 @@ function init() {
 }
 
 /* google.script.run ラッパー（Promise化）。Vercel 版は window.__gasCallFetch を main.ts が注入 */
+function gasCallWithRetry_(fn) {
+  return fn().catch(() => new Promise(r => setTimeout(r, 2000)).then(fn));
+}
+
+function refreshAppHealthPanel_() {
+  const card = document.getElementById("app-health-card");
+  const body = document.getElementById("app-health-body");
+  if (!card || !body) return;
+  if (typeof window.__gasCallFetch !== "function") {
+    card.style.display = "none";
+    return;
+  }
+  card.style.display = "";
+  body.textContent = "確認中…";
+  fetch("/api/gas-check").then(r => r.json()).then(j => {
+    const build = (typeof window.__APP_BUILD_ID__ !== "undefined" && window.__APP_BUILD_ID__) ? String(window.__APP_BUILD_ID__) : "—";
+    if (j && j.ok) {
+      body.innerHTML = "✅ GAS 接続 OK<br>ビルド: " + escHtml(build)
+        + "<br>GAS: " + escHtml(j.deploymentIdPreview || "—")
+        + (j.method ? "<br>経路: " + escHtml(j.method) : "");
+    } else {
+      body.innerHTML = "❌ " + escHtml((j && j.error) || "接続失敗")
+        + "<br><span style=\"font-size:11px\">" + escHtml((j && j.note) || (j && j.hint) || "設定→DEPLOY.md 参照") + "</span>";
+    }
+  }).catch(e => {
+    body.textContent = "❌ " + (e && e.message ? e.message : String(e));
+  });
+}
+
 function gasCall(funcName, ...args) {
   if (typeof window.__gasCallFetch === "function") {
-    return window.__gasCallFetch(funcName, ...args);
+    return gasCallWithRetry_(() => window.__gasCallFetch(funcName, ...args));
   }
   return new Promise((resolve, reject) => {
     let runner = google.script.run

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "node scripts/sync-gas-deploy.mjs && tsc -b && vite build",
     "predev": "node scripts/sync-gas-deploy.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:gas": "node scripts/verify-gas-connection.mjs",
+    "deploy:check": "node ../scripts/what-to-deploy.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",

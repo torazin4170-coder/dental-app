@@ -998,6 +998,12 @@
       </details>
     </div>
     <div class="settings-panel" id="spanel-doctor">
+      <div class="card" id="app-health-card" style="display:none">
+        <div style="font-size:13px;font-weight:800;color:#334155">接続状態（Vercel版）</div>
+        <div id="app-health-body" style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.55">確認中…</div>
+        <button type="button" class="btn btn-secondary" style="margin-top:8px;width:100%;font-size:12px" onclick="refreshAppHealthPanel_()">再接続を確認</button>
+        <p style="font-size:10px;color:var(--muted);margin:8px 0 0;line-height:1.45">画面の修正は git push のみで反映されます。GAS への手貼りは不要です。</p>
+      </div>
       <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">担当医名</label><input type="text" id="doctor-name" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
       <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">医院名</label><input type="text" id="clinic-name" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>
       <div class="card"><label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">診断書用・医院住所</label><input type="text" id="clinic-address" placeholder="例: 埼玉県行田市川崎7丁目21番地7" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit"></div>

@@ -1,5 +1,7 @@
 # 訪問歯科カルテ — Vercel 版（段階1）
 
+**デプロイの手間を減らす一覧 → [DEPLOY.md](./DEPLOY.md)**（UI 変更は `git push` のみ）
+
 GAS Web アプリの**フロントのみ** Vercel に載せ、データ/API は従来どおり **Google Apps Script（Main.gs）** に置く構成です。
 
 - UI ソース: `../gas-deploy/`（AppStyles / AppBody / AppScript）をビルド時に取り込み

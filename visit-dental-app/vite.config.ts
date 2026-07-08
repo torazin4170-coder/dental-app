@@ -76,6 +76,12 @@ function gasRpcDevPlugin(): Plugin {
 
 export default defineConfig({
   base: './',
+  define: {
+    'import.meta.env.VITE_BUILD_ID': JSON.stringify(
+      process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7)
+        || new Date().toISOString().slice(0, 16).replace('T', ' '),
+    ),
+  },
   server: {
     fs: {
       allow: ['..'],

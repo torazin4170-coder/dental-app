@@ -1,0 +1,26 @@
+# push 後に Production の GAS 接続を自動確認（Secrets 設定時のみ動作）
+name: GAS smoke check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gas-deploy/**'
+      - 'visit-dental-app/**'
+
+jobs:
+  gas-check:
+    runs-on: ubuntu-latest
+    if: ${{ vars.VERCEL_PRODUCTION_URL != '' || secrets.VERCEL_PRODUCTION_URL != '' }}
+    steps:
+      - name: Call /api/gas-check
+        env:
+          BASE: ${{ vars.VERCEL_PRODUCTION_URL || secrets.VERCEL_PRODUCTION_URL }}
+        run: |
+          set -e
+          URL="${BASE%/}/api/gas-check"
+          echo "GET $URL"
+          BODY=$(curl -fsS --max-time 60 "$URL")
+          echo "$BODY"
+          echo "$BODY" | grep -q '"ok":true' || (echo "GAS smoke FAILED" && exit 1)
+          echo "GAS smoke OK"

@@ -23,6 +23,7 @@ function injectBody(html: string): void {
 
 function injectScript(code: string): void {
   installGasCallFetch()
+  window.__APP_BUILD_ID__ = import.meta.env.VITE_BUILD_ID || ''
   window.addEventListener('error', (ev) => {
     const boot = document.getElementById('boot-loading')
     if (!boot || boot.style.display === 'none') return
