@@ -7,3 +7,11 @@ export function callGasRpc(
   func: string,
   args: unknown[],
 ): Promise<{ ok: boolean; result?: unknown; error?: string }>
+
+export function describeGasDeployment_(url: string): { ok: boolean; preview: string | null }
+
+export function probeGasWebAppReachable_(
+  gasUrl: string,
+): Promise<{ reachable: boolean; status: number; detail: string }>
+
+export const GAS_CHECK_FIX_STEPS_: string[]

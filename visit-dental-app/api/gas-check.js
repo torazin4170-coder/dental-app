@@ -1,4 +1,10 @@
-import { callGasRpc, normalizeGasWebAppUrl } from '../lib/gas-http.js'
+import {
+  callGasRpc,
+  describeGasDeployment_,
+  GAS_CHECK_FIX_STEPS_,
+  normalizeGasWebAppUrl,
+  probeGasWebAppReachable_,
+} from '../lib/gas-http.js'
 
 export default async function handler(_req, res) {
   const normalized = normalizeGasWebAppUrl(process.env.GAS_WEBAPP_URL)
@@ -7,12 +13,28 @@ export default async function handler(_req, res) {
       ok: false,
       step: 'env',
       error: normalized.error,
-      hint: 'Vercel → dental-app → Settings → Environment Variables → GAS_WEBAPP_URL',
+      fix: GAS_CHECK_FIX_STEPS_,
     })
     return
   }
 
-  const host = normalized.url.replace(/^https?:\/\//, '').split('/')[0]
+  const deployment = describeGasDeployment_(normalized.url)
+  const reach = await probeGasWebAppReachable_(normalized.url)
+
+  if (!reach.reachable) {
+    res.status(502).json({
+      ok: false,
+      step: 'url',
+      error: 'GAS ウェブアプリ URL に到達できません: ' + reach.detail,
+      httpStatus: reach.status,
+      deploymentIdPreview: deployment.preview,
+      gasHost: 'script.google.com',
+      fix: GAS_CHECK_FIX_STEPS_,
+      note: 'Main.gs に doPost があっても、Vercel の URL が古いデプロイを指していると 404 になります。',
+    })
+    return
+  }
+
   const out = await callGasRpc(normalized.url, 'getFacilities', [])
 
   if (out.ok) {
@@ -20,7 +42,8 @@ export default async function handler(_req, res) {
       ok: true,
       step: 'gas',
       message: 'GAS 接続 OK（getFacilities 成功）',
-      gasHost: host,
+      deploymentIdPreview: deployment.preview,
+      gasHost: 'script.google.com',
     })
     return
   }
@@ -29,9 +52,10 @@ export default async function handler(_req, res) {
     ok: false,
     step: 'gas',
     error: out.error,
-    gasHost: host,
-    hint: String(out.error || '').includes('404')
-      ? 'GAS_WEBAPP_URL を最新の /exec に更新し、Main.gs を新バージョンでデプロイしてください'
-      : 'GAS のアクセスを「全員」にし、Main.gs に RPC_ALLOWLIST_ / doPost / doGet（rpc=1）があるか確認してください',
+    deploymentIdPreview: deployment.preview,
+    gasHost: 'script.google.com',
+    urlReachable: reach.detail,
+    fix: GAS_CHECK_FIX_STEPS_,
+    note: 'エディタの Main.gs と「デプロイ済みバージョン」は別です。必ず「新バージョン」で再デプロイしてください。',
   })
 }
