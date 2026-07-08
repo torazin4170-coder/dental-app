@@ -2,6 +2,8 @@ export function normalizeGasWebAppUrl(raw: string): { url: string; error: string
 
 export function parseGasText(res: Response): Promise<{ ok: boolean; result?: unknown; error?: string }>
 
+export function buildGasGetRpcUrl_(gasUrl: string, func: string, args: unknown[]): string
+
 export function callGasRpc(
   gasUrl: string,
   func: string,

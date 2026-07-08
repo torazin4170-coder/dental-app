@@ -1,4 +1,12 @@
-/** GAS Web App への HTTP 呼び出し（POST → リダイレクトは GET で追跡） */
+/** GAS Web App への HTTP 呼び出し */
+
+const POST_ONLY = new Set([
+  'savePhoto',
+  'saveReportPreviewDraftSimple',
+  'saveReportPreviewDraftChunk',
+  'saveGeneratedDocumentSimple',
+  'saveGeneratedDocumentChunk',
+])
 
 export function normalizeGasWebAppUrl(raw) {
   let url = String(raw || '').trim().replace(/^[?=]+/, '')
@@ -30,7 +38,6 @@ export function normalizeGasWebAppUrl(raw) {
   return { url, error: null }
 }
 
-/** 診断用: デプロイ ID の先頭だけ返す（秘密は伏せる） */
 export function describeGasDeployment_(url) {
   const m = String(url || '').match(/\/macros\/s\/([^/]+)\/exec/i)
   if (!m) return { ok: false, preview: null }
@@ -38,14 +45,35 @@ export function describeGasDeployment_(url) {
   return { ok: true, preview: id.length > 10 ? id.slice(0, 10) + '…' : id + '…' }
 }
 
-async function followGasRedirects(res) {
-  for (let i = 0; i < 6; i++) {
-    if (![301, 302, 303, 307, 308].includes(res.status)) break
-    const loc = res.headers.get('location')
-    if (!loc) break
-    res = await fetch(loc, { method: 'GET', redirect: 'manual' })
+function shouldUsePost(func, args) {
+  if (POST_ONLY.has(func)) return true
+  try {
+    return JSON.stringify(args).length > 6000
+  } catch {
+    return true
   }
-  return res
+}
+
+export function buildGasGetRpcUrl_(gasUrl, func, args) {
+  const url = new URL(gasUrl)
+  url.searchParams.set('rpc', '1')
+  url.searchParams.set('func', func)
+  url.searchParams.set('args', JSON.stringify(args))
+  return url.toString()
+}
+
+function htmlGasHint_(text, status) {
+  if (!text.includes('<!DOCTYPE') && !text.includes('<!doctype') && !text.includes('<html')) return ''
+  if (text.includes('訪問歯科カルテ') || text.includes('boot-loading')) {
+    return ' GAS は接続できていますが、画面HTMLが返りました。Main.gs を「AppsScript-Main-差し替え用.gs」で全文置換し、doGet の rpc=1 入りで「新バージョン」再デプロイしてください。'
+  }
+  if (status === 404 || text.includes('Page Not Found')) {
+    return ' GAS_WEBAPP_URL が古いか誤りです。デプロイ管理の最新 /exec URL を Vercel に設定し Redeploy してください。'
+  }
+  if (text.includes('Authorization')) {
+    return ' GAS のアクセスを「全員」にしてください。'
+  }
+  return ' Main.gs（doGet rpc=1 / doPost）を新バージョンでデプロイ済みか確認してください。'
 }
 
 export async function parseGasText(res) {
@@ -57,16 +85,7 @@ export async function parseGasText(res) {
     }
     return parsed
   } catch {
-    let hint = ''
-    if (res.status === 404 || text.includes('Page Not Found')) {
-      hint = ' GAS の「デプロイを管理」から最新の /exec URL をコピーし、Vercel の GAS_WEBAPP_URL を更新 → Redeploy してください（エディタに doPost があっても、古い URL では動きません）。'
-    } else if (res.status === 405) {
-      hint = ' GAS のリダイレクト応答の処理に失敗しました。'
-    } else if (text.includes('Authorization')) {
-      hint = ' GAS のアクセスを「全員」にしてください。'
-    } else if (text.includes('<!DOCTYPE') || text.includes('<html')) {
-      hint = ' ウェブアプリを「新バージョン」で再デプロイし、新しい /exec URL を Vercel に設定してください。'
-    }
+    const hint = htmlGasHint_(text, res.status)
     return {
       ok: false,
       error: 'GAS が JSON 以外を返しました (' + res.status + '): ' + text.slice(0, 160) + hint,
@@ -74,7 +93,6 @@ export async function parseGasText(res) {
   }
 }
 
-/** ウェブアプリ URL 自体が生きているか（404 なら URL が完全に誤り） */
 export async function probeGasWebAppReachable_(gasUrl) {
   try {
     const res = await fetch(gasUrl, { method: 'GET', redirect: 'manual' })
@@ -94,27 +112,61 @@ export async function probeGasWebAppReachable_(gasUrl) {
   }
 }
 
-async function callGasPostRpc(gasUrl, func, args) {
-  const payload = JSON.stringify({ func, args })
-  let res = await fetch(gasUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: payload,
-    redirect: 'manual',
-  })
-  res = await followGasRedirects(res)
+/** 読み取り系: doGet ?rpc=1（リダイレクトは GET のまま追跡） */
+async function callGasGetRpc(gasUrl, func, args) {
+  const rpcUrl = buildGasGetRpcUrl_(gasUrl, func, args)
+  let res = await fetch(rpcUrl, { method: 'GET', redirect: 'manual' })
+  for (let i = 0; i < 6; i++) {
+    if (![301, 302, 303, 307, 308].includes(res.status)) {
+      return parseGasText(res)
+    }
+    const loc = res.headers.get('location')
+    if (!loc) return parseGasText(res)
+    const next = new URL(loc, rpcUrl)
+    if (!next.searchParams.has('rpc')) {
+      next.searchParams.set('rpc', '1')
+      next.searchParams.set('func', func)
+      next.searchParams.set('args', JSON.stringify(args))
+    }
+    res = await fetch(next.toString(), { method: 'GET', redirect: 'manual' })
+  }
   return parseGasText(res)
 }
 
-/** すべて doPost 経由（デプロイ済み doPost があれば動く） */
+/** 大きい payload: doPost（リダイレクト先にも POST。GET にすると画面 HTML になる） */
+async function callGasPostRpc(gasUrl, func, args) {
+  const payload = JSON.stringify({ func, args })
+  const postOpts = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    redirect: 'manual',
+  }
+  let res = await fetch(gasUrl, postOpts)
+  for (let i = 0; i < 6; i++) {
+    const tryParsed = await parseGasText(res.clone())
+    if (tryParsed.ok) return tryParsed
+    if (![301, 302, 303, 307, 308].includes(res.status)) {
+      return tryParsed
+    }
+    const loc = res.headers.get('location')
+    if (!loc) return tryParsed
+    res = await fetch(loc, postOpts)
+  }
+  return parseGasText(res)
+}
+
 export async function callGasRpc(gasUrl, func, args) {
-  return callGasPostRpc(gasUrl, func, args)
+  if (shouldUsePost(func, args)) {
+    return callGasPostRpc(gasUrl, func, args)
+  }
+  return callGasGetRpc(gasUrl, func, args)
 }
 
 export const GAS_CHECK_FIX_STEPS_ = [
-  'GAS エディタ → 右上「デプロイ」→「デプロイを管理」',
-  '種類「ウェブアプリ」の ✏️ → バージョン「新バージョン」→「デプロイ」',
-  '表示された URL（…/exec）を **全文コピー**',
-  'Vercel → dental-app → Settings → Environment Variables → GAS_WEBAPP_URL に貼り替え',
+  'GAS エディタで Main.gs を開き Ctrl+F →「rpc」→ doGet 内に rpc=1 があるか確認',
+  'なければ「AppsScript-Main-差し替え用.gs」を Main.gs に全文コピーして保存',
+  'デプロイ → デプロイを管理 → ウェブアプリ ✏️ → バージョン「新バージョン」→ デプロイ',
+  '表示された /exec URL を Vercel の GAS_WEBAPP_URL（Value）に貼り替え → Save',
   'Vercel → Deployments → Redeploy → /api/gas-check を再確認',
 ]
