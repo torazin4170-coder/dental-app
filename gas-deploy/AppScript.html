@@ -10594,7 +10594,7 @@ function buildKentaiFamilyTeethSvg_(familyTeeth, opts) {
     <line x1="${cx}" y1="${cyU - ry - 8}" x2="${cx}" y2="${cyL + ry + 8}" stroke="#94a3b8" stroke-width="0.8"/>
     <line x1="${cx - rx - 4}" y1="${midY}" x2="${cx + rx + 4}" y2="${midY}" stroke="#94a3b8" stroke-width="0.8"/>
     <text x="${cx - rx - 12}" y="${midY + 3}" text-anchor="middle" font-size="8.5" fill="#64748b">右</text>
-    <text x="${cx + rx + 8}" y="${midY + 3}" text-anchor="end" font-size="8.5" fill="#64748b">左</text>
+    <text x="${cx + rx + 14}" y="${midY + 3}" text-anchor="start" font-size="8.5" fill="#64748b">左</text>
     <text x="${cx}" y="${cyU - ry - 12}" text-anchor="middle" font-size="8.5" fill="#64748b">上</text>
     <text x="${cx}" y="${cyL + ry + 18}" text-anchor="middle" font-size="8.5" fill="#64748b">下</text>
   </g>`;
@@ -10659,6 +10659,7 @@ function buildKentaiGenderHtml_(gender, forPrint) {
 
 function getKentaiPrintStyles_() {
   return `@page { size: A4 portrait; margin: 8mm 10mm 0 10mm; }
+*, *::before, *::after { box-sizing: border-box; }
 body { font-family: Hiragino Kaku Gothic ProN,Hiragino Sans,Meiryo,sans-serif; margin: 0; color: #111; font-size: 10pt; }
 .kentai-doc-page { max-width: 100%; padding-bottom: 0; }
 .kentai-header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
