@@ -14439,14 +14439,15 @@ let visitTimetableDraftCache_ = {};
 
 function normalizeVisitTimetableDraft_(o) {
   if (!o || typeof o !== "object") {
-    return { rows: {}, outputYmd: "", headerDoctorSlot: "", headerDoctorText: "", pageLayout: "one" };
+    return { rows: {}, outputYmd: "", headerDoctorSlot: "", headerDoctorText: "", pageLayout: "one", excludedPatientIds: [] };
   }
   return {
     rows: o.rows && typeof o.rows === "object" ? o.rows : {},
     outputYmd: o.outputYmd || o.visitYmd || "",
     headerDoctorSlot: o.headerDoctorSlot || "",
     headerDoctorText: o.headerDoctorText || "",
-    pageLayout: o.pageLayout === "two" ? "two" : "one"
+    pageLayout: o.pageLayout === "two" ? "two" : "one",
+    excludedPatientIds: Array.isArray(o.excludedPatientIds) ? o.excludedPatientIds.map(String) : []
   };
 }
 
@@ -14485,13 +14486,15 @@ async function loadVisitTimetableDraftAsync_(facId) {
 
 function saveVisitTimetableDraft_(facId, rowsObj, ctx) {
   ctx = ctx || {};
+  const cached = visitTimetableDraftCache_[facId];
   const payload = {
     outputYmd: ctx.outputYmd || "",
     headerDoctorSlot: ctx.headerDoctorSlot || "",
     headerDoctorText: ctx.headerDoctorText || "",
     pageLayout: ctx.pageLayout === "two" ? "two" : "one",
     updatedAt: new Date().toISOString(),
-    rows: rowsObj
+    rows: rowsObj,
+    excludedPatientIds: ctx.excludedPatientIds || (cached && cached.excludedPatientIds) || []
   };
   visitTimetableDraftCache_[facId] = normalizeVisitTimetableDraft_(payload);
   rptSaveDraft_("visitTt", facId, payload);
@@ -14641,11 +14644,13 @@ function buildVisitTimetableEditorRows_(facId) {
   const hdrSlot = lastVisitTimetableCtx_ ? lastVisitTimetableCtx_.headerDoctorSlot : "";
   const patients = getVisitTimetablePatients_(facId, hdrSlot);
   const draft = loadVisitTimetableDraft_(facId);
+  const excluded = new Set((draft.excludedPatientIds || []).map(String));
+  const visiblePatients = patients.filter(p => !excluded.has(String(p.id)));
   const MIN_ROWS = 15;
-  const rowCount = Math.max(MIN_ROWS, patients.length);
+  const rowCount = Math.max(MIN_ROWS, visiblePatients.length);
   const rows = [];
   for (let i = 0; i < rowCount; i++) {
-    const p = patients[i] || null;
+    const p = visiblePatients[i] || null;
     const key = p ? `p:${p.id}` : `__e_${i}`;
     const saved = (draft.rows && draft.rows[key]) || {};
     const treatSaved = saved.treat;
@@ -14669,6 +14674,21 @@ function visitTimetableInpHtml_(field, val) {
   return `<input type="text" class="tt-inp${extra}" data-tt-field="${field}" value="${escAttr(val != null ? String(val) : "")}" oninput="scheduleVisitTimetableDraftSave_()">`;
 }
 
+function removeVisitTimetablePatientRow_(patientId) {
+  if (!lastVisitTimetableCtx_) return;
+  const facId = lastVisitTimetableCtx_.facId;
+  const draft = visitTimetableDraftCache_[facId] || loadVisitTimetableDraft_(facId);
+  const excluded = [...(draft.excludedPatientIds || [])];
+  const pid = String(patientId);
+  if (!excluded.includes(pid)) excluded.push(pid);
+  draft.excludedPatientIds = excluded;
+  visitTimetableDraftCache_[facId] = draft;
+  lastVisitTimetableCtx_.rows = buildVisitTimetableEditorRows_(facId);
+  renderVisitTimetableEditor_();
+  scheduleVisitTimetableDraftSave_();
+  showToast("行を除外しました（下書き消去でリセットできます）");
+}
+
 function visitTimetableM0CellHtml_(row) {
   if (row && row.patientId) {
     const v = row.m0 != null ? String(row.m0) : "";
@@ -14681,6 +14701,10 @@ function visitTimetableMasterFieldCellHtml_(field, row) {
   if (row && row.patientId) {
     const v = row[field] != null ? String(row[field]) : "";
     const extra = field === "name" ? " tt-inp-name" : "";
+    if (field === "name") {
+      const pid = escAttr(String(row.patientId));
+      return `<span class="tt-inp tt-inp-master${extra} tt-name-remove-wrap" data-tt-field="${field}" title="患者リストから自動"><span class="tt-name-text">${escHtml(v)}</span><button type="button" class="tt-row-remove-btn" onclick="removeVisitTimetablePatientRow_('${pid}')" title="この行をタイムテーブルから除く">×</button></span>`;
+    }
     return `<span class="tt-inp tt-inp-master${extra}" data-tt-field="${field}" title="患者リストから自動">${escHtml(v)}</span>`;
   }
   return visitTimetableInpHtml_(field, row ? row[field] : "");

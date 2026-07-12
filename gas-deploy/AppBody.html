@@ -856,8 +856,12 @@
       .tt-edit-table input.tt-inp { width: 100%; box-sizing: border-box; border: none; background: transparent; font-size: 13px; font-family: inherit; text-align: center; padding: 8px 4px; min-height: 36px; margin: 0; }
       .tt-edit-table .tt-inp-m0-auto { display: block; width: 100%; box-sizing: border-box; font-size: 13px; font-weight: 800; text-align: center; padding: 8px 4px; min-height: 36px; color: #334155; }
       .tt-edit-table .tt-inp-master { display: block; width: 100%; box-sizing: border-box; font-size: 13px; padding: 8px 4px; min-height: 36px; color: #334155; }
-      .tt-edit-table .tt-inp-master.tt-inp-name { text-align: left; padding-left: 10px; padding-right: 6px; }
+      .tt-edit-table .tt-inp-master.tt-inp-name { text-align: left; padding-left: 10px; padding-right: 4px; }
       .tt-edit-table .tt-inp-master:not(.tt-inp-name) { text-align: center; font-weight: 800; }
+      .tt-name-remove-wrap { display: flex !important; align-items: center; justify-content: space-between; gap: 2px; }
+      .tt-name-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .tt-row-remove-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #fca5a5; background: #fee2e2; color: #dc2626; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
+      .tt-row-remove-btn:hover { background: #fca5a5; border-color: #ef4444; }
       .tt-edit-table input.tt-inp-treat { text-align: left; padding-left: 10px; padding-right: 6px; }
       .tt-edit-table input.tt-inp-name { text-align: left; padding-left: 10px; padding-right: 6px; }
       .tt-edit-table input.tt-inp:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: #fff; }
@@ -1374,7 +1378,7 @@
             <tbody id="visitTimetableEditBody"></tbody>
           </table>
         </div>
-        <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">患者行の<strong>番号・患者氏名</strong>は<strong>患者リストの最新データ</strong>を自動表示します（手入力の上書きは残りません）。<strong>時刻・治療内容</strong>は任意に修正できます。左端の<strong>当月診療回数</strong>も自動（0回は空欄）。稲毛施設は右プレビューで<strong>各行の担当Dr</strong>も変更できます。</p>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">患者行の<strong>番号・患者氏名</strong>は<strong>患者リストの最新データ</strong>を自動表示します。氏名右の<strong style="color:#dc2626">×</strong>で行を除外できます（下書き消去でリセット）。<strong>時刻・治療内容</strong>は任意に修正できます。左端の<strong>当月診療回数</strong>も自動（0回は空欄）。稲毛施設は右プレビューで<strong>各行の担当Dr</strong>も変更できます。</p>
       </div>
       <div style="display:flex;flex-direction:column;min-height:0;flex:1">
         <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;flex-shrink:0">プレビュー（印刷イメージ）</div>
