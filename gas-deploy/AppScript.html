@@ -2416,8 +2416,109 @@ function showInitError_(err) {
   }
 }
 
+/** 起動キャッシュ（前回成功分を先に表示し、待たされ感を減らす） */
+const INIT_CACHE_KEY_ = "vd_init_cache_v1";
+const INIT_CACHE_MAX_AGE_MS_ = 7 * 24 * 60 * 60 * 1000;
+
+function hideFullLoading_() {
+  const ld = document.getElementById("loading");
+  if (ld) ld.style.display = "none";
+}
+
+function setDataSyncBanner_(text) {
+  const el = document.getElementById("dataSyncBanner");
+  if (!el) return;
+  const t = String(text || "").trim();
+  if (!t) {
+    el.classList.remove("is-on");
+    el.textContent = "";
+    el.setAttribute("aria-hidden", "true");
+    return;
+  }
+  el.textContent = t;
+  el.classList.add("is-on");
+  el.setAttribute("aria-hidden", "false");
+}
+
+function readInitCache_() {
+  try {
+    const raw = localStorage.getItem(INIT_CACHE_KEY_);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || !Array.isArray(o.facilities) || !Array.isArray(o.patients)) return null;
+    if (o.savedAt && Date.now() - Number(o.savedAt) > INIT_CACHE_MAX_AGE_MS_) return null;
+    return o;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeInitCache_(payload) {
+  try {
+    localStorage.setItem(INIT_CACHE_KEY_, JSON.stringify({
+      savedAt: Date.now(),
+      ym: payload.ym || "",
+      facilities: payload.facilities || [],
+      patients: payload.patients || [],
+      records: payload.records || [],
+      settings: payload.settings || {}
+    }));
+  } catch (_) {
+    /* quota 超過などは無視 */
+  }
+}
+
+function applySettingsObject_(settings) {
+  const s = settings || {};
+  const doctorEl = document.getElementById("doctor-name");
+  if (doctorEl) doctorEl.value = s.doctor_name || "";
+  const clinicEl = document.getElementById("clinic-name");
+  if (clinicEl) clinicEl.value = s.clinic_name || "";
+  const ca = document.getElementById("clinic-address");
+  if (ca) ca.value = s.clinic_address || "";
+  const cld = document.getElementById("clinic-location-detail");
+  if (cld) cld.value = s.clinic_location_detail || "";
+  const ct = document.getElementById("clinic-tel");
+  if (ct) ct.value = s.clinic_tel || "";
+  renderClinicNamesSettingsList_(s.clinic_names || "");
+  renderIssStaffSettingsList_(s.share_sheet_staff || "");
+  renderInageDoctorSettingsList_(s);
+  loadFacilityGroupsFromSettings_(s);
+  buildFacTabs();
+  rebuildMgmtFacFilterOptions_();
+  rebuildPatientFacFilterOptions_();
+  updatePatientInageFilterCard_();
+  updateMgmtInageDoctorFilterWrap_();
+  updateReportInageDoctorFilterWrap_();
+  renderPatients();
+}
+
+/** 起動データの画面反映（キャッシュ／本番共通） */
+function applyBootData_(facs, patients, recs, settings, opts) {
+  opts = opts || {};
+  FACILITIES = Array.isArray(facs) ? facs : [];
+  PATIENTS = Array.isArray(patients) ? patients : [];
+  localRecords = Array.isArray(recs) ? recs : [];
+  buildFacTabs();
+  rebuildMgmtFacFilterOptions_();
+  rebuildPatientFacFilterOptions_();
+  syncPatientListStatusButtonStyles_();
+  // キャッシュ表示→最新同期のときは、ユーザーが変えつつあるフィルタを潰さない
+  if (!opts.preserveFilters) setPatientIntakeFilter("all");
+  if (settings && typeof settings === "object") {
+    applySettingsObject_(settings);
+  } else {
+    updateMgmtInageDoctorFilterWrap_();
+    updatePatientInageFilterCard_();
+    updateReportInageDoctorFilterWrap_();
+    renderPatients();
+  }
+  try { renderReportsTab(); } catch (e) { console.error(e); }
+  hideFullLoading_();
+}
+
 /* ═══════════════════════════════════════
-   INIT — GAS から全データ取得
+   INIT — GAS から全データ取得（キャッシュ即表示＋並列取得）
 ═══════════════════════════════════════ */
 function init() {
   ensureTeethChartBlockListener();
@@ -2428,9 +2529,32 @@ function init() {
   ensureRecordDraftListeners();
   ensureUndoHooks_();
   const initYm = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth();
+
+  const cache = readInitCache_();
+  let paintedFromCache = false;
+  if (cache) {
+    paintedFromCache = true;
+    const cachedRecs = cache.ym === initYm && Array.isArray(cache.records) ? cache.records : [];
+    try {
+      applyBootData_(cache.facilities, cache.patients, cachedRecs, cache.settings || null);
+      setDataSyncBanner_("最新データを同期中…");
+    } catch (e) {
+      paintedFromCache = false;
+      console.error(e);
+    }
+  }
+
   let initSettled = false;
   const initTimeoutId = setTimeout(() => {
     if (initSettled) return;
+    if (paintedFromCache) {
+      setDataSyncBanner_("");
+      showToast("同期がタイムアウトしました。前回のデータを表示中です");
+      return;
+    }
     showInitError_(new Error(
       "データの読み込みがタイムアウトしました。\n"
       + "・ブラウザで /api/gas-check を開いて GAS 接続を確認\n"
@@ -2438,60 +2562,45 @@ function init() {
       + "・GAS のアクセスが「全員」、Main.gs に doPost があるか確認"
     ));
   }, 45000);
+
   Promise.all([
     gasCall("getFacilities"),
     gasCall("getPatients", null),
     gasCall("getMonthlyRecords", initYm),
-  ]).then(([facsJson, patientsJson, recsJson]) => {
+    gasCall("getSettings").catch(() => null)
+  ]).then(([facsJson, patientsJson, recsJson, settingsJson]) => {
     initSettled = true;
     clearTimeout(initTimeoutId);
     try {
-      FACILITIES = JSON.parse(facsJson);
-      PATIENTS = JSON.parse(patientsJson);
-      localRecords = JSON.parse(recsJson);
-      buildFacTabs();
-      rebuildMgmtFacFilterOptions_();
-      rebuildPatientFacFilterOptions_();
-      syncPatientListStatusButtonStyles_();
-      setPatientIntakeFilter("all");
-      gasCall("getSettings").then(s => {
-        const settings = JSON.parse(s);
-        document.getElementById("doctor-name").value = settings.doctor_name || "";
-        document.getElementById("clinic-name").value = settings.clinic_name || "";
-        const ca = document.getElementById("clinic-address");
-        if (ca) ca.value = settings.clinic_address || "";
-        const cld = document.getElementById("clinic-location-detail");
-        if (cld) cld.value = settings.clinic_location_detail || "";
-        const ct = document.getElementById("clinic-tel");
-        if (ct) ct.value = settings.clinic_tel || "";
-        renderClinicNamesSettingsList_(settings.clinic_names || "");
-        renderIssStaffSettingsList_(settings.share_sheet_staff || "");
-        renderInageDoctorSettingsList_(settings);
-        loadFacilityGroupsFromSettings_(settings);
-        buildFacTabs();
-        rebuildMgmtFacFilterOptions_();
-        rebuildPatientFacFilterOptions_();
-        updatePatientInageFilterCard_();
-        updateMgmtInageDoctorFilterWrap_();
-        updateReportInageDoctorFilterWrap_();
-        renderPatients();
-      }).catch(e => showInitError_(e));
-      updateMgmtInageDoctorFilterWrap_();
-      updatePatientInageFilterCard_();
-      updateReportInageDoctorFilterWrap_();
-      try { renderReportsTab(); } catch (e) { console.error(e); }
-      const ld = document.getElementById("loading");
-      if (ld) ld.style.display = "none";
+      const facs = JSON.parse(facsJson);
+      const patients = JSON.parse(patientsJson);
+      const recs = JSON.parse(recsJson);
+      let settings = null;
+      if (settingsJson != null && settingsJson !== "") {
+        try { settings = JSON.parse(settingsJson); } catch (_) { settings = null; }
+      }
+      applyBootData_(facs, patients, recs, settings, { preserveFilters: paintedFromCache });
+      writeInitCache_({ ym: initYm, facilities: facs, patients, records: recs, settings: settings || {} });
+      setDataSyncBanner_("");
       if (typeof refreshAppHealthPanel_ === "function") refreshAppHealthPanel_();
     } catch (e) {
-      showInitError_(e);
+      if (paintedFromCache) {
+        setDataSyncBanner_("");
+        showToast("同期に失敗しました。前回のデータを表示中です");
+      } else {
+        showInitError_(e);
+      }
     }
   }).catch(err => {
     initSettled = true;
     clearTimeout(initTimeoutId);
-    showInitError_(err);
+    if (paintedFromCache) {
+      setDataSyncBanner_("");
+      showToast("同期に失敗しました。前回のデータを表示中です");
+    } else {
+      showInitError_(err);
+    }
   });
-  const now = new Date(); calYear = now.getFullYear(); calMonth = now.getMonth();
 }
 
 /* google.script.run ラッパー（Promise化）。Vercel 版は window.__gasCallFetch を main.ts が注入 */
@@ -6001,6 +6110,25 @@ function setTreatmentRecordSaving_(active) {
   }
 }
 
+/** 診療記録本体のあと、歯式・メモ・タグ更新を並列で送る（待ち時間短縮） */
+function finishTreatmentSideSaves_(pid) {
+  const teethP = gasCall("saveTeethData", pid, JSON.stringify(currentTeethData));
+  const notesP = savePatientNotesFromRecord_(pid, getRecordPatientNotesValue_());
+  return Promise.all([teethP, notesP]).then(([, notesRes]) => {
+    if (notesRes !== "ok") showToast("患者メモの保存に失敗しました（診療記録・歯式は保存済み）");
+    return Promise.all([
+      applyIntakeStageAfterTreatmentSave_(pid, selectedTreatments),
+      applyPatientMasterAfterTreatmentSave_(pid, selectedTreatments)
+    ]);
+  });
+}
+
+function localHistoryRecordsForPatient_(pid) {
+  return localRecords
+    .filter(r => String(r.patient_id) === String(pid))
+    .sort((a, b) => String(b.visit_date || "").localeCompare(String(a.visit_date || "")));
+}
+
 function saveTreatmentRecord() {
   if (!selectedPatient) return;
   if (!selectedTreatments.size) { showToast("処置内容を1つ以上選択してください"); return; }
@@ -6042,18 +6170,17 @@ function saveTreatmentRecord() {
           showToast("診療記録が見つかりません（IDまたはシート列の不整合）。スプレッドシート treatments の id 列・visit_date 列を確認してください。");
           throw new Error(String(res));
         }
-        return gasCall("saveTeethData", pid, JSON.stringify(currentTeethData));
+        return finishTreatmentSideSaves_(pid);
       })
-      .then(() => savePatientNotesFromRecord_(pid, getRecordPatientNotesValue_()))
-      .then(res => {
-        if (res !== "ok") showToast("患者メモの保存に失敗しました（診療記録・歯式は保存済み）");
-      })
-      .then(() => applyIntakeStageAfterTreatmentSave_(pid, selectedTreatments))
-      .then(() => applyPatientMasterAfterTreatmentSave_(pid, selectedTreatments))
-      .then(() => gasCall("getTreatmentsByPatient", pid))
-      .then(json => {
-        const list = JSON.parse(json);
-        mergeTreatmentRecordsIntoLocal_(list);
+      .then(() => {
+        mergeTreatmentRecordsIntoLocal_([{
+          ...data,
+          visit_date: visitDateVal,
+          id: editingTreatmentId,
+          visit_time_start: data.visit_time_start || "",
+          visit_time_end: data.visit_time_end || "",
+          exam_data: data.exam_data || ""
+        }]);
         markRestricted(
           pid,
           [...selectedTreatments].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
@@ -6064,8 +6191,19 @@ function saveTreatmentRecord() {
         showToast("記録を更新しました（歯式・患者メモも保存済み）");
         refreshTreatmentBaseline();
         clearUndoStack_();
+        const list = localHistoryRecordsForPatient_(pid);
         openHistory(pid, { records: list });
         paintCalGrid();
+        // 裏でサーバ履歴を取り直し（画面はブロックしない）
+        gasCall("getTreatmentsByPatient", pid).then(json => {
+          const remote = JSON.parse(json);
+          mergeTreatmentRecordsIntoLocal_(remote);
+          if (currentHistoryPatientId && String(currentHistoryPatientId) === String(pid)) {
+            const el = document.getElementById("historyList");
+            if (el) renderHistoryList(remote, el);
+          }
+          paintCalGrid();
+        }).catch(() => {});
       })
       .catch(e => handleTreatmentSaveError_(e, "更新"))
       .finally(() => {
@@ -6076,14 +6214,7 @@ function saveTreatmentRecord() {
   }
 
   gasCall("saveTreatmentRecord", JSON.stringify(data))
-    .then(id => gasCall("saveTeethData", pid, JSON.stringify(currentTeethData)).then(() => id))
-    .then(id => savePatientNotesFromRecord_(pid, getRecordPatientNotesValue_()).then(notesRes => ({ id, notesRes })))
-    .then(({ id, notesRes }) => {
-      if (notesRes !== "ok") showToast("患者メモの保存に失敗しました（診療記録・歯式は保存済み）");
-      return id;
-    })
-    .then(id => applyIntakeStageAfterTreatmentSave_(pid, selectedTreatments).then(() => id))
-    .then(id => applyPatientMasterAfterTreatmentSave_(pid, selectedTreatments).then(() => id))
+    .then(id => finishTreatmentSideSaves_(pid).then(() => id))
     .then(id => {
       markRestricted(
         pid,
@@ -7620,17 +7751,25 @@ function openHistory(pid, options) {
     paintCalGrid();
     return;
   }
-  listEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted)">読み込み中…</div>`;
+  // 手元データがあれば先に表示（待たされ感を減らす）
+  const localFirst = localHistoryRecordsForPatient_(pid);
+  if (localFirst.length) {
+    renderHistoryList(localFirst, listEl);
+  } else {
+    listEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted)">読み込み中…</div>`;
+  }
 
   gasCall("getTreatmentsByPatient", pid).then(json => {
+    if (String(currentHistoryPatientId) !== String(pid)) return;
     const list = JSON.parse(json);
     mergeTreatmentRecordsIntoLocal_(list);
     renderHistoryList(list, listEl);
     paintCalGrid();
   }).catch(() => {
-    const local = localRecords.filter(r => String(r.patient_id) === String(pid))
-      .sort((a, b) => (b.visit_date || "").localeCompare(a.visit_date || ""));
-    renderHistoryList(local, listEl);
+    if (String(currentHistoryPatientId) !== String(pid)) return;
+    if (!localFirst.length) {
+      renderHistoryList([], listEl);
+    }
     paintCalGrid();
   });
 }

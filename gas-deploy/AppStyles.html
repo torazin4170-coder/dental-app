@@ -820,6 +820,25 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
 /* ── Loading ── */
 #loading { position: fixed; inset: 0; background: rgba(255,255,255,.85); display: flex; align-items: center; justify-content: center; z-index: 200; font-size: 16px; font-weight: 700; color: var(--accent); }
 
+/* ── データ同期バナー（全画面を塞がない） ── */
+.data-sync-banner {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 190;
+  padding: 7px 12px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #1e40af;
+  background: linear-gradient(180deg, #dbeafe 0%, #eff6ff 100%);
+  border-bottom: 1px solid #93c5fd;
+  pointer-events: none;
+}
+.data-sync-banner.is-on { display: block; }
+
 /* ── ④ 五香様式 4マス月次報告（プレビュー＝編集用・印刷サイズより大きく表示） ── */
 #monthCarePreviewScroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 #monthCarePreviewInner .mc-matrix-doc--preview {
@@ -1129,6 +1148,11 @@ body.dark-mode .med-item-rename { background: var(--surface-2); color: var(--mut
 body.dark-mode .cat-order-label { color: var(--text); }
 body.dark-mode #loading {
   background: rgba(15, 23, 42, 0.92); color: #93c5fd;
+}
+body.dark-mode .data-sync-banner {
+  color: #bfdbfe;
+  background: linear-gradient(180deg, #1e3a8a 0%, #172554 100%);
+  border-bottom-color: #1d4ed8;
 }
 body.dark-mode #teethChartBlock { background: var(--surface) !important; }
 body.dark-mode .cal-day-rec-card:hover { background: #1e3a8a !important; }
