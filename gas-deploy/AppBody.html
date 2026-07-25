@@ -1225,12 +1225,12 @@
 </div>
 
 <!-- PHOTO CATEGORY MODAL -->
-<div class="modal-overlay" id="photoCatModal" onclick="if(event.target===this)this.classList.remove('show')">
+<div class="modal-overlay" id="photoCatModal" onclick="if(event.target===this)cancelPhotoCatModal_()">
   <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="photoCatModalTitle">
     <div class="modal-handle"></div>
     <div class="modal-title" id="photoCatModalTitle">カテゴリを選択</div>
     <div style="display:flex;flex-direction:column;gap:8px" id="photoCatOptions"></div>
-    <button class="btn-cancel" style="width:100%;margin-top:12px" onclick="document.getElementById('photoCatModal').classList.remove('show')">キャンセル</button>
+    <button type="button" class="btn-cancel" style="width:100%;margin-top:12px" onclick="cancelPhotoCatModal_()">キャンセル</button>
   </div>
 </div>
 

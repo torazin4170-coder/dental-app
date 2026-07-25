@@ -7691,6 +7691,14 @@ let currentViewPhotoId = null;
 const PHOTO_CATS = ["口腔内","顔貌","義歯","X線","書類"];
 /** 患者未登録の新規モーダルで追加した写真の仮 patientId（保存後に本 ID へ移す） */
 const PHOTO_PENDING_NEW_ID = "__pending_new__";
+/** loadPhotos の古い応答を捨てるための通し番号（患者ごと） */
+const loadPhotosSeqByPid_ = Object.create(null);
+/** 仮IDの一意化（同一ミリ秒の二重追加対策） */
+let photoTempSeq_ = 0;
+/** カテゴリ選択〜アップロード開始の二重送信ガード */
+let photoCatSelectInFlight_ = false;
+/** 複数枚選択時のカテゴリ選択キュー */
+let photoUploadQueue_ = [];
 
 /** Drive 写真を <img> で出す用（PRIVATE + file.getUrl ではブラウザが読めないため file_id から埋め込みURLを組む） */
 function patientPhotoDisplaySrc_(p) {
@@ -7705,6 +7713,29 @@ function patientPhotoDisplaySrc_(p) {
   return u;
 }
 
+function isTempPhotoId_(id) {
+  return String(id || "").startsWith("tmp_");
+}
+
+/** 同一 file_id のローカル重複を除去（先勝ち。dataUrl がある方を優先） */
+function dedupeLocalPhotosById_() {
+  const seen = new Map();
+  const next = [];
+  localPhotos.forEach(p => {
+    const id = String(p.id || "");
+    if (!id) return;
+    const prev = seen.get(id);
+    if (!prev) {
+      seen.set(id, p);
+      next.push(p);
+      return;
+    }
+    if (!prev.dataUrl && p.dataUrl) prev.dataUrl = p.dataUrl;
+    if (!prev.driveUrl && p.driveUrl) prev.driveUrl = p.driveUrl;
+  });
+  localPhotos = next;
+}
+
 /** 新規患者モーダルで溜めた写真を、登録後の patientId で Drive に保存する */
 function flushPendingNewPatientPhotos_(newPatientId) {
   const pending = localPhotos.filter(p => p.patientId === PHOTO_PENDING_NEW_ID);
@@ -7712,12 +7743,14 @@ function flushPendingNewPatientPhotos_(newPatientId) {
   const idStr = String(newPatientId || "").trim();
   if (!idStr) return Promise.resolve();
   return Promise.all(pending.map(photo => {
+    if (photo.uploadStarted) return Promise.resolve();
     const b64 = photo.pendingBase64
       || (photo.dataUrl && String(photo.dataUrl).indexOf(",") !== -1 ? String(photo.dataUrl).split(",")[1] : "");
     if (!b64) {
       localPhotos = localPhotos.filter(p => p !== photo);
       return Promise.resolve();
     }
+    photo.uploadStarted = true;
     return gasCall("savePhoto", idStr, b64, photo.filename || "photo.jpg", photo.category || "口腔内", photo.dateTaken || "").then(result => {
       const r = JSON.parse(result);
       photo.id = r.fileId;
@@ -7725,41 +7758,68 @@ function flushPendingNewPatientPhotos_(newPatientId) {
       photo.patientId = idStr;
       delete photo.pendingBase64;
       delete photo.deferredUpload;
+      delete photo.uploadStarted;
+      dedupeLocalPhotosById_();
     }).catch(e => {
+      delete photo.uploadStarted;
       showToast("写真の保存に失敗: " + (e && e.message ? e.message : String(e)));
     });
   }));
 }
 
-// 患者の写真を読み込む
+// 患者の写真を読み込む（並列呼び出しでも二重追加しない）
 function loadPhotos(patientId) {
-  gasCall("getPhotos", patientId).then(json => {
+  const pid = String(patientId || "").trim();
+  if (!pid) {
+    renderPhotoGrid();
+    return;
+  }
+  const seq = (loadPhotosSeqByPid_[pid] || 0) + 1;
+  loadPhotosSeqByPid_[pid] = seq;
+  gasCall("getPhotos", pid).then(json => {
+    if (loadPhotosSeqByPid_[pid] !== seq) return; // 古い応答は捨てる
     const photos = JSON.parse(json);
+    const inflight = localPhotos.filter(l =>
+      String(l.patientId) === pid && isTempPhotoId_(l.id)
+    );
+    localPhotos = localPhotos.filter(l => String(l.patientId) !== pid);
+    const serverMeta = [];
     photos.forEach(p => {
+      const fid = String(p.file_id || "").trim();
+      if (!fid) return;
       const inline = p.inline_data_url ? String(p.inline_data_url) : "";
-      const existing = localPhotos.find(l => l.id === p.file_id);
-      if (existing) {
-        if (inline) existing.dataUrl = inline;
-        if (p.file_url) existing.driveUrl = p.file_url;
-        return;
-      }
-      localPhotos.push({
-        id: p.file_id,
+      const row = {
+        id: fid,
         dataUrl: inline || undefined,
         driveUrl: p.file_url,
         filename: p.filename,
         category: p.category,
         dateTaken: p.date_taken,
-        patientId
-      });
+        patientId: pid
+      };
+      localPhotos.push(row);
+      serverMeta.push(row);
     });
+    // アップロード中の仮写真は、サーバに同名・同日・同カテゴリが無ければ残す
+    inflight.forEach(tmp => {
+      const matched = serverMeta.some(s =>
+        String(s.filename || "") === String(tmp.filename || "") &&
+        String(s.dateTaken || "") === String(tmp.dateTaken || "") &&
+        String(s.category || "") === String(tmp.category || "")
+      );
+      if (!matched) localPhotos.push(tmp);
+    });
+    dedupeLocalPhotosById_();
     renderPhotoGrid();
-  }).catch(() => renderPhotoGrid());
+  }).catch(() => {
+    if (loadPhotosSeqByPid_[pid] !== seq) return;
+    renderPhotoGrid();
+  });
 }
 
 // ファイル選択 → プレビュー + カテゴリ選択 → アップロード
 function handlePhotoUpload(input) {
-  const files = Array.from(input.files);
+  const files = Array.from(input.files || []);
   if (!files.length) return;
   const pmId = document.getElementById("pm-id")?.value?.trim() || "";
   const photoPid = (selectedPatient?.id && String(selectedPatient.id).trim()) || pmId;
@@ -7771,71 +7831,129 @@ function handlePhotoUpload(input) {
   }
   input.value = "";
 
-  files.forEach(file => {
+  const modalOpen = document.getElementById("photoCatModal")?.classList.contains("show");
+  const readers = files.map(file => new Promise(resolve => {
     const reader = new FileReader();
     reader.onload = e => {
       const dataUrl = e.target.result;
-      // ファイルの更新日を「撮影日」として使用
       const dateTaken = new Date(file.lastModified).toLocaleDateString("ja-JP", {
-        year:"numeric", month:"2-digit", day:"2-digit"
-      }).replace(/\//g,"-");
-
-      // カテゴリ選択モーダルを開く
-      openPhotoCatModal(dataUrl, file.name, dateTaken);
+        year: "numeric", month: "2-digit", day: "2-digit"
+      }).replace(/\//g, "-");
+      resolve({ dataUrl, filename: file.name, dateTaken });
     };
+    reader.onerror = () => resolve(null);
     reader.readAsDataURL(file);
+  }));
+
+  Promise.all(readers).then(items => {
+    const valid = items.filter(Boolean);
+    if (!valid.length) return;
+    if (modalOpen || openPhotoCatModal._pending || photoUploadQueue_.length) {
+      photoUploadQueue_.push(...valid);
+      return;
+    }
+    const [first, ...rest] = valid;
+    if (rest.length) photoUploadQueue_.push(...rest);
+    openPhotoCatModal(first.dataUrl, first.filename, first.dateTaken);
   });
 }
 
 function openPhotoCatModal(dataUrl, filename, dateTaken) {
   const el = document.getElementById("photoCatOptions");
+  const safeName = String(filename || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeDate = String(dateTaken || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   el.innerHTML = PHOTO_CATS.map(cat =>
-    `<button onclick="selectPhotoCategory('${cat}','${filename}','${dateTaken}')"
+    `<button type="button" onclick="selectPhotoCategory('${cat}','${safeName}','${safeDate}')"
       style="padding:14px;border-radius:10px;border:1.5px solid var(--border);background:white;font-size:15px;font-weight:700;cursor:pointer;text-align:left">
       ${catIcon(cat)} ${cat}
     </button>`
   ).join("");
-  // dataUrlを一時保存
+  // dataUrlを一時保存（カテゴリ確定時に消費。二重タップ防止の要）
   openPhotoCatModal._pending = { dataUrl, filename, dateTaken };
+  photoCatSelectInFlight_ = false;
   document.getElementById("photoCatModal").classList.add("show");
 }
 
+function drainPhotoUploadQueue_() {
+  if (openPhotoCatModal._pending) return;
+  if (document.getElementById("photoCatModal")?.classList.contains("show")) return;
+  const next = photoUploadQueue_.shift();
+  if (!next) return;
+  openPhotoCatModal(next.dataUrl, next.filename, next.dateTaken);
+}
+
+/** カテゴリ選択をキャンセル（現在の1枚を破棄し、続けてキューがあれば次へ） */
+function cancelPhotoCatModal_() {
+  openPhotoCatModal._pending = null;
+  photoCatSelectInFlight_ = false;
+  document.getElementById("photoCatModal")?.classList.remove("show");
+  drainPhotoUploadQueue_();
+}
+
 function selectPhotoCategory(cat, filename, dateTaken) {
-  document.getElementById("photoCatModal").classList.remove("show");
-  const { dataUrl } = openPhotoCatModal._pending;
+  // 二重タップ／連打で savePhoto が複数回走らないように、pending を先に消費する
+  if (photoCatSelectInFlight_) return;
+  const pending = openPhotoCatModal._pending;
+  openPhotoCatModal._pending = null;
+  document.getElementById("photoCatModal")?.classList.remove("show");
+  if (!pending || !pending.dataUrl) {
+    drainPhotoUploadQueue_();
+    return;
+  }
+  photoCatSelectInFlight_ = true;
+
+  const dataUrl = pending.dataUrl;
+  const useFilename = filename || pending.filename || "photo.jpg";
+  const useDateTaken = dateTaken || pending.dateTaken || "";
   const pmId = document.getElementById("pm-id")?.value?.trim() || "";
   const pid = (selectedPatient?.id && String(selectedPatient.id).trim()) || pmId;
   const deferUpload = !pid && document.getElementById("patientModal")?.classList.contains("show");
   if (!pid && !deferUpload) {
+    photoCatSelectInFlight_ = false;
     showToast("写真を追加する前に、患者を選ぶか「新しい患者を追加」で入力してください。");
+    drainPhotoUploadQueue_();
     return;
   }
   const effectivePid = pid || PHOTO_PENDING_NEW_ID;
 
   // ローカルに即時追加してプレビュー表示
-  const tempId = "tmp_" + Date.now();
+  const tempId = "tmp_" + Date.now() + "_" + (++photoTempSeq_);
   localPhotos.push({
-    id: tempId, dataUrl, filename, category: cat, dateTaken, patientId: effectivePid,
+    id: tempId, dataUrl, filename: useFilename, category: cat, dateTaken: useDateTaken, patientId: effectivePid,
     deferredUpload: !!deferUpload
   });
   renderPhotoGrid();
+  photoCatSelectInFlight_ = false;
+  drainPhotoUploadQueue_();
 
   // GASに圧縮してアップロード（新規モーダルは患者保存後にまとめて送信）
   compressImage(dataUrl, 1000, 0.8, compressed => {
-    const base64 = compressed.split(",")[1];
     const photo = localPhotos.find(p => p.id === tempId);
+    if (!photo) return; // 途中で削除済み
+    if (photo.uploadStarted) return;
+    const base64 = compressed.split(",")[1];
     if (deferUpload) {
-      if (photo) photo.pendingBase64 = base64;
+      photo.pendingBase64 = base64;
       showToast(`📷 ${cat}を登録待ちにしました（患者を「保存」するとアップロードされます）`);
       renderPhotoGrid();
       return;
     }
-    gasCall("savePhoto", pid, base64, filename, cat, dateTaken).then(result => {
+    photo.uploadStarted = true;
+    gasCall("savePhoto", pid, base64, useFilename, cat, useDateTaken).then(result => {
       const r = JSON.parse(result);
-      if (photo) { photo.id = r.fileId; photo.driveUrl = r.url; }
+      const cur = localPhotos.find(p => p.id === tempId || p.id === r.fileId);
+      if (cur) {
+        cur.id = r.fileId;
+        cur.driveUrl = r.url;
+        delete cur.uploadStarted;
+      }
+      dedupeLocalPhotosById_();
       showToast(`📷 ${cat}の写真を保存しました`);
       renderPhotoGrid();
-    }).catch(e => showToast("写真の保存に失敗: " + e));
+    }).catch(e => {
+      if (photo) delete photo.uploadStarted;
+      showToast("写真の保存に失敗: " + e);
+    });
   });
 }
 
@@ -8382,6 +8500,9 @@ function composeFaxLeadSentence_(visitLabel, nextLabel) {
   return `${v}に、歯科治療をされた方の治療内容及び注意事項と、${n}以降の歯科治療予定の名簿をお送りさせていただきます。`;
 }
 
+/** FAX日報：無料検診患者の「次回の治療予定」欄デフォルト文言 */
+const FAX_MUSHO_NEXT_DEFAULT_ = "ご家族からの連絡があり次第、初診に入らせていただきます";
+
 function formatNextVisitCell_(row) {
   const nc = formatTreatmentTextForReport_((row.next_content || "").trim());
   const nd = formatDateInputVal(row.next_date);
@@ -8397,6 +8518,8 @@ function formatNextVisitCell_(row) {
     if (d && !isNaN(d.getTime())) return `${d.getMonth() + 1}月${d.getDate()}日（${JP_WEEKDAYS[d.getDay()]}）`;
     return nd;
   }
+  // 次回未入力かつ本日が無料検診 → FAX用の定型文を初期表示（プレビュー上で編集可）
+  if (recordHasTreatment_(row, MUSHO_KENSHIN_TREATMENT)) return FAX_MUSHO_NEXT_DEFAULT_;
   return "—";
 }
 
