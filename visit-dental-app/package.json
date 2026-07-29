@@ -9,6 +9,7 @@
     "predev": "node scripts/sync-gas-deploy.mjs",
     "preview": "vite preview",
     "verify:gas": "node scripts/verify-gas-connection.mjs",
+    "import:supabase": "node scripts/import-sheets-to-supabase.mjs",
     "deploy:check": "node ../scripts/what-to-deploy.mjs"
   },
   "devDependencies": {
@@ -16,5 +17,8 @@
     "typescript": "~6.0.2",
     "vite": "^7.0.0",
     "vite-plugin-pwa": "^1.2.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.111.0"
   }
 }

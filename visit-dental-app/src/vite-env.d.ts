@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_GAS_RPC_PATH?: string
+  readonly VITE_RPC_BACKEND?: string
+  readonly VITE_RPC_PATH?: string
   readonly VITE_BUILD_ID?: string
 }
 

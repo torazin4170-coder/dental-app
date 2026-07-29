@@ -45,8 +45,13 @@ export function describeGasDeployment_(url) {
   return { ok: true, preview: id.length > 10 ? id.slice(0, 10) + '…' : id + '…' }
 }
 
+function isMutationRpc_(func) {
+  return /^(save|update|add|delete|clear|append|generate)/i.test(String(func || ''))
+}
+
 function shouldUsePost(func, args) {
   if (POST_ONLY.has(func)) return true
+  if (isMutationRpc_(func)) return true
   try {
     return JSON.stringify(args).length > 6000
   } catch {

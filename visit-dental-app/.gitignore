@@ -4,3 +4,5 @@ vendor/gas-deploy
 .env.local
 .env*.local
 *.tsbuildinfo
+import-data/*.csv
+.vercel

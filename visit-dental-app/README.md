@@ -1,6 +1,8 @@
 # 訪問歯科カルテ — Vercel 版（段階1）
 
-**デプロイの手間を減らす一覧 → [DEPLOY.md](./DEPLOY.md)**（UI 変更は `git push` のみ）
+**新しいチャット用の短い引き継ぎ → [HANDOFF-引き継ぎテンプレ.md](./HANDOFF-引き継ぎテンプレ.md)**  
+**デプロイの手間を減らす一覧 → [DEPLOY.md](./DEPLOY.md)**（UI 変更は `git push` のみ）  
+**Supabase 試用版のセットアップ → [SUPABASE-SETUP.md](./SUPABASE-SETUP.md)**（GAS 本番はそのまま）
 
 GAS Web アプリの**フロントのみ** Vercel に載せ、データ/API は従来どおり **Google Apps Script（Main.gs）** に置く構成です。
 
