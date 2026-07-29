@@ -225,20 +225,39 @@ function ensurePatientsIntakeStageColumn_(sh) {
     sh.setColumnWidth(c, 140);
   }
   sh.getRange(1, c).setNote("空または standard=通常 / musho_kenshin=無料検診（旧2値は開くたびに musho_kenshin へ置換）");
+  if (PropertiesService.getScriptProperties().getProperty("INTAKE_STAGE_MIGRATED_V2") === "1") return;
   const lastRow = sh.getLastRow();
   if (lastRow > 1) {
     const rg = sh.getRange(2, c, lastRow, c);
     const vals = rg.getValues();
+    var changed = false;
     for (var i = 0; i < vals.length; i++) {
       var cell = String(vals[i][0] != null ? vals[i][0] : "").trim();
-      if (cell === "kentai_target" || cell === "kentai_done_waiting") vals[i][0] = "musho_kenshin";
+      if (cell === "kentai_target" || cell === "kentai_done_waiting") {
+        vals[i][0] = "musho_kenshin";
+        changed = true;
+      }
     }
-    rg.setValues(vals);
+    if (changed) rg.setValues(vals);
     const rule = SpreadsheetApp.newDataValidation()
       .requireValueInList(["", "standard", "musho_kenshin"], true)
       .build();
     rg.setDataValidation(rule);
   }
+  PropertiesService.getScriptProperties().setProperty("INTAKE_STAGE_MIGRATED_V2", "1");
+}
+
+/** patients シートの列を一括確保（hot path 用） */
+function ensureAllPatientsColumns_(sh) {
+  ensurePatientsNotesColumn_(sh);
+  ensurePatientsBirthColumn_(sh);
+  ensurePatientsGenderColumn_(sh);
+  ensurePatientsCoverageColumn_(sh);
+  ensurePatientsIntakeStageColumn_(sh);
+  ensurePatientsAssignedDoctorColumn_(sh);
+  ensurePatientsInHospitalColumn_(sh);
+  ensurePatientsMonthlyVisitLimitColumn_(sh);
+  ensurePatientsAddressColumn_(sh);
 }
 
 /** patients に in_hospital（入院中ラベル用：1 または空）列を確保 */
@@ -733,6 +752,7 @@ function pageMisconfigHtmlOutput_(detail, triedName) {
 
 /** Vercel フロントから fetch 経由で呼べる RPC（doPost）。許可関数のみ実行 */
 var RPC_ALLOWLIST_ = {
+  getInitData: getInitData,
   getPatients: getPatients,
   addPatient: addPatient,
   updatePatient: updatePatient,
@@ -745,6 +765,7 @@ var RPC_ALLOWLIST_ = {
   getTreatmentsByPatient: getTreatmentsByPatient,
   getMonthlyRecords: getMonthlyRecords,
   saveTreatmentRecord: saveTreatmentRecord,
+  saveTreatmentRecordBundle: saveTreatmentRecordBundle,
   updateTreatmentRecord: updateTreatmentRecord,
   deleteTreatmentRecord: deleteTreatmentRecord,
   getPatientMonthlyReportData: getPatientMonthlyReportData,
@@ -873,15 +894,7 @@ function doGet(e) {
  */
 function getPatients(statusFilter) {
   const sh = getSheet("patients");
-  ensurePatientsNotesColumn_(sh);
-  ensurePatientsBirthColumn_(sh);
-  ensurePatientsGenderColumn_(sh);
-  ensurePatientsCoverageColumn_(sh);
-  ensurePatientsIntakeStageColumn_(sh);
-  ensurePatientsAssignedDoctorColumn_(sh);
-  ensurePatientsInHospitalColumn_(sh);
-  ensurePatientsMonthlyVisitLimitColumn_(sh);
-  ensurePatientsAddressColumn_(sh);
+  ensureAllPatientsColumns_(sh);
   const rows = sh.getDataRange().getValues();
   const header = rows[0];
   const result = rows.slice(1)
@@ -897,15 +910,7 @@ function getPatients(statusFilter) {
 function addPatient(json) {
   const p = JSON.parse(json);
   const sh = getSheet("patients");
-  ensurePatientsNotesColumn_(sh);
-  ensurePatientsBirthColumn_(sh);
-  ensurePatientsGenderColumn_(sh);
-  ensurePatientsCoverageColumn_(sh);
-  ensurePatientsIntakeStageColumn_(sh);
-  ensurePatientsAssignedDoctorColumn_(sh);
-  ensurePatientsInHospitalColumn_(sh);
-  ensurePatientsMonthlyVisitLimitColumn_(sh);
-  ensurePatientsAddressColumn_(sh);
+  ensureAllPatientsColumns_(sh);
   const hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   const id = "P" + Utilities.formatDate(new Date(), "JST", "yyyyMMddHHmmss");
   const intake = normalizeIntakeStageForSheet_(
@@ -951,15 +956,7 @@ function addPatient(json) {
 function updatePatient(json) {
   const p = JSON.parse(json);
   const sh = getSheet("patients");
-  ensurePatientsNotesColumn_(sh);
-  ensurePatientsBirthColumn_(sh);
-  ensurePatientsGenderColumn_(sh);
-  ensurePatientsCoverageColumn_(sh);
-  ensurePatientsIntakeStageColumn_(sh);
-  ensurePatientsAssignedDoctorColumn_(sh);
-  ensurePatientsInHospitalColumn_(sh);
-  ensurePatientsMonthlyVisitLimitColumn_(sh);
-  ensurePatientsAddressColumn_(sh);
+  ensureAllPatientsColumns_(sh);
   const hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   const col = {};
   hdr.forEach(function (h, i) { if (h) col[String(h)] = i + 1; });
@@ -1006,14 +1003,7 @@ function updatePatient(json) {
 /** ステータスのみ更新（退去・逝去など）*/
 function updatePatientStatus(id, status) {
   const sh = getSheet("patients");
-  ensurePatientsNotesColumn_(sh);
-  ensurePatientsBirthColumn_(sh);
-  ensurePatientsGenderColumn_(sh);
-  ensurePatientsCoverageColumn_(sh);
-  ensurePatientsIntakeStageColumn_(sh);
-  ensurePatientsAssignedDoctorColumn_(sh);
-  ensurePatientsInHospitalColumn_(sh);
-  ensurePatientsMonthlyVisitLimitColumn_(sh);
+  ensureAllPatientsColumns_(sh);
   const hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   const statusCol = hdr.indexOf("status") + 1;
   if (statusCol < 1) throw new Error("patients シートに status 列がありません");
@@ -1067,6 +1057,93 @@ function updateFacility(json) {
 // ─────────────────────────────────────────
 //  診療記録 CRUD
 // ─────────────────────────────────────────
+
+/**
+ * 起動時データを1回の RPC で返す（Vercel↔GAS の往復を4→1に）
+ * @param {string} [ymOpt] getMonthlyRecords と同じ yyyy-MM
+ */
+function getInitData(ymOpt) {
+  var sOpt = ymOpt != null ? String(ymOpt).trim() : "";
+  var now = new Date();
+  var ymDefault = Utilities.formatDate(now, "JST", "yyyy-MM-dd").slice(0, 7);
+  var ym = sOpt && /^\d{4}-\d{2}$/.test(sOpt) ? sOpt : ymDefault;
+
+  var facSh = getSheet("facilities");
+  var facRows = facSh.getDataRange().getValues();
+  var facHeader = facRows.length ? facRows[0] : [];
+  var facilities = facRows.length > 1
+    ? facRows.slice(1).map(function (r) { return rowToObj(facHeader, r); })
+    : [];
+
+  var patSh = getSheet("patients");
+  ensureAllPatientsColumns_(patSh);
+  var patRows = patSh.getDataRange().getValues();
+  var patHeader = patRows.length ? patRows[0] : [];
+  var patients = patRows.length > 1
+    ? patRows.slice(1).map(function (r) { return rowToObj(patHeader, r); })
+    : [];
+
+  var trSh = getSheet("treatments");
+  ensureTreatmentTimeColumns_(trSh);
+  var trRows = trSh.getDataRange().getValues();
+  var trHeader = trRows.length ? trRows[0] : [];
+  var records = trRows.length > 1
+    ? trRows.slice(1)
+      .map(function (r) { return rowToObj(trHeader, r); })
+      .filter(function (t) { return visitDateYM_(t.visit_date) === ym; })
+      .map(normalizeTreatmentTimesForClient_)
+    : [];
+
+  var setSh = getSheet("settings");
+  var setRows = setSh.getDataRange().getValues();
+  var settings = {};
+  setRows.forEach(function (r) { if (r[0]) settings[r[0]] = r[1]; });
+
+  return JSON.stringify({
+    facilities: facilities,
+    patients: patients,
+    records: records,
+    settings: settings,
+  });
+}
+
+/**
+ * 診療記録＋歯式＋患者メモを1回の RPC で保存（往復3→1）
+ * @param {string} bundleJson  { patientId, treatment, teethJson, patientNotes }
+ */
+function saveTreatmentRecordBundle(bundleJson) {
+  var b = JSON.parse(bundleJson);
+  var pid = b.patientId;
+  var tid;
+  if (b.treatment && b.treatment.id) {
+    var ur = updateTreatmentRecord(JSON.stringify(b.treatment));
+    if (ur !== "ok") {
+      return JSON.stringify({ ok: false, error: String(ur) });
+    }
+    tid = b.treatment.id;
+  } else if (b.treatment) {
+    try {
+      tid = saveTreatmentRecord(JSON.stringify(b.treatment));
+    } catch (e) {
+      return JSON.stringify({ ok: false, error: e.message || String(e) });
+    }
+  } else {
+    return JSON.stringify({ ok: false, error: "treatment required" });
+  }
+  if (b.teethJson != null && pid) {
+    saveTeethData(pid, b.teethJson);
+  }
+  if (b.patientNotes !== undefined && pid) {
+    var pr = updatePatient(JSON.stringify({
+      id: pid,
+      notes: String(b.patientNotes != null ? b.patientNotes : ""),
+    }));
+    if (pr !== "ok") {
+      return JSON.stringify({ ok: false, error: "patient notes: " + pr, id: tid });
+    }
+  }
+  return JSON.stringify({ ok: true, id: tid });
+}
 
 /** 特定患者の診療記録一覧（降順）*/
 function getTreatmentsByPatient(patientId) {
@@ -2877,15 +2954,7 @@ function setupSheets() {
   // 既存 patients シート：不足列だけ追加（ヘッダー行の上書きはしない）
   const pshEnsure = ss.getSheetByName("patients");
   if (pshEnsure && pshEnsure.getLastRow() > 0) {
-    ensurePatientsNotesColumn_(pshEnsure);
-    ensurePatientsBirthColumn_(pshEnsure);
-    ensurePatientsGenderColumn_(pshEnsure);
-    ensurePatientsCoverageColumn_(pshEnsure);
-    ensurePatientsIntakeStageColumn_(pshEnsure);
-    ensurePatientsAssignedDoctorColumn_(pshEnsure);
-    ensurePatientsInHospitalColumn_(pshEnsure);
-    ensurePatientsMonthlyVisitLimitColumn_(pshEnsure);
-    ensurePatientsAddressColumn_(pshEnsure);
+    ensureAllPatientsColumns_(pshEnsure);
   }
 
   // ── treatments シートに列ヘッダーの説明コメントを追加 ──

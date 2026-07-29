@@ -2563,12 +2563,7 @@ function init() {
     ));
   }, 45000);
 
-  Promise.all([
-    gasCall("getFacilities"),
-    gasCall("getPatients", null),
-    gasCall("getMonthlyRecords", initYm),
-    gasCall("getSettings").catch(() => null)
-  ]).then(([facsJson, patientsJson, recsJson, settingsJson]) => {
+  fetchInitData_(initYm).then(([facsJson, patientsJson, recsJson, settingsJson]) => {
     initSettled = true;
     clearTimeout(initTimeoutId);
     try {
@@ -2604,10 +2599,6 @@ function init() {
 }
 
 /* google.script.run ラッパー（Promise化）。Vercel 版は window.__gasCallFetch を main.ts が注入 */
-function gasCallWithRetry_(fn) {
-  return fn().catch(() => new Promise(r => setTimeout(r, 2000)).then(fn));
-}
-
 function refreshAppHealthPanel_() {
   const card = document.getElementById("app-health-card");
   const body = document.getElementById("app-health-body");
@@ -2618,11 +2609,17 @@ function refreshAppHealthPanel_() {
   }
   card.style.display = "";
   body.textContent = "確認中…";
-  fetch("/api/gas-check").then(r => r.json()).then(j => {
+  const checkPath = (typeof window.__RPC_BACKEND__ !== "undefined" && window.__RPC_BACKEND__ === "supabase")
+    ? "/api/supabase-check"
+    : "/api/gas-check";
+  fetch(checkPath).then(r => r.json()).then(j => {
     const build = (typeof window.__APP_BUILD_ID__ !== "undefined" && window.__APP_BUILD_ID__) ? String(window.__APP_BUILD_ID__) : "—";
+    const backendLabel = checkPath.indexOf("supabase") >= 0 ? "Supabase" : "GAS";
     if (j && j.ok) {
-      body.innerHTML = "✅ GAS 接続 OK<br>ビルド: " + escHtml(build)
-        + "<br>GAS: " + escHtml(j.deploymentIdPreview || "—")
+      body.innerHTML = "✅ " + backendLabel + " 接続 OK<br>ビルド: " + escHtml(build)
+        + (j.deploymentIdPreview ? "<br>GAS: " + escHtml(j.deploymentIdPreview) : "")
+        + (j.facilitiesCount != null ? "<br>施設: " + escHtml(String(j.facilitiesCount)) + "件" : "")
+        + (j.implementedRpcCount != null ? "<br>試用RPC: " + escHtml(String(j.implementedRpcCount)) + "関数" : "")
         + (j.method ? "<br>経路: " + escHtml(j.method) : "");
     } else {
       body.innerHTML = "❌ " + escHtml((j && j.error) || "接続失敗")
@@ -2635,7 +2632,7 @@ function refreshAppHealthPanel_() {
 
 function gasCall(funcName, ...args) {
   if (typeof window.__gasCallFetch === "function") {
-    return gasCallWithRetry_(() => window.__gasCallFetch(funcName, ...args));
+    return window.__gasCallFetch(funcName, ...args);
   }
   return new Promise((resolve, reject) => {
     let runner = google.script.run
@@ -2643,6 +2640,62 @@ function gasCall(funcName, ...args) {
       .withFailureHandler(reject);
     runner[funcName](...args);
   });
+}
+
+function isUnknownRpcError_(err) {
+  const msg = String(err && err.message ? err.message : err || "");
+  return /Unknown function|未対応|not found|502/i.test(msg);
+}
+
+/** 起動データ取得（新API優先・旧GASでは4分割にフォールバック） */
+function fetchInitData_(initYm) {
+  return gasCall("getInitData", initYm)
+    .then(json => {
+      const o = JSON.parse(json);
+      return [
+        JSON.stringify(o.facilities || []),
+        JSON.stringify(o.patients || []),
+        JSON.stringify(o.records || []),
+        JSON.stringify(o.settings || {}),
+      ];
+    })
+    .catch(err => {
+      if (!isUnknownRpcError_(err)) throw err;
+      return Promise.all([
+        gasCall("getFacilities"),
+        gasCall("getPatients", null),
+        gasCall("getMonthlyRecords", initYm),
+        gasCall("getSettings").catch(() => null),
+      ]);
+    });
+}
+
+/** 診療記録＋歯式＋患者メモ（新API優先・旧GASでは従来の3回にフォールバック） */
+function saveTreatmentWithFallback_(data, pid, editingId) {
+  const bundle = {
+    patientId: pid,
+    treatment: data,
+    teethJson: JSON.stringify(currentTeethData),
+    patientNotes: getRecordPatientNotesValue_(),
+  };
+  return gasCall("saveTreatmentRecordBundle", JSON.stringify(bundle))
+    .then(raw => {
+      const o = JSON.parse(raw);
+      if (!o || o.ok === false) throw new Error((o && o.error) || "保存に失敗しました");
+      return o.id;
+    })
+    .catch(err => {
+      if (!isUnknownRpcError_(err)) throw err;
+      if (editingId) {
+        return gasCall("updateTreatmentRecord", JSON.stringify(data))
+          .then(res => {
+            if (res !== "ok") throw new Error(String(res));
+            return finishTreatmentSideSaves_(pid).then(() => editingId);
+          });
+      }
+      return gasCall("saveTreatmentRecord", JSON.stringify(data))
+        .then(id => finishTreatmentSideSaves_(pid).then(() => id));
+    });
 }
 
 function snapTeethData(obj) {
@@ -2674,13 +2727,16 @@ function savePatientNotesFromRecord_(pid, notes) {
   if (!pid) return Promise.resolve("ok");
   const payload = { id: pid, notes: notes != null ? String(notes) : "" };
   return gasCall("updatePatient", JSON.stringify(payload)).then(res => {
-    if (res === "ok") {
-      const p = PATIENTS.find(x => x.id === pid);
-      if (p) p.notes = payload.notes;
-      if (selectedPatient && selectedPatient.id === pid) selectedPatient.notes = payload.notes;
-    }
+    if (res === "ok") syncLocalPatientNotes_(pid, payload.notes);
     return res;
   });
+}
+
+function syncLocalPatientNotes_(pid, notes) {
+  const val = notes != null ? String(notes) : "";
+  const p = PATIENTS.find(x => x.id === pid);
+  if (p) p.notes = val;
+  if (selectedPatient && selectedPatient.id === pid) selectedPatient.notes = val;
 }
 
 function getNotesEditorValue_() {
@@ -6164,15 +6220,9 @@ function saveTreatmentRecord() {
 
   if (editingTreatmentId) {
     data.id = editingTreatmentId;
-    gasCall("updateTreatmentRecord", JSON.stringify(data))
-      .then(res => {
-        if (res !== "ok") {
-          showToast("診療記録が見つかりません（IDまたはシート列の不整合）。スプレッドシート treatments の id 列・visit_date 列を確認してください。");
-          throw new Error(String(res));
-        }
-        return finishTreatmentSideSaves_(pid);
-      })
+    saveTreatmentWithFallback_(data, pid, editingTreatmentId)
       .then(() => {
+        syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
         mergeTreatmentRecordsIntoLocal_([{
           ...data,
           visit_date: visitDateVal,
@@ -6213,9 +6263,9 @@ function saveTreatmentRecord() {
     return;
   }
 
-  gasCall("saveTreatmentRecord", JSON.stringify(data))
-    .then(id => finishTreatmentSideSaves_(pid).then(() => id))
+  saveTreatmentWithFallback_(data, pid, null)
     .then(id => {
+      syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
       markRestricted(
         pid,
         [...selectedTreatments].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
