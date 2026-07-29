@@ -3389,7 +3389,7 @@ function restoreUndoSnapshot_(snap) {
     }
     if (snap.kentai) {
       applyKentaiFormDraftPayload_(undoCloneJson_(snap.kentai));
-      refreshKentaiPreviewDom();
+      refreshKentaiPreviewDom({ skipPull: true });
     }
     if (snap.ofpi) {
       const p = undoCloneJson_(snap.ofpi);
@@ -9943,7 +9943,7 @@ async function rptApplyArchivePayload_(kind, payload) {
         syncReportPatientLabel_();
       }
       applyKentaiFormDraftPayload_(payload);
-      refreshKentaiPreviewDom();
+      refreshKentaiPreviewDom({ skipPull: true });
       return true;
     case "visitTt": {
       const facId = lastVisitTimetableCtx_?.facId || getReportFacId_();
@@ -14340,15 +14340,20 @@ async function reloadKentaiFormForPatient_() {
   } else {
     kentaiResetFormFields_();
   }
-  refreshKentaiPreviewDom();
+  refreshKentaiPreviewDom({ skipPull: true });
 }
 
-function refreshKentaiPreviewDom() {
+/**
+ * @param {{ skipPull?: boolean }} [opts]
+ * skipPull: 下書き／履歴復元直後は true。古いプレビューDOMで隠しtextareaを上書きしない。
+ */
+function refreshKentaiPreviewDom(opts) {
+  opts = opts || {};
   ensureKentaiPreviewInputListeners_();
   const host = document.getElementById("kentai-preview-host");
   if (!host) return;
   const prevHdr = lastKentaiPreviewHdr_ ? Object.assign({}, lastKentaiPreviewHdr_) : null;
-  if (host && prevHdr) {
+  if (!opts.skipPull && host && prevHdr) {
     const activeId = document.activeElement && document.activeElement.id;
     const formTextIds = new Set(["kentai-text-oral", "kentai-text-denture", "kentai-text-perio", "kentai-text-caries", "kentai-text-overall"]);
     if (!formTextIds.has(activeId)) {
@@ -14472,7 +14477,7 @@ function openKentaiReportModal() {
     }
     populateRptClinicSelect_(document.getElementById("kentaiClinicSelect"), (draft && draft.hdr && draft.hdr.clinic) || document.getElementById("clinic-name")?.value || "");
     document.getElementById("kentaiReportModal")?.classList.add("show");
-    refreshKentaiPreviewDom();
+    refreshKentaiPreviewDom({ skipPull: true });
   });
 }
 
@@ -14541,9 +14546,19 @@ function printKentaiReport(isRetry) {
     } catch (_) {}
   });
   const kKey = kentaiDraftKey_();
-  rptAutoSaveArchiveOnPrint_("kentai");
-  if (kKey) rptClearDraft_("kentai", kKey);
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  // 確定保存の成功を待ってから下書き消去（失敗時に本文が消えるのを防ぐ）
+  rptAutoSaveArchiveOnPrint_("kentai").then(res => {
+    if (res && kKey) {
+      rptClearDraft_("kentai", kKey);
+      showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+    } else if (res) {
+      showToast("印刷画面を開きました（確定保存しました）");
+    } else {
+      showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
+    }
+  }).catch(() => {
+    showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
+  });
 }
 
 function closeFaxDailyModal() {
@@ -17023,7 +17038,12 @@ function saveKentaiPreviewDraft_() {
     showToast("患者と検診日を選んでください");
     return;
   }
-  refreshKentaiPreviewDom();
+  const host = document.getElementById("kentai-preview-host");
+  if (host && lastKentaiPreviewHdr_) {
+    rptPullEdits_(host, lastKentaiPreviewHdr_);
+    pullKentaiFormTextsFromPreview_(host);
+    pullKentaiAnnotTextsFromHost_(host);
+  }
   rptDraftSavePromise_(rptSaveDraftAsync_("kentai", key, collectKentaiFormDraftPayload_()));
 }
 
@@ -17126,7 +17146,7 @@ function clearKentaiPreviewDraft_() {
     if (el) el.value = "あり";
   });
   populateRptClinicSelect_(document.getElementById("kentaiClinicSelect"), document.getElementById("clinic-name")?.value || "");
-  refreshKentaiPreviewDom();
+  refreshKentaiPreviewDom({ skipPull: true });
   }).catch(() => showToast("下書きの消去に失敗しました"));
 }
 

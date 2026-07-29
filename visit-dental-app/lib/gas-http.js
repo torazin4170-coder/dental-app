@@ -75,6 +75,9 @@ function htmlGasHint_(text, status) {
   if (status === 404 || text.includes('Page Not Found')) {
     return ' GAS_WEBAPP_URL が古いか誤りです。デプロイ管理の最新 /exec URL を Vercel に設定し Redeploy してください。'
   }
+  if (status === 405) {
+    return ' GAS の転送先は GET 専用です。Vercel 側の中継（gas-http）が古いと出ます。最新版を Redeploy してください。'
+  }
   if (text.includes('Authorization')) {
     return ' GAS のアクセスを「全員」にしてください。'
   }
@@ -138,16 +141,19 @@ async function callGasGetRpc(gasUrl, func, args) {
   return parseGasText(res)
 }
 
-/** 大きい payload: doPost（リダイレクト先にも POST。GET にすると画面 HTML になる） */
+/**
+ * 大きい payload: 最初だけ doPost。
+ * GAS は処理後に googleusercontent へリダイレクトし、その先は GET 専用（POST すると 405 + HTML）。
+ * 保存自体は最初の POST で完了しているので、リダイレクトは GET で結果 JSON だけ取る。
+ */
 async function callGasPostRpc(gasUrl, func, args) {
   const payload = JSON.stringify({ func, args })
-  const postOpts = {
+  let res = await fetch(gasUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: payload,
     redirect: 'manual',
-  }
-  let res = await fetch(gasUrl, postOpts)
+  })
   for (let i = 0; i < 6; i++) {
     const tryParsed = await parseGasText(res.clone())
     if (tryParsed.ok) return tryParsed
@@ -156,7 +162,7 @@ async function callGasPostRpc(gasUrl, func, args) {
     }
     const loc = res.headers.get('location')
     if (!loc) return tryParsed
-    res = await fetch(loc, postOpts)
+    res = await fetch(loc, { method: 'GET', redirect: 'manual' })
   }
   return parseGasText(res)
 }
