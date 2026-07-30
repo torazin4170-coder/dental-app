@@ -1691,10 +1691,6 @@
       <button type="button" id="monthCareRegenBtn" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="generateMonthCareDraft()">🔄 下書きを再生成</button>
     </div>
     <p class="rpt-preview-hint" id="monthCarePreviewHint">プレビューの<strong>チェック</strong>をタップでオン/オフ、<strong>コメント欄</strong>をタップで編集できます。</p>
-    <div class="rpt-clinic-bar" style="margin-bottom:8px">
-      <label for="monthCareClinicSelect">医院名</label>
-      <select id="monthCareClinicSelect" onchange="onRptClinicSelectChange_('monthCare')"></select>
-    </div>
     <div id="monthCarePreviewScroll" class="report-preview-scroll" style="margin-bottom:12px">
       <div id="monthCarePreviewInner"></div>
     </div>
@@ -1703,7 +1699,7 @@
     <textarea id="monthCareBodyTa" class="report-preview-compact-ta" rows="8" placeholder="下書きを生成するとここに入ります。文体や表現をそのまま修正してください。" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;line-height:1.65;font-family:inherit;resize:vertical"></textarea>
     </div>
     <div id="monthCareRefPanel" style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:12px;background:#f8fafc">
-      <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px">参考コメント（カテゴリから挿入）</div>
+      <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px">参考コメント（カテゴリから挿入・追加／削除可）</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
         <label for="monthCareRefCat" style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">カテゴリ</label>
         <select id="monthCareRefCat" style="flex:1;min-width:160px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit"></select>
@@ -1711,7 +1707,12 @@
       <input type="search" id="monthCareRefFilter" placeholder="文言を絞り込み…" autocomplete="off"
         style="width:100%;margin-top:8px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit">
       <div id="monthCareRefChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;max-height:min(18vh,140px);overflow:auto;padding:2px 0"></div>
-      <p id="monthCareRefNote" style="font-size:10px;color:var(--muted);margin:8px 0 0;line-height:1.45">タップで<strong>編集中のコメント欄</strong>（または1マス目）へ挿入します。</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;margin-top:10px">
+        <input type="text" id="monthCareRefAddInput" placeholder="新しい参考コメントを入力…" autocomplete="off"
+          style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit">
+        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:8px 12px;white-space:nowrap" onclick="addMonthCareRefPhrase_()">＋ 追加</button>
+      </div>
+      <p id="monthCareRefNote" style="font-size:10px;color:var(--muted);margin:8px 0 0;line-height:1.45">文言をタップで<strong>編集中のコメント欄</strong>へ挿入。右の × で一覧から削除（この端末に保存）。</p>
     </div>
     <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45">※診療記録からの自動生成です。医学的表現のまま残したい箇所はそのまま、伝わりやすい言い換えはご自由に加えてください。</p>
     <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">

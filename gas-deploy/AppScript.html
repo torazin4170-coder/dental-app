@@ -643,7 +643,11 @@ const MC_GOKAN_FORM_SCHEMA_ = {
 
 /** 診療記録の処置チップ → 五香チェック */
 const MC_TREATMENT_TO_GOKAN_ = {
-  "口腔ケア": [{ cat: "oral_care", sub: "口腔清掃", main: true }],
+  "口腔ケア": [
+    { cat: "oral_care", main: true },
+    { cat: "oral_care", sub: "口腔清掃" },
+    { cat: "oral_care", sub: "歯茎の清掃" }
+  ],
   "口腔衛生指導": [{ cat: "oral_care", sub: "清掃指導", main: true }],
   "フッ素塗布": [{ cat: "oral_care", sub: "清掃指導", main: true }],
   "経過チェック": [],
@@ -773,8 +777,10 @@ function mcGokanStampChar_(docName) {
 const MC_GOKAN_SKIP_OTHER_AUTO_TEXT_ = new Set(["経過チェック", "X線撮影"]);
 
 function applyGokanTreatmentMaps_(today, treatCodes) {
+  const normalizedCodes = [];
   treatCodes.forEach(codeRaw => {
     const code = normalizeTreatmentCodeForMatch_(codeRaw);
+    if (code) normalizedCodes.push(code);
     if (MC_GOKAN_SKIP_OTHER_AUTO_TEXT_.has(code)) return;
     const maps = MC_TREATMENT_TO_GOKAN_[code] || MC_TREATMENT_TO_GOKAN_[codeRaw];
     if (!maps || !maps.length) {
@@ -794,9 +800,16 @@ function applyGokanTreatmentMaps_(today, treatCodes) {
         return;
       }
       if (m.main) cat.checked = true;
-      if (m.sub && cat.subs && cat.subs[m.sub] != null) cat.subs[m.sub] = true;
+      if (m.sub && cat.subs) cat.subs[m.sub] = true;
     });
   });
+  // カルテ処置「口腔ケア」→ 本体＋歯茎の清掃＋口腔清掃を必ずON
+  if (normalizedCodes.includes("口腔ケア") && today.oral_care) {
+    today.oral_care.checked = true;
+    if (!today.oral_care.subs) today.oral_care.subs = {};
+    today.oral_care.subs["歯茎の清掃"] = true;
+    today.oral_care.subs["口腔清掃"] = true;
+  }
 }
 
 function applyGokanNextMaps_(next, nextContentRaw, slotOpt) {
@@ -1016,7 +1029,7 @@ function renderMcGokanMatrixCell_(root, pathPrefix, pi, si, slot, forPrint) {
   h += `</div>`;
   h += `<div class="mc-matrix-section-label mc-matrix-comment-label">コメント</div>`;
   h += `<div class="mc-matrix-comment">${forPrint
-    ? `<span class="mc-matrix-comment-print">${escHtml(commentVal)}</span>`
+    ? `<span class="mc-matrix-comment-print">${rptMultilineTextToHtml_(commentVal)}</span>`
     : rptEdit_(commentPath, commentVal, { block: true, tag: "div", cls: "mc-matrix-comment-edit rpt-edit-multiline", multiline: true })
   }</div>`;
   h += `</div>`;
@@ -1121,7 +1134,6 @@ function buildMonthCareFacilityTextPreviewHtml_(batchCtx, opts) {
     const pathPrefix = `patients.${i}.`;
     const label = `${trimField_(p.room) ? "部屋" + trimField_(p.room) + " " : ""}${p.patient_name || ""}`.trim() || "（氏名なし）";
     const title = p.report_title || "月次報告（下書き）";
-    const clinic = (p.clinic_name || "").trim();
     const body = p.preview_body != null ? String(p.preview_body) : buildMonthCareEditableDraft_(p);
     if (!forPrint) {
       html += `<div class="mc-matrix-patient-block" data-mc-patient-id="${escAttr(p.patient_id)}">`;
@@ -1135,12 +1147,10 @@ function buildMonthCareFacilityTextPreviewHtml_(batchCtx, opts) {
     html += `<div class="mc-doc">`;
     if (forPrint) {
       html += `<div class="mc-title">${escHtml(title)}</div>`;
-      if (clinic) html += `<div class="mc-clinic">${escHtml(clinic)}</div>`;
-      html += `<div class="mc-body">${escHtml(body)}</div>`;
+      html += `<div class="mc-body">${rptMultilineTextToHtml_(body)}</div>`;
     } else {
       html += rptEdit_(mcPath_(pathPrefix, "report_title"), title, { block: true, tag: "div", cls: "mc-title" });
-      if (clinic) html += rptEdit_(mcPath_(pathPrefix, "clinic_name"), clinic, { block: true, tag: "div", cls: "mc-clinic" });
-      html += rptEdit_(mcPath_(pathPrefix, "preview_body"), body || "（本文なし）", { block: true, tag: "div", cls: "mc-body rpt-edit-multiline" });
+      html += rptEdit_(mcPath_(pathPrefix, "preview_body"), body || "（本文なし）", { block: true, tag: "div", cls: "mc-body rpt-edit-multiline", multiline: true });
     }
     html += `</div></div>`;
   });
@@ -1464,6 +1474,11 @@ function mcGokanBindMatrixChecks_(container) {
       const mainPath = path.replace(/\.subs\.[^.]+$/, ".checked");
       rptSetPath_(lastMonthCareContext, mainPath, true);
     }
+    // 口腔ケア本体をONにしたとき、歯茎の清掃・口腔清掃もデフォルトON
+    if (!cur && /\.today\.oral_care\.checked$/.test(path)) {
+      rptSetPath_(lastMonthCareContext, path.replace(/\.checked$/, ".subs.歯茎の清掃"), true);
+      rptSetPath_(lastMonthCareContext, path.replace(/\.checked$/, ".subs.口腔清掃"), true);
+    }
     refreshMonthCarePreview({ skipPull: true });
   });
 }
@@ -1492,7 +1507,7 @@ function syncMonthCareUiMode_() {
       ? (batchN > 1
         ? `全 ${batchN} 名分を表示中。プレビューの<strong>チェック</strong>をタップでオン/オフ、<strong>コメント欄</strong>をタップで編集できます。印刷しない患者は「除外」をタップ。`
         : "プレビューの<strong>チェック</strong>をタップでオン/オフ、<strong>コメント欄</strong>をタップで編集できます。")
-      : "プレビューの<strong>タイトル・医院名・本文</strong>をタップして直せます（下のテキスト欄と同期）。";
+      : "プレビューの<strong>タイトル・本文</strong>をタップして直せます（下のテキスト欄と同期）。";
   }
   if (refNote) {
     refNote.innerHTML = isMatrix
@@ -8803,6 +8818,22 @@ function releaseReportOutBtn_(btn) {
   if (lastReportOutBtn_ === b) lastReportOutBtn_ = null;
 }
 
+/** 複数行テキスト → contenteditable 用 HTML（改行を <br> にして再描画後も残す） */
+function rptMultilineTextToHtml_(text) {
+  return escHtml(text != null ? String(text) : "").replace(/\r\n|\r|\n/g, "<br>");
+}
+
+/** contenteditable から改行付きプレーンテキストを取る */
+function rptMultilineHtmlToText_(el) {
+  if (!el) return "";
+  // innerText は <br>/ブロック境界を改行にするため優先。末尾の余分な改行は1つまで残す。
+  let s = el.innerText != null ? String(el.innerText) : String(el.textContent || "");
+  s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // ブラウザが末尾に付ける空行を1つに正規化（改行自体は消さない）
+  s = s.replace(/\n{3,}$/g, "\n\n");
+  return s;
+}
+
 /** 帳票プレビュー：タップ編集（data-rpt-path → コンテキストへ反映・印刷に使用） */
 function rptEdit_(path, text, opts) {
   opts = opts || {};
@@ -8810,7 +8841,10 @@ function rptEdit_(path, text, opts) {
   const block = opts.block ? " rpt-edit-block" : "";
   const ml = opts.multiline ? " rpt-edit-multiline" : "";
   const tag = opts.tag || "span";
-  return `<${tag} class="rpt-edit${block}${ml}${extra}" contenteditable="true" data-rpt-path="${escAttr(path)}" spellcheck="false">${escHtml(text != null ? String(text) : "")}</${tag}>`;
+  const body = opts.multiline
+    ? rptMultilineTextToHtml_(text)
+    : escHtml(text != null ? String(text) : "");
+  return `<${tag} class="rpt-edit${block}${ml}${extra}" contenteditable="true" data-rpt-path="${escAttr(path)}" spellcheck="false">${body}</${tag}>`;
 }
 
 function rptSetPath_(obj, path, val) {
@@ -8836,9 +8870,11 @@ function rptPullEdits_(container, root) {
     let val;
     if (el.getAttribute("data-rpt-rich") === "1") {
       val = faxHtmlToMarkers_(el.innerHTML);
+    } else if (el.classList.contains("rpt-edit-multiline")) {
+      val = rptMultilineHtmlToText_(el);
     } else {
       val = el.innerText != null ? el.innerText : el.textContent || "";
-      if (!el.classList.contains("rpt-edit-multiline")) val = val.trim();
+      val = val.trim();
     }
     rptSetPath_(root, path, val);
   });
@@ -9498,8 +9534,6 @@ function rptCollectArchivePayload_(kind) {
       const prev = document.getElementById("monthCarePreviewInner");
       if (prev) rptPullEdits_(prev, lastMonthCareContext);
       if (lastMonthCareContext.omit_visit_time) syncMonthCarePreviewBodyToTa_();
-      const sel = document.getElementById("monthCareClinicSelect");
-      if (sel) lastMonthCareContext.clinic_name = sel.value;
       return {
         context: lastMonthCareContext,
         body: document.getElementById("monthCareBodyTa")?.value || ""
@@ -10211,13 +10245,7 @@ function onRptClinicSelectChange_(kind) {
     return;
   }
   if (kind === "monthCare") {
-    const sel = document.getElementById("monthCareClinicSelect");
-    if (!lastMonthCareContext || !sel) return;
-    lastMonthCareContext.clinic_name = sel.value;
-    if (lastMonthCareContext.batch_mode && lastMonthCareContext.patients) {
-      lastMonthCareContext.patients.forEach(p => { p.clinic_name = sel.value; });
-    }
-    refreshMonthCarePreview();
+    // 五香様式は書類に医院名を載せない（ドロップダウン廃止）
     return;
   }
   if (kind === "clinicalMonthly") {
@@ -11176,6 +11204,92 @@ function formatYmKanjiForMc_(ym) {
   return `${parseInt(m[1], 10)}年${parseInt(m[2], 10)}月`;
 }
 
+const MC_REF_CUSTOM_STORE_KEY_ = "monthCareRefPhrases_v1";
+
+function loadMcRefPhraseStore_() {
+  try {
+    const o = JSON.parse(localStorage.getItem(MC_REF_CUSTOM_STORE_KEY_) || "{}");
+    return {
+      customByCat: o.customByCat && typeof o.customByCat === "object" ? o.customByCat : {},
+      hiddenByCat: o.hiddenByCat && typeof o.hiddenByCat === "object" ? o.hiddenByCat : {}
+    };
+  } catch (_) {
+    return { customByCat: {}, hiddenByCat: {} };
+  }
+}
+
+function saveMcRefPhraseStore_(store) {
+  try {
+    localStorage.setItem(MC_REF_CUSTOM_STORE_KEY_, JSON.stringify(store || { customByCat: {}, hiddenByCat: {} }));
+  } catch (_) {}
+}
+
+/** カテゴリごとの表示文言（標準−非表示＋追加分） */
+function getMonthCareRefItemsForCat_(catId) {
+  const cat = MONTHLY_CARE_REFERENCE_BY_CATEGORY.find(c => c.id === catId);
+  const store = loadMcRefPhraseStore_();
+  const hidden = new Set((store.hiddenByCat[catId] || []).map(String));
+  const builtIn = (cat && cat.items ? cat.items : [])
+    .filter(t => !hidden.has(String(t)))
+    .map(t => ({ text: String(t), custom: false }));
+  const custom = (store.customByCat[catId] || []).map(t => ({ text: String(t), custom: true }));
+  return builtIn.concat(custom);
+}
+
+function addMonthCareRefPhrase_() {
+  const sel = document.getElementById("monthCareRefCat");
+  const input = document.getElementById("monthCareRefAddInput");
+  const catId = sel ? String(sel.value || "") : "";
+  let text = input ? String(input.value || "").trim() : "";
+  if (!catId) {
+    showToast("カテゴリを選んでください");
+    return;
+  }
+  if (!text) {
+    showToast("追加する文言を入力してください");
+    return;
+  }
+  text = text.replace(/\s+/g, " ");
+  const store = loadMcRefPhraseStore_();
+  if (!store.customByCat[catId]) store.customByCat[catId] = [];
+  if (!store.hiddenByCat[catId]) store.hiddenByCat[catId] = [];
+  const existsCustom = store.customByCat[catId].some(t => String(t) === text);
+  const cat = MONTHLY_CARE_REFERENCE_BY_CATEGORY.find(c => c.id === catId);
+  const existsBuiltIn = !!(cat && cat.items && cat.items.some(t => String(t) === text));
+  if (existsCustom) {
+    showToast("同じ文言がすでにあります");
+    return;
+  }
+  if (existsBuiltIn) {
+    store.hiddenByCat[catId] = store.hiddenByCat[catId].filter(t => String(t) !== text);
+    saveMcRefPhraseStore_(store);
+    if (input) input.value = "";
+    renderMonthCareRefPhraseChips();
+    showToast("一覧に戻しました");
+    return;
+  }
+  store.customByCat[catId].push(text);
+  saveMcRefPhraseStore_(store);
+  if (input) input.value = "";
+  renderMonthCareRefPhraseChips();
+  showToast("参考コメントを追加しました");
+}
+
+function removeMonthCareRefPhrase_(catId, text, isCustom) {
+  const store = loadMcRefPhraseStore_();
+  const t = String(text || "");
+  if (!t) return;
+  if (isCustom) {
+    store.customByCat[catId] = (store.customByCat[catId] || []).filter(x => String(x) !== t);
+  } else {
+    if (!store.hiddenByCat[catId]) store.hiddenByCat[catId] = [];
+    if (!store.hiddenByCat[catId].some(x => String(x) === t)) store.hiddenByCat[catId].push(t);
+  }
+  saveMcRefPhraseStore_(store);
+  renderMonthCareRefPhraseChips();
+  showToast(isCustom ? "追加した文言を削除しました" : "一覧から外しました（この端末のみ）");
+}
+
 function ensureMonthCareRefUiInitialized_() {
   const sel = document.getElementById("monthCareRefCat");
   if (!sel || sel.dataset.bound === "1") return;
@@ -11186,6 +11300,16 @@ function ensureMonthCareRefUiInitialized_() {
   sel.addEventListener("change", renderMonthCareRefPhraseChips);
   const flt = document.getElementById("monthCareRefFilter");
   if (flt) flt.addEventListener("input", renderMonthCareRefPhraseChips);
+  const addInput = document.getElementById("monthCareRefAddInput");
+  if (addInput && !addInput.dataset.bound) {
+    addInput.dataset.bound = "1";
+    addInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addMonthCareRefPhrase_();
+      }
+    });
+  }
   renderMonthCareRefPhraseChips();
 }
 
@@ -11193,21 +11317,24 @@ function renderMonthCareRefPhraseChips() {
   const sel = document.getElementById("monthCareRefCat");
   const host = document.getElementById("monthCareRefChips");
   if (!sel || !host) return;
-  const cat = MONTHLY_CARE_REFERENCE_BY_CATEGORY.find(c => c.id === sel.value)
-    || MONTHLY_CARE_REFERENCE_BY_CATEGORY[0];
+  const catId = sel.value || (MONTHLY_CARE_REFERENCE_BY_CATEGORY[0] && MONTHLY_CARE_REFERENCE_BY_CATEGORY[0].id) || "";
   const flt = document.getElementById("monthCareRefFilter");
   const q = (flt && flt.value) ? flt.value.trim().toLowerCase() : "";
-  const items = (cat && cat.items ? cat.items : []).filter(t =>
-    !q || String(t).toLowerCase().indexOf(q) !== -1
+  const items = getMonthCareRefItemsForCat_(catId).filter(it =>
+    !q || String(it.text).toLowerCase().indexOf(q) !== -1
   );
   if (!items.length) {
-    host.innerHTML = `<span style="font-size:12px;color:var(--muted);padding:6px">該当する文言がありません</span>`;
+    host.innerHTML = `<span style="font-size:12px;color:var(--muted);padding:6px">該当する文言がありません。下の欄から追加できます。</span>`;
     return;
   }
-  host.innerHTML = items.map(t => {
-    const enc = encodeURIComponent(t);
-    const short = t.length > 40 ? t.slice(0, 40) + "…" : t;
-    return `<button type="button" class="mc-ref-chip-btn" data-ph="${enc}" title="${escAttr(t)}" style="font-size:11px;text-align:left;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:white;cursor:pointer;line-height:1.35;max-width:100%">${escHtml(short)}</button>`;
+  host.innerHTML = items.map(it => {
+    const enc = encodeURIComponent(it.text);
+    const short = it.text.length > 40 ? it.text.slice(0, 40) + "…" : it.text;
+    const customAttr = it.custom ? "1" : "0";
+    return `<span class="mc-ref-chip-wrap">` +
+      `<button type="button" class="mc-ref-chip-btn" data-ph="${enc}" title="${escAttr(it.text)}">${escHtml(short)}</button>` +
+      `<button type="button" class="mc-ref-chip-del" data-ph="${enc}" data-custom="${customAttr}" data-cat="${escAttr(catId)}" title="削除" aria-label="削除">×</button>` +
+      `</span>`;
   }).join("");
   host.querySelectorAll(".mc-ref-chip-btn").forEach(btn => {
     btn.addEventListener("mousedown", e => {
@@ -11217,6 +11344,19 @@ function renderMonthCareRefPhraseChips() {
     btn.addEventListener("click", () => {
       const ph = decodeURIComponent(btn.getAttribute("data-ph") || "");
       insertMonthCareReferencePhrase(ph);
+    });
+  });
+  host.querySelectorAll(".mc-ref-chip-del").forEach(btn => {
+    btn.addEventListener("mousedown", e => e.preventDefault());
+    btn.addEventListener("click", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ph = decodeURIComponent(btn.getAttribute("data-ph") || "");
+      const isCustom = btn.getAttribute("data-custom") === "1";
+      const cid = btn.getAttribute("data-cat") || catId;
+      if (!ph) return;
+      if (!confirm(isCustom ? "この追加文言を削除しますか？" : "この文言を一覧から外しますか？（この端末のみ）")) return;
+      removeMonthCareRefPhrase_(cid, ph, isCustom);
     });
   });
 }
@@ -11331,7 +11471,6 @@ function buildMonthCareEditableDraft_(data) {
   const pname = (data.patient_name || "").trim();
   const ymJp = formatYmKanjiForMc_(data.ym) || "—";
   const docName = (data.doctor_name || "").trim();
-  const clinicName = (data.clinic_name || "").trim();
 
   const treatSentence = treatParas.map(p => (p.endsWith("。") ? p : p + "。")).join("");
   const noteSentence = noteParas.map(t => (t.endsWith("。") ? t : t + "。")).join("");
@@ -11362,7 +11501,6 @@ function buildMonthCareEditableDraft_(data) {
     "担当医確認 印",
     "",
     "担当歯科医師　" + (docName || "（設定タブの担当医名が反映されます）"),
-    "歯科医療機関名　" + (clinicName || "（設定タブの医院名が反映されます）"),
     "",
     "※上記は診療記録に基づく下書きです。表現・内容を必ずご確認のうえ、必要に応じて修正してからご利用ください。"
   ];
@@ -11388,7 +11526,8 @@ function refreshMonthCarePreview(opts) {
   if (!inner) return;
   const skipPull = !!(opts && opts.skipPull);
   if (lastMonthCareContext && !skipPull) {
-    mcPullMonthCareEditsIfEditing_();
+    // フォーカス有無に関わらず取り込み（改行入りコメントが消えるのを防ぐ）
+    mcPullMonthCareEdits_();
     ensureMonthCareMatrixOnContext_(lastMonthCareContext);
   } else if (lastMonthCareContext) {
     ensureMonthCareMatrixOnContext_(lastMonthCareContext);
@@ -11419,7 +11558,6 @@ function buildMonthCareDocumentHtml_(bodyText, opts) {
   opts = opts || {};
   const c = lastMonthCareContext;
   const body = (bodyText || "").trim();
-  const bodyEsc = escHtml(body);
   if (c && c.batch_mode && c.patients && c.patients.length) {
     ensureMonthCareMatrixOnContext_(c);
     return buildMonthCareFacilityPreviewHtml_(c, opts);
@@ -11432,20 +11570,16 @@ function buildMonthCareDocumentHtml_(bodyText, opts) {
   }
   if (c) {
     const title = c.report_title || "月次報告（下書き）";
-    const clinic = (c.clinic_name || "").trim();
     return `<div class="mc-doc">
     ${rptEdit_("report_title", title, { block: true, tag: "div", cls: "mc-title" })}
-    ${clinic ? rptEdit_("clinic_name", clinic, { block: true, tag: "div", cls: "mc-clinic" }) : ""}
-    ${rptEdit_("preview_body", (c.preview_body != null ? String(c.preview_body) : body) || "（本文なし）", { block: true, tag: "div", cls: "mc-body rpt-edit-multiline" })}
+    ${rptEdit_("preview_body", (c.preview_body != null ? String(c.preview_body) : body) || "（本文なし）", { block: true, tag: "div", cls: "mc-body rpt-edit-multiline", multiline: true })}
   </div>`;
   }
   if (body) {
-    const clinicDom = (document.getElementById("clinic-name") && document.getElementById("clinic-name").value.trim()) || "";
     const title = "月次報告（下書き）";
     return `<div class="mc-doc">
     <div class="mc-title">${escHtml(title)}</div>
-    ${clinicDom ? `<div class="mc-clinic">${escHtml(clinicDom)}</div>` : ""}
-    <div class="mc-body" style="white-space:pre-wrap;word-break:break-word">${bodyEsc}</div>
+    <div class="mc-body" style="white-space:pre-wrap;word-break:break-word">${rptMultilineTextToHtml_(body)}</div>
   </div>`;
   }
   return "<p style=\"color:#64748b;padding:12px;line-height:1.55\">日報・帳票タブで<strong>施設</strong>と<strong>対象年月</strong>を選び、「🔄 下書きを再生成」を押すと、施設の全患者分が居室順でプレビューされます。</p>";
@@ -11556,9 +11690,6 @@ function generateMonthCareDraft() {
   document.getElementById("monthCareModal")?.classList.add("show");
   showMonthCarePreviewLoading_();
   loadMonthCareBatchPatients_(facId, ym).then(patients => {
-    const clinicSel = document.getElementById("monthCareClinicSelect");
-    const clinicOverride = clinicSel ? clinicSel.value : "";
-    if (clinicOverride) patients.forEach(pt => { pt.clinic_name = clinicOverride; });
     if (!patients.length) {
       lastMonthCareContext = null;
       if (err) {
@@ -11577,7 +11708,6 @@ function generateMonthCareDraft() {
       ta2.addEventListener("input", refreshMonthCarePreview);
     }
     renderMonthCareRefPhraseChips();
-    populateRptClinicSelect_(document.getElementById("monthCareClinicSelect"), lastMonthCareContext.clinic_name);
     syncMonthCareUiMode_();
     refreshMonthCarePreview();
     showToast(`${patients.length}名分のプレビューを表示しました`);
@@ -16897,7 +17027,6 @@ function tryApplyMonthCarePreviewDraft_(draft) {
   ensureMonthCareMatrixOnContext_(lastMonthCareContext);
   const ta = document.getElementById("monthCareBodyTa");
   if (ta) ta.value = draft.body || "";
-  populateRptClinicSelect_(document.getElementById("monthCareClinicSelect"), draft.context.clinic_name);
   syncMonthCareUiMode_();
   return true;
 }
@@ -16937,8 +17066,6 @@ function saveMonthCarePreviewDraft_() {
   const prev = document.getElementById("monthCarePreviewInner");
   if (prev) rptPullEdits_(prev, lastMonthCareContext);
   if (lastMonthCareContext.omit_visit_time) syncMonthCarePreviewBodyToTa_();
-  const sel = document.getElementById("monthCareClinicSelect");
-  if (sel) lastMonthCareContext.clinic_name = sel.value;
   rptDraftSavePromise_(rptSaveDraftAsync_("monthCare", key, {
     context: lastMonthCareContext,
     body: document.getElementById("monthCareBodyTa")?.value || ""

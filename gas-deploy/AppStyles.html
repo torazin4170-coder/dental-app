@@ -906,7 +906,22 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
 #monthCarePreviewInner .mc-matrix-comment-edit.rpt-edit {
   min-height: 64px; max-height: none; height: auto; overflow: visible;
   display: block; width: 100%; font-size: 14px; line-height: 1.55; padding: 4px 2px;
+  white-space: pre-wrap; word-break: break-word;
 }
+#monthCareRefChips .mc-ref-chip-wrap {
+  display: inline-flex; align-items: stretch; max-width: 100%;
+  border: 1px solid var(--border); border-radius: 8px; background: white; overflow: hidden;
+}
+#monthCareRefChips .mc-ref-chip-btn {
+  font-size: 11px; text-align: left; padding: 6px 10px; border: none; background: transparent;
+  cursor: pointer; line-height: 1.35; max-width: 100%; font-family: inherit; color: inherit;
+}
+#monthCareRefChips .mc-ref-chip-del {
+  border: none; border-left: 1px solid var(--border); background: #f8fafc; color: #64748b;
+  padding: 0 8px; cursor: pointer; font-size: 14px; font-weight: 800; line-height: 1;
+  touch-action: manipulation;
+}
+#monthCareRefChips .mc-ref-chip-del:hover { background: #fee2e2; color: #b91c1c; }
 @media (min-width: 768px) {
   #monthCarePreviewInner .mc-matrix-doc--preview { font-size: 11px; }
   #monthCarePreviewInner .mc-matrix-cell { min-height: 320px; }
