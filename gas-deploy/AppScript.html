@@ -12696,9 +12696,38 @@ function personalSheetDraftKey_() {
   return facId && ym ? `${facId}_${ym}` : "";
 }
 
+function notesForPersonalSheetBody_(raw) {
+  const s = String(raw || "").trim();
+  if (!s || !notesPlainText_(s)) return "";
+  return s;
+}
+
+function psBodyPlainIncludesNote_(body, noteRaw) {
+  const np = notesPlainText_(noteRaw);
+  if (!np) return true;
+  return notesPlainText_(body).indexOf(np) !== -1;
+}
+
+/** 手入力済み body に、診療記録メモ・所見でまだ無い行だけ追記 */
+function psMergeVisitNotesIntoBody_(body, visits) {
+  let out = String(body || "");
+  (visits || []).forEach(v => {
+    const nx = notesForPersonalSheetBody_(v.notes);
+    if (!nx || psBodyPlainIncludesNote_(out, nx)) return;
+    out = out.trim() ? `${out.trim()}\n${nx}` : nx;
+  });
+  return out.trim();
+}
+
 function buildPersonalSheetPatientBodyFromVisits_(p) {
   const lines = [];
+  let markedFirst = false;
+  const fv = d => formatDateInputVal(d);
   (p.visits || []).forEach(v => {
+    const vkey = fv(v.visit_date);
+    const fkey = fv(p.first_visit_date_ever);
+    const isFirst = !markedFirst && vkey && fkey && vkey === fkey;
+    if (isFirst) markedFirst = true;
     const md = formatMdSlashForClinical_(v.visit_date);
     const ta = String(v.visit_time_start || "").trim();
     const tb = String(v.visit_time_end || "").trim();
@@ -12706,9 +12735,9 @@ function buildPersonalSheetPatientBodyFromVisits_(p) {
     if (ta && tb) timePart = ` ${ta}-${tb}`;
     else if (ta) timePart = ` ${ta}-`;
     const tx = formatTreatmentTextForReport_((v.treatments || "").trim());
-    const nx = (v.notes || "").trim();
-    const head = `${md}${timePart}`.trim();
+    const head = `${md}${timePart}${isFirst ? " 初診" : ""}`.trim();
     if (head || tx) lines.push(`${head}${tx ? `  ${tx}` : ""}`.trim());
+    const nx = notesForPersonalSheetBody_(v.notes);
     if (nx) lines.push(nx);
   });
   return lines.join("\n").trim();
@@ -12774,15 +12803,25 @@ function psPhotoWidgetOccupiedHeight_(ph) {
 
 function normalizePersonalSheetPatientRow_(p) {
   const photosIn = Array.isArray(p.photos) ? p.photos : [];
+  const visits = Array.isArray(p.visits) ? p.visits : [];
+  const autoBody = buildPersonalSheetPatientBodyFromVisits_(p);
+  const savedBody = p.body != null ? String(p.body) : "";
+  let body;
+  if (visits.length) {
+    body = savedBody.trim() ? psMergeVisitNotesIntoBody_(savedBody, visits) : autoBody;
+  } else {
+    body = savedBody;
+  }
   return {
     patient_id: p.patient_id || "",
     room: p.room != null ? String(p.room) : "",
     name: p.name || "",
     coverage_type: p.coverage_type || "",
     first_visit_date_ever: p.first_visit_date_ever || "",
-    body: p.body != null ? String(p.body) : buildPersonalSheetPatientBodyFromVisits_(p),
+    body,
     extra_comment: p.extra_comment != null ? String(p.extra_comment) : "",
-    photos: photosIn.map((ph, i) => normalizePersonalSheetPhoto_(ph, i)).filter(ph => ph.data_url)
+    photos: photosIn.map((ph, i) => normalizePersonalSheetPhoto_(ph, i)).filter(ph => ph.data_url),
+    visits
   };
 }
 
