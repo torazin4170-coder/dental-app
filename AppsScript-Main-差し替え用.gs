@@ -769,14 +769,17 @@ var RPC_ALLOWLIST_ = {
   updateTreatmentRecord: updateTreatmentRecord,
   deleteTreatmentRecord: deleteTreatmentRecord,
   getPatientMonthlyReportData: getPatientMonthlyReportData,
+  getFacilityMonthlyCareReportData: getFacilityMonthlyCareReportData,
   getFacilityClinicalMonthlyReportData: getFacilityClinicalMonthlyReportData,
   getPatientPersonalSheetData: getPatientPersonalSheetData,
   getTeethData: getTeethData,
   saveTeethData: saveTeethData,
   getTeethDataHistory: getTeethDataHistory,
   getFacilityDailyReportData: getFacilityDailyReportData,
+  getFaxDailyBatchData: getFaxDailyBatchData,
   getSupervisorDailyListData: getSupervisorDailyListData,
   getTreatmentsForFacilityDate: getTreatmentsForFacilityDate,
+  getOfpiFormData: getOfpiFormData,
   appendFaxStyleMemory: appendFaxStyleMemory,
   generateFaxDailyFacilityComment: generateFaxDailyFacilityComment,
   getDashboardData: getDashboardData,
@@ -1436,6 +1439,145 @@ function getPatientMonthlyReportData(patientId, ymOpt) {
   });
 }
 
+/** 月次ケア報告（④五香）用：診療行 → クライアント向け visit オブジェクト */
+function mapTreatmentToMonthlyVisit_(t) {
+  return {
+    id: t.id,
+    visit_date: visitDateYMD_(t.visit_date),
+    treatments: String(t.treatments || ""),
+    notes: String(t.notes || ""),
+    next_date: t.next_date ? visitDateYMD_(t.next_date) : "",
+    next_content: String(t.next_content || ""),
+    visit_time_start: formatTimeValueForClient_(t.visit_time_start),
+    visit_time_end: formatTimeValueForClient_(t.visit_time_end),
+    notes_tones: String(t.notes_tones || "")
+  };
+}
+
+/** teeth_data シートを1回読み、各患者の最新 JSON を返す */
+function buildLatestTeethDataMap_(patientIds) {
+  var map = {};
+  var idSet = {};
+  (patientIds || []).forEach(function (pid) { idSet[String(pid)] = true; });
+  var sh = getSheet("teeth_data");
+  var rows = sh.getDataRange().getValues();
+  for (var i = rows.length - 1; i >= 1; i--) {
+    var pid = String(rows[i][0] || "");
+    if (!pid || !idSet[pid] || map[pid] != null) continue;
+    map[pid] = rows[i][2] != null ? String(rows[i][2]) : "{}";
+  }
+  return map;
+}
+
+/** 施設・指定月の④五香月次報告データ（全患者＋歯式を1回の RPC で返す） */
+function getFacilityMonthlyCareReportData(facId, ymOpt) {
+  var facIdStr = String(facId || "").trim();
+  if (!facIdStr) throw new Error("施設を指定してください");
+  var now = new Date();
+  var ymDefault = Utilities.formatDate(now, "JST", "yyyy-MM-dd").slice(0, 7);
+  var ym = (ymOpt && /^\d{4}-\d{2}$/.test(String(ymOpt).trim()))
+    ? String(ymOpt).trim()
+    : ymDefault;
+
+  var patients = JSON.parse(getPatients(null));
+  var facilities = JSON.parse(getFacilities());
+  var settings = JSON.parse(getSettings());
+  var fac = facilities.find(function (f) { return String(f.id) === facIdStr; }) || {};
+  var facName = fac.name ? String(fac.name) : "";
+  var hideSubstr = (settings.month_report_hide_time_facility_substr != null && String(settings.month_report_hide_time_facility_substr).trim())
+    ? String(settings.month_report_hide_time_facility_substr).trim()
+    : "サニーライフ稲毛";
+  var omitVisitTime = hideSubstr.length > 0 && facName.indexOf(hideSubstr) !== -1;
+  var timeFb = (settings.month_report_time_fallback != null && String(settings.month_report_time_fallback).trim())
+    ? String(settings.month_report_time_fallback).trim()
+    : "おおむね20分以上診療いたしました";
+  var reportTitle = omitVisitTime
+    ? "歯科訪問診療報告書 （歯科医師）"
+    : "居宅療養管理指導報告書 （歯科医師）";
+
+  var emptyPayload = {
+    ym: ym,
+    facility_id: facIdStr,
+    facility_name: facName,
+    clinic_name: settings.clinic_name || "",
+    doctor_name: settings.doctor_name || "",
+    omit_visit_time: omitVisitTime,
+    report_title: reportTitle,
+    time_fallback_phrase: timeFb,
+    patients: []
+  };
+
+  var sh = getSheet("treatments");
+  ensureTreatmentTimeColumns_(sh);
+  var rows = sh.getDataRange().getValues();
+  if (rows.length < 2) return JSON.stringify(emptyPayload);
+
+  var header = rows[0];
+  var byPid = {};
+  rows.slice(1).forEach(function (r) {
+    var t = normalizeTreatmentTimesForClient_(rowToObj(header, r));
+    if (String(t.fac_id) !== facIdStr || visitDateYM_(t.visit_date) !== ym) return;
+    var pid = String(t.patient_id);
+    if (!byPid[pid]) byPid[pid] = [];
+    byPid[pid].push(t);
+  });
+
+  var pids = Object.keys(byPid);
+  if (!pids.length) return JSON.stringify(emptyPayload);
+
+  var teethMap = buildLatestTeethDataMap_(pids);
+  pids.sort(function (a, b) {
+    var pa = patients.find(function (x) { return String(x.id) === a; }) || {};
+    var pb = patients.find(function (x) { return String(x.id) === b; }) || {};
+    var ra = parseInt(String(pa.room || "").replace(/\D/g, ""), 10);
+    var rb = parseInt(String(pb.room || "").replace(/\D/g, ""), 10);
+    if (!isNaN(ra) && !isNaN(rb) && ra !== rb) return ra - rb;
+    return String(pa.room || "").localeCompare(String(pb.room || ""), "ja");
+  });
+
+  var patientRows = pids.map(function (pid) {
+    var p = patients.find(function (x) { return String(x.id) === pid; }) || {};
+    var visits = byPid[pid].slice().sort(function (a, b) {
+      var da = visitDateYMD_(a.visit_date);
+      var db = visitDateYMD_(b.visit_date);
+      if (da !== db) return da.localeCompare(db);
+      return String(formatTimeValueForClient_(a.visit_time_start)).localeCompare(String(formatTimeValueForClient_(b.visit_time_start)));
+    }).map(mapTreatmentToMonthlyVisit_);
+    var teethObj = {};
+    try { teethObj = JSON.parse(teethMap[pid] || "{}"); } catch (e) { teethObj = {}; }
+    return {
+      ym: ym,
+      patient_id: pid,
+      patient_name: p.name || "",
+      room: p.room != null ? String(p.room) : "",
+      facility_id: facIdStr,
+      facility_name: facName,
+      facility_short: (fac.short != null && String(fac.short).trim()) ? String(fac.short).trim() : facName,
+      care_manager: p.cm != null ? String(p.cm) : "",
+      doctor_name: settings.doctor_name != null ? String(settings.doctor_name) : "",
+      clinic_name: settings.clinic_name != null ? String(settings.clinic_name) : "",
+      omit_visit_time: omitVisitTime,
+      omit_visit_time_pattern: hideSubstr,
+      report_title: reportTitle,
+      time_fallback_phrase: timeFb,
+      visits: visits,
+      teeth_data: teethObj
+    };
+  });
+
+  return JSON.stringify({
+    ym: ym,
+    facility_id: facIdStr,
+    facility_name: facName,
+    clinic_name: settings.clinic_name || "",
+    doctor_name: settings.doctor_name || "",
+    omit_visit_time: omitVisitTime,
+    report_title: reportTitle,
+    time_fallback_phrase: timeFb,
+    patients: patientRows
+  });
+}
+
 /**
  * 施設単位・指定月の看護・医療従事者向け月次報告用データ（患者一覧＋訪問別記録）
  * @param {string} facId
@@ -1951,6 +2093,82 @@ function getFacilityDailyReportData(facId, dateYmd) {
     facility_name: fac ? fac.name : String(facId),
     visit_date: ymd,
     rows: enriched
+  });
+}
+
+/** 施設FAX日報用：指定日の全施設（または facIds 指定）を1回の RPC で返す */
+function getFaxDailyBatchData(dateYmd, facIdsOpt) {
+  var ymd = String(dateYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) throw new Error("日付は yyyy-MM-dd で指定してください");
+  var ym = ymd.slice(0, 7);
+  var patients = JSON.parse(getPatients(null));
+  var facilities = JSON.parse(getFacilities());
+  var settings = JSON.parse(getSettings());
+  var records = JSON.parse(getMonthlyRecords(ym)).filter(function (t) {
+    return visitDateYMD_(t.visit_date) === ymd;
+  });
+
+  var facIdFilter = null;
+  if (facIdsOpt != null && String(facIdsOpt).trim()) {
+    try {
+      var parsed = JSON.parse(String(facIdsOpt));
+      if (Array.isArray(parsed) && parsed.length) {
+        facIdFilter = {};
+        parsed.forEach(function (id) { facIdFilter[String(id)] = true; });
+      }
+    } catch (e1) {
+      facIdFilter = null;
+    }
+  }
+
+  var byFac = {};
+  records.forEach(function (r) {
+    var fid = String(r.fac_id);
+    if (facIdFilter && !facIdFilter[fid]) return;
+    if (!byFac[fid]) byFac[fid] = [];
+    byFac[fid].push(r);
+  });
+
+  function enrichRows(recs) {
+    var enriched = recs.map(function (r) {
+      var p = patients.find(function (x) { return x.id === r.patient_id; }) || {};
+      return {
+        patient_id: r.patient_id,
+        room: p.room != null ? String(p.room) : "",
+        name: p.name || String(r.patient_id),
+        treatments: r.treatments || "",
+        notes: r.notes || "",
+        next_date: r.next_date ? visitDateYMD_(r.next_date) : "",
+        next_content: r.next_content || "",
+        coverage_type: p.coverage_type != null ? String(p.coverage_type).trim() : ""
+      };
+    });
+    enriched.sort(function (a, b) {
+      var ra = parseInt(String(a.room).replace(/\D/g, ""), 10);
+      var rb = parseInt(String(b.room).replace(/\D/g, ""), 10);
+      if (!isNaN(ra) && !isNaN(rb) && ra !== rb) return ra - rb;
+      return String(a.room).localeCompare(String(b.room), "ja");
+    });
+    return enriched;
+  }
+
+  var clinicName = settings.clinic_name || settings.clinicName || "医院名（設定で入力）";
+  var pages = {};
+  Object.keys(byFac).forEach(function (fid) {
+    var fac = facilities.find(function (f) { return String(f.id) === fid; });
+    pages[fid] = {
+      clinic_name: clinicName,
+      facility_name: fac ? fac.name : fid,
+      visit_date: ymd,
+      rows: enrichRows(byFac[fid])
+    };
+  });
+
+  return JSON.stringify({
+    clinic_name: clinicName,
+    visit_date: ymd,
+    facility_ids: Object.keys(pages),
+    pages: pages
   });
 }
 
@@ -3764,6 +3982,40 @@ function getDiagnosisCertificateData(patientId, issueDateYmdOpt) {
       clinic_tel: settings.clinic_tel || "",
       doctor_name: settings.doctor_name || "",
       medical_history_hint: condText || ""
+    });
+  } catch (e) {
+    return JSON.stringify({ ok: false, error: String(e) });
+  }
+}
+
+/** ⑨口腔機能精密：歯式＋診療履歴を1回の RPC で返す */
+function getOfpiFormData(patientId, examDateYmdOpt) {
+  var pid = String(patientId || "").trim();
+  if (!pid) return JSON.stringify({ ok: false, error: "患者IDが必要です" });
+  var examYmd = String(examDateYmdOpt || "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(examYmd)) {
+    examYmd = Utilities.formatDate(new Date(), "JST", "yyyy-MM-dd");
+  }
+  try {
+    var teethJson = getTeethData(pid);
+    var sh = getSheet("treatments");
+    ensureTreatmentTimeColumns_(sh);
+    var rows = sh.getDataRange().getValues();
+    var records = [];
+    if (rows.length >= 2) {
+      var header = rows[0];
+      records = rows.slice(1)
+        .map(function (r) { return rowToObj(header, r); })
+        .filter(function (t) { return String(t.patient_id) === pid; })
+        .map(normalizeTreatmentTimesForClient_)
+        .reverse();
+    }
+    return JSON.stringify({
+      ok: true,
+      patient_id: pid,
+      exam_date: examYmd,
+      teeth_json: teethJson || "{}",
+      records: records
     });
   } catch (e) {
     return JSON.stringify({ ok: false, error: String(e) });

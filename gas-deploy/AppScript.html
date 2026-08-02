@@ -39,6 +39,7 @@ let lastKentaiReportContext = null;
 /** ⑥ 施設月次報告書（3列グリッド） */
 let lastPersonalSheetContext = null;
 let personalSheetGasPending = false;
+let clinicalMonthlyGasPending = false;
 
 function setPatientIntakeFilter(v) {
   patientIntakeFilter = v || "all";
@@ -861,16 +862,22 @@ function buildGokanSlotComment_(visit, usedPhrases, teethData) {
       }
     });
   }
-  if (parts.length) return parts.join("");
-  const codes = String(visit.treatments || "").split(/[、,]/).map(x => x.trim()).filter(Boolean);
-  codes.forEach(code => {
-    if (skipDenture && /義歯|入れ歯/.test(code)) return;
-    const sn = monthlyCareSnippetForCode_(code);
-    if (sn && !(skipDenture && phraseMentionsDenture_(sn))) {
-      parts.push(sn.endsWith("。") ? sn : sn + "。");
-    }
-  });
-  return parts.join("");
+  if (!parts.length) {
+    const codes = String(visit.treatments || "").split(/[、,]/).map(x => x.trim()).filter(Boolean);
+    codes.forEach(code => {
+      if (skipDenture && /義歯|入れ歯/.test(code)) return;
+      const sn = monthlyCareSnippetForCode_(code);
+      if (sn && !(skipDenture && phraseMentionsDenture_(sn))) {
+        parts.push(sn.endsWith("。") ? sn : sn + "。");
+      }
+    });
+  }
+  const autoText = parts.join("");
+  const noteText = softenNotesForMonthCare_(visit.notes);
+  if (!noteText) return autoText;
+  const notePart = noteText.endsWith("。") ? noteText : noteText + "。";
+  if (!autoText) return notePart;
+  return autoText + "\n\n" + notePart;
 }
 
 function pickMonthlyCarePhraseNoDup_(items, usedSet) {
@@ -1162,30 +1169,68 @@ function mcPatientIdKey_(p) {
   return String((p && (p.patient_id != null ? p.patient_id : p.id)) || "");
 }
 
-async function loadMonthCareBatchPatients_(facId, ym) {
-  const list = sortPatientsByRoomForReport_((PATIENTS || []).filter(p => String(p.fac) === String(facId)));
-  const out = [];
-  for (let i = 0; i < list.length; i++) {
-    const pt = list[i];
-    if (isMushoKenshinIntake_(pt.intake_stage)) continue;
-    const json = await gasCall("getPatientMonthlyReportData", pt.id, ym);
-    let teethRaw = "{}";
+function finalizeMonthCarePatientRow_(data, pt) {
+  data.patient_id = data.patient_id || (pt && pt.id);
+  if (!data.teeth_data || typeof data.teeth_data !== "object") {
     try {
-      teethRaw = await gasCall("getTeethData", pt.id);
-    } catch (_) {}
-    const data = JSON.parse(json);
-    data.patient_id = data.patient_id || pt.id;
-    try {
-      data.teeth_data = JSON.parse(teethRaw || "{}");
+      data.teeth_data = JSON.parse(data.teeth_data_json || "{}");
     } catch (_) {
       data.teeth_data = {};
     }
-    data.visits = filterVisitsForMonthCareReport_(data.visits || [], pt.id);
-    if (!data.visits.length) continue;
-    data.matrix_pages = buildMonthCareMatrixPages_(data);
-    out.push(data);
+  }
+  data.visits = filterVisitsForMonthCareReport_(data.visits || [], data.patient_id);
+  if (!data.visits.length) return null;
+  data.matrix_pages = buildMonthCareMatrixPages_(data);
+  return data;
+}
+
+/** 旧GAS向け：患者ごとに逐次取得（並列4本まで） */
+async function loadMonthCareBatchPatientsLegacy_(facId, ym) {
+  const list = sortPatientsByRoomForReport_((PATIENTS || []).filter(p => String(p.fac) === String(facId)));
+  const jobs = [];
+  list.forEach(pt => {
+    if (isMushoKenshinIntake_(pt.intake_stage)) return;
+    jobs.push(async () => {
+      const json = await gasCall("getPatientMonthlyReportData", pt.id, ym);
+      let teethRaw = "{}";
+      try {
+        teethRaw = await gasCall("getTeethData", pt.id);
+      } catch (_) {}
+      const data = JSON.parse(json);
+      data.patient_id = data.patient_id || pt.id;
+      try {
+        data.teeth_data = JSON.parse(teethRaw || "{}");
+      } catch (_) {
+        data.teeth_data = {};
+      }
+      return finalizeMonthCarePatientRow_(data, pt);
+    });
+  });
+  const out = [];
+  const CONC = 4;
+  for (let i = 0; i < jobs.length; i += CONC) {
+    const chunk = await Promise.all(jobs.slice(i, i + CONC).map(fn => fn()));
+    chunk.forEach(row => { if (row) out.push(row); });
   }
   return out;
+}
+
+async function loadMonthCareBatchPatients_(facId, ym) {
+  try {
+    const json = await gasCall("getFacilityMonthlyCareReportData", facId, ym);
+    const batch = JSON.parse(json);
+    const out = [];
+    (batch.patients || []).forEach(data => {
+      const pt = PATIENTS.find(p => String(p.id) === String(data.patient_id));
+      if (pt && isMushoKenshinIntake_(pt.intake_stage)) return;
+      const row = finalizeMonthCarePatientRow_(data, pt);
+      if (row) out.push(row);
+    });
+    return out;
+  } catch (e) {
+    if (!isUnknownRpcError_(e)) throw e;
+    return loadMonthCareBatchPatientsLegacy_(facId, ym);
+  }
 }
 
 function buildMonthCareBatchContext_(facId, ym, patients) {
@@ -1448,12 +1493,7 @@ function openMonthCarePrintWindow_(innerHtml, title, isMatrix) {
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
+  rptTriggerPrintWhenReady_(w);
   return true;
 }
 
@@ -2341,6 +2381,7 @@ let teethBaselineSnap = "";
 /** 診療記録「保存」二重送信防止・保存中UI */
 let treatmentRecordSaveInFlight = false;
 let patientModalSaveInFlight = false;
+let facilityModalSaveInFlight = false;
 let recordDraftHudRaf = 0;
 
 /**
@@ -2509,11 +2550,31 @@ function applySettingsObject_(settings) {
 }
 
 /** 起動データの画面反映（キャッシュ／本番共通） */
+function mergeTreatmentRecordsOnBoot_(serverRecs, localRecs) {
+  const server = Array.isArray(serverRecs) ? serverRecs : [];
+  const local = Array.isArray(localRecs) ? localRecs : [];
+  const byId = new Map();
+  server.forEach(r => { if (r && r.id != null) byId.set(String(r.id), r); });
+  local.forEach(r => {
+    if (!r || r.id == null) return;
+    const id = String(r.id);
+    if (!byId.has(id)) {
+      byId.set(id, r);
+      return;
+    }
+    const savedAt = r._clientSavedAt || 0;
+    if (savedAt && Date.now() - savedAt < 120000) byId.set(id, r);
+  });
+  return Array.from(byId.values());
+}
+
 function applyBootData_(facs, patients, recs, settings, opts) {
   opts = opts || {};
   FACILITIES = Array.isArray(facs) ? facs : [];
   PATIENTS = Array.isArray(patients) ? patients : [];
-  localRecords = Array.isArray(recs) ? recs : [];
+  localRecords = opts.mergeLocalRecords
+    ? mergeTreatmentRecordsOnBoot_(recs, localRecords)
+    : (Array.isArray(recs) ? recs : []);
   buildFacTabs();
   rebuildMgmtFacFilterOptions_();
   rebuildPatientFacFilterOptions_();
@@ -2589,7 +2650,7 @@ function init() {
       if (settingsJson != null && settingsJson !== "") {
         try { settings = JSON.parse(settingsJson); } catch (_) { settings = null; }
       }
-      applyBootData_(facs, patients, recs, settings, { preserveFilters: paintedFromCache });
+      applyBootData_(facs, patients, recs, settings, { preserveFilters: paintedFromCache, mergeLocalRecords: paintedFromCache });
       writeInitCache_({ ym: initYm, facilities: facs, patients, records: recs, settings: settings || {} });
       setDataSyncBanner_("");
       if (typeof refreshAppHealthPanel_ === "function") refreshAppHealthPanel_();
@@ -2695,9 +2756,13 @@ function saveTreatmentWithFallback_(data, pid, editingId) {
   };
   return gasCall("saveTreatmentRecordBundle", JSON.stringify(bundle))
     .then(raw => {
-      const o = JSON.parse(raw);
+      const o = typeof raw === "object" ? raw : JSON.parse(raw);
+      if (o && o.ok === false && o.id) {
+        console.warn("saveTreatmentRecordBundle partial success", o.error);
+        return { id: o.id, partialWarning: o.error || "一部の保存に失敗しました" };
+      }
       if (!o || o.ok === false) throw new Error((o && o.error) || "保存に失敗しました");
-      return o.id;
+      return { id: o.id };
     })
     .catch(err => {
       if (!isUnknownRpcError_(err)) throw err;
@@ -6279,7 +6344,9 @@ function saveTreatmentRecord() {
   }
 
   saveTreatmentWithFallback_(data, pid, null)
-    .then(id => {
+    .then(result => {
+      const id = typeof result === "object" ? result.id : result;
+      const partialWarning = typeof result === "object" ? result.partialWarning : null;
       syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
       markRestricted(
         pid,
@@ -6292,12 +6359,17 @@ function saveTreatmentRecord() {
         id,
         visit_time_start: data.visit_time_start || "",
         visit_time_end: data.visit_time_end || "",
-        exam_data: data.exam_data || ""
+        exam_data: data.exam_data || "",
+        _clientSavedAt: Date.now()
       });
       selectedNextTreatments.clear();
       applyPatientVisitStatsFromRecords_();
       refreshTeethBaseline();
-      showToast("記録を保存しました（歯式・患者メモも保存済み）");
+      if (partialWarning) {
+        showToast("記録を保存しました（注意: " + partialWarning + "）");
+      } else {
+        showToast("記録を保存しました（歯式・患者メモも保存済み）");
+      }
       refreshTreatmentBaseline();
       clearUndoStack_();
       clearRecordDuplicateWarn_();
@@ -9305,6 +9377,22 @@ function rptPlainHtml_(html) {
   return rptPlainizePreviewHtml_(html);
 }
 
+/** 印刷ウィンドウ：レイアウト完了後に print() を呼ぶ（全帳票共通） */
+function rptTriggerPrintWhenReady_(w, beforePrint) {
+  if (!w) return;
+  w.addEventListener("load", () => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          if (typeof beforePrint === "function") beforePrint(w);
+          w.focus();
+          w.print();
+        } catch (_) {}
+      });
+    });
+  });
+}
+
 function rptPaintPreview_(container, html, root, onPull) {
   if (container && root) {
     const ae = document.activeElement;
@@ -9348,34 +9436,51 @@ function rptWriteLocalDraft_(kind, id, payload, savedAt) {
   }
 }
 
+function rptParseGasJson_(raw) {
+  if (raw == null) return null;
+  if (typeof raw === "object") return raw;
+  try {
+    return JSON.parse(String(raw));
+  } catch (e) {
+    return null;
+  }
+}
+
 async function rptSaveDraftToCloud_(kind, id, payload, savedAt) {
   const envelope = JSON.stringify({ savedAt: savedAt || Date.now(), payload });
-  try {
+  const tryOnce = async () => {
     if (envelope.length <= RPT_DRAFT_CLOUD_CHUNK) {
-      const res = JSON.parse(await gasCall("saveReportPreviewDraftSimple", kind, id, envelope));
+      const res = rptParseGasJson_(await gasCall("saveReportPreviewDraftSimple", kind, id, envelope));
       return !!(res && res.ok);
     }
     const n = Math.ceil(envelope.length / RPT_DRAFT_CLOUD_CHUNK);
     for (let i = 0; i < n; i++) {
-      await gasCall(
+      const part = rptParseGasJson_(await gasCall(
         "saveReportPreviewDraftChunk",
         kind,
         id,
         i,
         n,
         envelope.slice(i * RPT_DRAFT_CLOUD_CHUNK, (i + 1) * RPT_DRAFT_CLOUD_CHUNK)
-      );
+      ));
+      if (!part || !part.ok) return false;
     }
-    const res = JSON.parse(await gasCall("saveReportPreviewDraftChunkFinish", kind, id));
-    return !!(res && res.ok);
+    const fin = rptParseGasJson_(await gasCall("saveReportPreviewDraftChunkFinish", kind, id));
+    return !!(fin && fin.ok);
+  };
+  try {
+    if (await tryOnce()) return true;
+    await new Promise(r => setTimeout(r, 1500));
+    return await tryOnce();
   } catch (e) {
+    console.warn("draft cloud save failed", kind, id, e);
     return false;
   }
 }
 
 async function rptLoadDraftFromCloud_(kind, id) {
   try {
-    const meta = JSON.parse(await gasCall("loadReportPreviewDraftInfo", kind, id));
+    const meta = rptParseGasJson_(await gasCall("loadReportPreviewDraftInfo", kind, id));
     if (!meta || !meta.ok || !meta.exists) return null;
     if (meta.payload != null) {
       return { savedAt: meta.savedAt || 0, payload: meta.payload };
@@ -9384,7 +9489,7 @@ async function rptLoadDraftFromCloud_(kind, id) {
     if (n < 1) return null;
     let envelope = "";
     for (let i = 0; i < n; i++) {
-      const part = JSON.parse(await gasCall("loadReportPreviewDraftChunk", kind, id, i));
+      const part = rptParseGasJson_(await gasCall("loadReportPreviewDraftChunk", kind, id, i));
       if (!part || !part.ok) return null;
       envelope += part.data || "";
     }
@@ -9393,6 +9498,33 @@ async function rptLoadDraftFromCloud_(kind, id) {
   } catch (e) {
     return null;
   }
+}
+
+/** ローカル下書きが無い端末ではクラウドを先に試し、無ければ onGenerate */
+async function rptOpenReportPreferCloudDraft_(kind, key, opts) {
+  const applyDraft = opts && opts.applyDraft;
+  const onGenerate = opts && opts.onGenerate;
+  const showLoading = opts && opts.showLoading;
+  if (!key) {
+    if (onGenerate) onGenerate();
+    return;
+  }
+  const localPayload = rptLoadDraft_(kind, key);
+  if (localPayload && applyDraft(localPayload, "保存済みの下書きを読み込みました")) {
+    rptLoadDraftFromCloud_(kind, key).then(cloud => {
+      if (!cloud || cloud.payload == null) return;
+      const local = rptReadLocalDraft_(kind, key);
+      if (local && (local.savedAt || 0) >= (cloud.savedAt || 0)) return;
+      applyDraft(cloud.payload, "クラウドの下書きを反映しました");
+    }).catch(() => {});
+    return;
+  }
+  if (showLoading) showLoading();
+  const cloudPayload = await rptLoadDraftAsync_(kind, key).catch(() => null);
+  if (cloudPayload && applyDraft(cloudPayload, "クラウドの下書きを読み込みました")) {
+    return;
+  }
+  if (onGenerate) onGenerate();
 }
 
 async function rptClearDraftFromCloud_(kind, id) {
@@ -9724,7 +9856,7 @@ async function docArchiveSaveToCloud_(metaObj, payload, savedAt) {
   });
   const metaJson = JSON.stringify(metaObj);
   if (envelope.length <= DOC_ARCHIVE_CHUNK) {
-    const res = JSON.parse(await gasCall("saveGeneratedDocumentSimple", metaJson, envelope));
+    const res = rptParseGasJson_(await gasCall("saveGeneratedDocumentSimple", metaJson, envelope));
     return res && res.ok ? res : null;
   }
   let docId = "DOC_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
@@ -9739,15 +9871,16 @@ async function docArchiveSaveToCloud_(metaObj, payload, savedAt) {
   }
   const n = Math.ceil(envelope.length / DOC_ARCHIVE_CHUNK);
   for (let i = 0; i < n; i++) {
-    await gasCall(
+    const part = rptParseGasJson_(await gasCall(
       "saveGeneratedDocumentChunk",
       docId,
       i,
       n,
       envelope.slice(i * DOC_ARCHIVE_CHUNK, (i + 1) * DOC_ARCHIVE_CHUNK)
-    );
+    ));
+    if (!part || !part.ok) return null;
   }
-  const res = JSON.parse(await gasCall("saveGeneratedDocumentChunkFinish", metaJson, docId));
+  const res = rptParseGasJson_(await gasCall("saveGeneratedDocumentChunkFinish", metaJson, docId));
   return res && res.ok ? res : null;
 }
 
@@ -9813,6 +9946,23 @@ function rptAutoSaveArchiveOnPrint_(kind) {
     .catch(() => null);
 }
 
+/** 印刷後: 確定保存の成功を待ってから下書き消去（失敗時は下書きを残す） */
+function rptAfterPrintArchiveAndClearDraft_(kind, draftKey, extraCleanup) {
+  return rptAutoSaveArchiveOnPrint_(kind).then(res => {
+    if (res && draftKey) {
+      rptClearDraft_(kind, draftKey);
+      if (typeof extraCleanup === "function") extraCleanup();
+      showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+    } else if (res) {
+      showToast("印刷画面を開きました（確定保存しました）");
+    } else {
+      showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
+    }
+  }).catch(() => {
+    showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
+  });
+}
+
 function formatDocArchiveSavedAt_(ms) {
   if (!ms) return "";
   try {
@@ -9850,7 +10000,7 @@ async function refreshDocumentArchiveList_() {
   try {
     const res = JSON.parse(await gasCall("listGeneratedDocuments", JSON.stringify(filter)));
     if (!res || !res.ok || !res.items || !res.items.length) {
-      host.innerHTML = "<p style=\"font-size:13px;color:var(--muted);padding:12px;line-height:1.5\">保存済みの書類はありません。<br>各帳票の「📁 確定保存」または印刷時に自動保存されます。</p>";
+      host.innerHTML = "<p style=\"font-size:13px;color:var(--muted);padding:12px;line-height:1.5\">保存済みの書類はありません。<br>「📁 確定保存」または印刷時に自動保存された書類だけがここに表示されます。<br>「💾 下書き保存」は履歴には出ません（他端末共有は下書き保存のクラウド同期を利用）。</p>";
       return;
     }
     let html = "";
@@ -9959,9 +10109,9 @@ async function rptApplyArchivePayload_(kind, payload) {
       renderIssStaffChecks();
       return issApplyArchiveContext_(payload);
     case "monthCare":
-      return tryApplyMonthCarePreviewDraft_(payload);
+      return applyMonthCarePreviewDraftIfValid_(payload);
     case "clinicalMonthly":
-      return tryApplyClinicalMonthlyPreviewDraft_(payload);
+      return applyClinicalMonthlyPreviewDraftIfValid_(payload);
     case "patientPps":
       return applyPatientPpsDraftPayload_(payload);
     case "personalSheet":
@@ -10115,8 +10265,8 @@ function openDocumentArchiveForCurrentReport_() {
 }
 
 function rptDraftSavedToast_(result) {
-  if (result && result.cloud) showToast("下書きを保存しました（他の端末でも利用できます）");
-  else if (result && result.local) showToast("下書きを端末に保存しました（クラウド同期に失敗）");
+  if (result && result.cloud) showToast("下書きを保存しました（他端末では同じ施設・年月を選んで開くと反映されます）");
+  else if (result && result.local) showToast("下書きを端末にのみ保存しました（クラウド同期に失敗。接続を確認して再保存してください）");
   else showToast("下書きの保存に失敗しました");
 }
 
@@ -11395,7 +11545,9 @@ function insertMonthCareReferencePhrase(raw) {
 }
 
 function softenNotesForMonthCare_(raw) {
-  let s = String(raw || "").trim();
+  let s = String(raw || "")
+    .replace(/《赤》|《\/赤》|《黄》|《\/黄》|【枠】|【\/枠】/g, "")
+    .trim();
   if (!s) return "";
   s = s.replace(/\r\n/g, "\n").replace(/\n+/g, " ");
   const rep = [
@@ -11629,25 +11781,11 @@ function openMonthCareReportModal() {
     ta.addEventListener("input", refreshMonthCarePreview);
   }
   document.getElementById("monthCareModal")?.classList.add("show");
-  const mcKey = monthCareDraftKey_();
-  if (!mcKey) {
-    generateMonthCareDraft();
-    return;
-  }
-  if (applyMonthCarePreviewDraftIfValid_(rptLoadDraft_("monthCare", mcKey), "保存済みの下書きを読み込みました")) {
-    rptLoadDraftFromCloud_("monthCare", mcKey).then(cloud => {
-      if (!cloud || !cloud.payload) return;
-      const local = rptReadLocalDraft_("monthCare", mcKey);
-      if (local && (local.savedAt || 0) >= (cloud.savedAt || 0)) return;
-      applyMonthCarePreviewDraftIfValid_(cloud.payload, "クラウドの下書きを反映しました");
-    }).catch(() => {});
-    return;
-  }
-  generateMonthCareDraft();
-  rptLoadDraftAsync_("monthCare", mcKey).then(cloudDraft => {
-    if (monthCareGasPending) return;
-    applyMonthCarePreviewDraftIfValid_(cloudDraft, "クラウドの下書きを読み込みました");
-  }).catch(() => {});
+  void rptOpenReportPreferCloudDraft_("monthCare", monthCareDraftKey_(), {
+    applyDraft: applyMonthCarePreviewDraftIfValid_,
+    onGenerate: generateMonthCareDraft,
+    showLoading: showMonthCarePreviewLoading_
+  });
 }
 
 function closeMonthCareReportModal() {
@@ -11762,9 +11900,7 @@ function printMonthCareReport() {
     title = `月次報告_${ym}_${pn}${pageSuffix}`.replace(/[\\/:*?"<>|]/g, "_");
   }
   if (openMonthCarePrintWindow_(innerHtml, title, isMatrix)) {
-    rptAutoSaveArchiveOnPrint_("monthCare");
-    rptClearDraft_("monthCare", monthCareDraftKey_());
-    showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+    rptAfterPrintArchiveAndClearDraft_("monthCare", monthCareDraftKey_());
   }
 }
 
@@ -11893,24 +12029,10 @@ function openClinicalMonthlyReportModal() {
     ta.addEventListener("input", refreshClinicalMonthlyPreview);
   }
   document.getElementById("clinicalMonthlyModal")?.classList.add("show");
-  const cmKey = clinicalMonthlyDraftKey_();
-  if (!cmKey) {
-    generateClinicalMonthlyDraft();
-    return;
-  }
-  if (applyClinicalMonthlyPreviewDraftIfValid_(rptLoadDraft_("clinicalMonthly", cmKey), "保存済みの下書きを読み込みました")) {
-    rptLoadDraftFromCloud_("clinicalMonthly", cmKey).then(cloud => {
-      if (!cloud || !cloud.payload) return;
-      const local = rptReadLocalDraft_("clinicalMonthly", cmKey);
-      if (local && (local.savedAt || 0) >= (cloud.savedAt || 0)) return;
-      applyClinicalMonthlyPreviewDraftIfValid_(cloud.payload, "クラウドの下書きを反映しました");
-    }).catch(() => {});
-    return;
-  }
-  generateClinicalMonthlyDraft();
-  rptLoadDraftAsync_("clinicalMonthly", cmKey).then(cloudDraft => {
-    applyClinicalMonthlyPreviewDraftIfValid_(cloudDraft, "クラウドの下書きを読み込みました");
-  }).catch(() => {});
+  void rptOpenReportPreferCloudDraft_("clinicalMonthly", clinicalMonthlyDraftKey_(), {
+    applyDraft: applyClinicalMonthlyPreviewDraftIfValid_,
+    onGenerate: generateClinicalMonthlyDraft
+  });
 }
 
 function closeClinicalMonthlyReportModal() {
@@ -11929,10 +12051,15 @@ function generateClinicalMonthlyDraft() {
     showToast("施設と対象年月を選んでください");
     return;
   }
+  if (clinicalMonthlyGasPending) {
+    showToast("取得処理中です。完了をお待ちください。");
+    return;
+  }
   if (err) {
     err.style.display = "none";
     err.textContent = "";
   }
+  clinicalMonthlyGasPending = true;
   gasCall("getFacilityClinicalMonthlyReportData", facId, ym).then(json => {
     const data = JSON.parse(json);
     lastClinicalMonthlyContext = data;
@@ -11961,6 +12088,8 @@ function generateClinicalMonthlyDraft() {
     }
     showToast("データ取得に失敗しました");
     document.getElementById("clinicalMonthlyModal")?.classList.add("show");
+  }).finally(() => {
+    clinicalMonthlyGasPending = false;
   });
 }
 
@@ -11997,15 +12126,8 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
-  rptAutoSaveArchiveOnPrint_("clinicalMonthly");
-  rptClearDraft_("clinicalMonthly", clinicalMonthlyDraftKey_());
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  rptTriggerPrintWhenReady_(w);
+  rptAfterPrintArchiveAndClearDraft_("clinicalMonthly", clinicalMonthlyDraftKey_());
 }
 
 // ── ⑤ 患者パーソナルシート（歯科治療・管理計画書） ──
@@ -12295,22 +12417,11 @@ function openPatientPpsModal() {
     return;
   }
   document.getElementById("patientPpsModal")?.classList.add("show");
-  const key = patientPpsDraftKey_();
-  if (applyPatientPpsDraftPayload_(rptLoadDraft_("patientPps", key), "保存済みの下書きを読み込みました")) {
-    rptLoadDraftFromCloud_("patientPps", key).then(cloud => {
-      if (!cloud || !cloud.payload) return;
-      const local = rptReadLocalDraft_("patientPps", key);
-      if (local && (local.savedAt || 0) >= (cloud.savedAt || 0)) return;
-      applyPatientPpsDraftPayload_(cloud.payload, "クラウドの下書きを反映しました");
-    }).catch(() => {});
-    return;
-  }
-  showPatientPpsPreviewLoading_();
-  reloadPatientPpsFromServer_();
-  rptLoadDraftAsync_("patientPps", key).then(cloudDraft => {
-    if (patientPpsGasPending_) return;
-    applyPatientPpsDraftPayload_(cloudDraft, "クラウドの下書きを読み込みました");
-  }).catch(() => {});
+  void rptOpenReportPreferCloudDraft_("patientPps", patientPpsDraftKey_(), {
+    applyDraft: applyPatientPpsDraftPayload_,
+    onGenerate: reloadPatientPpsFromServer_,
+    showLoading: showPatientPpsPreviewLoading_
+  });
 }
 
 function closePatientPpsModal() {
@@ -12438,16 +12549,8 @@ function printPatientPpsReport() {
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
-  const key = patientPpsDraftKey_();
-  rptAutoSaveArchiveOnPrint_("patientPps");
-  if (key) rptClearDraft_("patientPps", key);
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  rptTriggerPrintWhenReady_(w);
+  rptAfterPrintArchiveAndClearDraft_("patientPps", patientPpsDraftKey_());
 }
 
 // ── ⑥ 施設月次報告書（パーキンソン日立様・3列グリッド） ──
@@ -13665,21 +13768,11 @@ function openPersonalSheetModal() {
     if (host) host.innerHTML = '<p style="color:#64748b;font-size:12px;margin:8px">上の条件を選ぶとプレビューが表示されます。</p>';
     return;
   }
-  const key = personalSheetDraftKey_();
-  if (applyPersonalSheetDraftPayload_(rptLoadDraft_("personalSheet", key), "保存済みの下書きを読み込みました")) {
-    rptLoadDraftFromCloud_("personalSheet", key).then(cloud => {
-      if (!cloud || !cloud.payload) return;
-      const local = rptReadLocalDraft_("personalSheet", key);
-      if (local && (local.savedAt || 0) >= (cloud.savedAt || 0)) return;
-      applyPersonalSheetDraftPayload_(cloud.payload, "クラウドの下書きを反映しました");
-    }).catch(() => {});
-    return;
-  }
-  reloadPersonalSheetFromServer_();
-  rptLoadDraftAsync_("personalSheet", key).then(cloudDraft => {
-    if (personalSheetGasPending) return;
-    applyPersonalSheetDraftPayload_(cloudDraft, "クラウドの下書きを読み込みました");
-  }).catch(() => {});
+  void rptOpenReportPreferCloudDraft_("personalSheet", personalSheetDraftKey_(), {
+    applyDraft: applyPersonalSheetDraftPayload_,
+    onGenerate: reloadPersonalSheetFromServer_,
+    showLoading: showPersonalSheetPreviewLoading_
+  });
 }
 
 function closePersonalSheetModal() {
@@ -13785,10 +13878,10 @@ function printPersonalSheetReport() {
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
+  rptTriggerPrintWhenReady_(w, win => {
     const runPhotoLayout = () => {
       try {
-        w.document.querySelectorAll(".ps-photos").forEach(el => {
+        win.document.querySelectorAll(".ps-photos").forEach(el => {
           let maxB = parseFloat(el.style.minHeight) || 72;
           el.querySelectorAll(".ps-photo-widget").forEach(widget => {
             const top = parseFloat(widget.style.top) || 0;
@@ -13800,18 +13893,11 @@ function printPersonalSheetReport() {
       } catch (_) {}
     };
     runPhotoLayout();
-    w.document.querySelectorAll(".ps-photo-widget img").forEach(img => {
+    win.document.querySelectorAll(".ps-photo-widget img").forEach(img => {
       if (!img.complete) img.addEventListener("load", runPhotoLayout, { once: true });
     });
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
   });
-  const key = personalSheetDraftKey_();
-  rptAutoSaveArchiveOnPrint_("personalSheet");
-  if (key) rptClearDraft_("personalSheet", key);
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  rptAfterPrintArchiveAndClearDraft_("personalSheet", personalSheetDraftKey_());
 }
 
 function renderReportsTab() {
@@ -14669,31 +14755,67 @@ function printKentaiReport(isRetry) {
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
-  const kKey = kentaiDraftKey_();
-  // 確定保存の成功を待ってから下書き消去（失敗時に本文が消えるのを防ぐ）
-  rptAutoSaveArchiveOnPrint_("kentai").then(res => {
-    if (res && kKey) {
-      rptClearDraft_("kentai", kKey);
-      showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
-    } else if (res) {
-      showToast("印刷画面を開きました（確定保存しました）");
-    } else {
-      showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
-    }
-  }).catch(() => {
-    showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
-  });
+  rptTriggerPrintWhenReady_(w);
+  rptAfterPrintArchiveAndClearDraft_("kentai", kentaiDraftKey_());
 }
 
 function closeFaxDailyModal() {
   document.getElementById("faxDailyModal").classList.remove("show");
   rptHideEmphasisBar_();
+}
+
+function finishFaxDailyPreviewFromPages_(dateYmd, facIds, pagesByFac, clinicName, draft) {
+  if (draft && draft.pagesByFac) {
+    Object.keys(draft.pagesByFac).forEach(fid => {
+      if (pagesByFac[fid]) {
+        pagesByFac[fid] = mergeFaxDailyPageCtx_(pagesByFac[fid], draft.pagesByFac[fid]);
+      } else {
+        pagesByFac[fid] = mergeFaxDailyPageCtx_(
+          buildFaxDailyContextFromData_(fid, dateYmd, {
+            rows: draft.pagesByFac[fid].rows || [],
+            facility_name: draft.pagesByFac[fid].facility_name || ""
+          }),
+          draft.pagesByFac[fid]
+        );
+      }
+    });
+  }
+  let activeFacIds = draft && draft.activeFacIds && draft.activeFacIds.length
+    ? draft.activeFacIds.map(String)
+    : facIds.slice();
+  if (!activeFacIds.length && facIds.length) activeFacIds = facIds.slice();
+  lastFaxDailyBatch_ = {
+    visit_date_ymd: dateYmd,
+    clinic_name: (draft && draft.clinic_name) || clinicName || getClinicNameOptions_()[0],
+    activeFacIds,
+    pagesByFac
+  };
+  faxDailySelectedFacId_ = activeFacIds.length ? String(activeFacIds[0]) : "";
+  renderFaxDailyFacManage_();
+  faxDailySyncToolbarFromSelectedFac_();
+  rptBindEmphasisBarButtons_();
+  refreshFaxDailyPreview();
+  if (!activeFacIds.length) {
+    showToast("この診療日の記録がありません。施設を追加して作成できます");
+  } else if (draft) {
+    showToast("保存済みの下書きを読み込みました");
+  }
+}
+
+async function loadFaxDailyPagesLegacy_(dateYmd, facIds) {
+  const results = await Promise.all(
+    facIds.map(fid =>
+      gasCall("getFacilityDailyReportData", fid, dateYmd).then(j => ({
+        fid,
+        ctx: buildFaxDailyContextFromData_(fid, dateYmd, JSON.parse(j))
+      }))
+    )
+  );
+  const pagesByFac = {};
+  results.forEach(({ fid, ctx }) => {
+    pagesByFac[String(fid)] = ctx;
+  });
+  return pagesByFac;
 }
 
 function openFaxDailyPreviewModal() {
@@ -14711,59 +14833,44 @@ function openFaxDailyPreviewModal() {
   document.getElementById("faxDailyModal")?.classList.add("show");
   showFaxDailyPreviewLoading_("診療データを読み込んでいます…");
   lastFaxDailyContext = null;
-  return gasCall("getSupervisorDailyListData", dateYmd).then(json => {
-    const sup = JSON.parse(json);
-    let facIds = (sup.groups || []).map(g => String(g.facility_id));
-    if (!facIds.length) {
-      const hintFac = getReportFacId_();
-      if (hintFac) facIds = [String(hintFac)];
-    }
-    const loadPages = facIds.length
-      ? Promise.all(
-          facIds.map(fid =>
-            gasCall("getFacilityDailyReportData", fid, dateYmd).then(j => ({
-              fid,
-              ctx: buildFaxDailyContextFromData_(fid, dateYmd, JSON.parse(j))
-            }))
-          )
-        )
-      : Promise.resolve([]);
-    return loadPages.then(results => rptLoadDraftAsync_("faxDaily", dateYmd).then(draft => {
+  const loadBatch = gasCall("getFaxDailyBatchData", dateYmd, "")
+    .then(json => {
+      const batch = JSON.parse(json);
+      let facIds = (batch.facility_ids || []).map(String);
+      if (!facIds.length) {
+        const hintFac = getReportFacId_();
+        if (hintFac) facIds = [String(hintFac)];
+      }
       const pagesByFac = {};
-      results.forEach(({ fid, ctx }) => {
-        pagesByFac[String(fid)] = ctx;
+      Object.keys(batch.pages || {}).forEach(fid => {
+        pagesByFac[fid] = buildFaxDailyContextFromData_(fid, dateYmd, batch.pages[fid]);
       });
-      if (draft && draft.pagesByFac) {
-        Object.keys(draft.pagesByFac).forEach(fid => {
-          if (pagesByFac[fid]) {
-            pagesByFac[fid] = mergeFaxDailyPageCtx_(pagesByFac[fid], draft.pagesByFac[fid]);
-          } else {
-            pagesByFac[fid] = mergeFaxDailyPageCtx_(buildFaxDailyContextFromData_(fid, dateYmd, { rows: draft.pagesByFac[fid].rows || [], facility_name: draft.pagesByFac[fid].facility_name || "" }), draft.pagesByFac[fid]);
-          }
-        });
-      }
-      let activeFacIds = draft && draft.activeFacIds && draft.activeFacIds.length
-        ? draft.activeFacIds.map(String)
-        : facIds.slice();
-      if (!activeFacIds.length && facIds.length) activeFacIds = facIds.slice();
-      lastFaxDailyBatch_ = {
-        visit_date_ymd: dateYmd,
-        clinic_name: (draft && draft.clinic_name) || sup.clinic_name || getClinicNameOptions_()[0],
-        activeFacIds,
-        pagesByFac
-      };
-      faxDailySelectedFacId_ = activeFacIds.length ? String(activeFacIds[0]) : "";
-      renderFaxDailyFacManage_();
-      faxDailySyncToolbarFromSelectedFac_();
-      rptBindEmphasisBarButtons_();
-      refreshFaxDailyPreview();
-      if (!activeFacIds.length) {
-        showToast("この診療日の記録がありません。施設を追加して作成できます");
-      } else if (draft) {
-        showToast("保存済みの下書きを読み込みました");
-      }
-    }));
-  }).catch(e => {
+      return rptLoadDraftAsync_("faxDaily", dateYmd).then(draft =>
+        finishFaxDailyPreviewFromPages_(dateYmd, facIds, pagesByFac, batch.clinic_name, draft)
+      );
+    })
+    .catch(e => {
+      if (!isUnknownRpcError_(e)) throw e;
+      return gasCall("getSupervisorDailyListData", dateYmd).then(json => {
+        const sup = JSON.parse(json);
+        let facIds = (sup.groups || []).map(g => String(g.facility_id));
+        if (!facIds.length) {
+          const hintFac = getReportFacId_();
+          if (hintFac) facIds = [String(hintFac)];
+        }
+        if (!facIds.length) {
+          return rptLoadDraftAsync_("faxDaily", dateYmd).then(draft =>
+            finishFaxDailyPreviewFromPages_(dateYmd, [], {}, sup.clinic_name, draft)
+          );
+        }
+        return loadFaxDailyPagesLegacy_(dateYmd, facIds).then(pagesByFac =>
+          rptLoadDraftAsync_("faxDaily", dateYmd).then(draft =>
+            finishFaxDailyPreviewFromPages_(dateYmd, facIds, pagesByFac, sup.clinic_name, draft)
+          )
+        );
+      });
+    });
+  return loadBatch.catch(e => {
     lastFaxDailyBatch_ = null;
     lastFaxDailyContext = null;
     if (err) {
@@ -14822,15 +14929,8 @@ ${getRptPrintWhitespaceCss_()}
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
-  rptAutoSaveArchiveOnPrint_("faxDaily");
-  rptClearDraft_("faxDaily", lastFaxDailyBatch_.visit_date_ymd);
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  rptTriggerPrintWhenReady_(w);
+  rptAfterPrintArchiveAndClearDraft_("faxDaily", lastFaxDailyBatch_.visit_date_ymd);
 }
 
 /** 患者に「初診」処置の記録があるか */
@@ -14886,6 +14986,14 @@ function visitTimetableDraftKey_(facId) {
   return `visitTimetableDraft_v${VISIT_TT_DRAFT_VER}_${facId}`;
 }
 
+/** ⑧ 下書き Drive/localStorage キー（施設＋出力日。旧版は施設IDのみ） */
+function visitTtDraftStorageId_(facId, outputYmd) {
+  const fac = String(facId || "").trim();
+  if (!fac) return "";
+  const ymd = String(outputYmd || "").trim();
+  return ymd ? `${fac}_${ymd}` : fac;
+}
+
 /** 印刷用：患者番号（マスタの patient_no 等 → なければ居室） */
 function visitTimetablePatientNo_(p) {
   if (!p) return "";
@@ -14912,7 +15020,9 @@ function normalizeVisitTimetableDraft_(o) {
 
 function loadVisitTimetableDraft_(facId) {
   if (visitTimetableDraftCache_[facId]) return visitTimetableDraftCache_[facId];
-  const stored = rptLoadDraft_("visitTt", facId);
+  const ymdHint = lastVisitTimetableCtx_ && lastVisitTimetableCtx_.outputYmd;
+  let stored = rptLoadDraft_("visitTt", visitTtDraftStorageId_(facId, ymdHint));
+  if (!stored) stored = rptLoadDraft_("visitTt", String(facId));
   if (stored) {
     const norm = normalizeVisitTimetableDraft_(stored);
     visitTimetableDraftCache_[facId] = norm;
@@ -14930,7 +15040,14 @@ function loadVisitTimetableDraft_(facId) {
 }
 
 async function loadVisitTimetableDraftAsync_(facId) {
-  const draft = await rptLoadDraftAsync_("visitTt", facId);
+  let draft = await rptLoadDraftAsync_("visitTt", String(facId));
+  if (!draft) {
+    draft = await rptLoadDraftAsync_("visitTt", visitTtDraftStorageId_(facId, getTodayYmdJstForRecord_()));
+  }
+  if (draft && draft.outputYmd) {
+    const dated = await rptLoadDraftAsync_("visitTt", visitTtDraftStorageId_(facId, draft.outputYmd));
+    if (dated) draft = dated;
+  }
   if (draft) {
     const norm = normalizeVisitTimetableDraft_(draft);
     visitTimetableDraftCache_[facId] = norm;
@@ -14938,7 +15055,8 @@ async function loadVisitTimetableDraftAsync_(facId) {
   }
   const legacy = loadVisitTimetableDraft_(facId);
   if (legacy && (Object.keys(legacy.rows).length || legacy.outputYmd)) {
-    rptSaveDraft_("visitTt", facId, legacy);
+    const key = visitTtDraftStorageId_(facId, legacy.outputYmd || getTodayYmdJstForRecord_());
+    rptSaveDraftAsync_("visitTt", key, legacy).catch(() => {});
   }
   return legacy;
 }
@@ -14956,7 +15074,9 @@ function saveVisitTimetableDraft_(facId, rowsObj, ctx) {
     excludedPatientIds: ctx.excludedPatientIds || (cached && cached.excludedPatientIds) || []
   };
   visitTimetableDraftCache_[facId] = normalizeVisitTimetableDraft_(payload);
-  rptSaveDraft_("visitTt", facId, payload);
+  const key = visitTtDraftStorageId_(facId, payload.outputYmd) || String(facId);
+  rptWriteLocalDraft_("visitTt", key, payload, Date.now());
+  rptSaveDraftToCloud_("visitTt", key, payload, Date.now()).catch(e => console.warn("visitTt cloud save", e));
 }
 
 function getVisitTimetablePageLayout_() {
@@ -15335,7 +15455,7 @@ function finishOpenVisitTimetableModal_(facId, draft, allActive) {
   allActive = allActive || getVisitTimetablePatientsAll_(facId);
   const fac = (FACILITIES || []).find(f => String(f.id) === String(facId));
   const facName = (fac && fac.name) ? String(fac.name) : "施設";
-  const outputYmd = getTodayYmdJstForRecord_();
+  const outputYmd = (draft && draft.outputYmd) ? draft.outputYmd : getTodayYmdJstForRecord_();
   const inage = isInageFacilityById_(facId);
   let defaultHdr = draft.headerDoctorSlot || "";
   if (inage && !/^\d+$/.test(defaultHdr)) {
@@ -15544,12 +15664,7 @@ function printVisitTimetableHtml_(facId, outputYmd, rows, ctx) {
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
+  rptTriggerPrintWhenReady_(w);
 }
 
 /** ⑧ 編集モーダルから印刷 */
@@ -15567,13 +15682,12 @@ function printVisitTimetableFromEditor() {
   lastVisitTimetableCtx_.rows = rows;
   const { facId, outputYmd } = lastVisitTimetableCtx_;
   printVisitTimetableHtml_(facId, outputYmd, rows, lastVisitTimetableCtx_);
-  rptAutoSaveArchiveOnPrint_("visitTt");
-  delete visitTimetableDraftCache_[facId];
-  rptClearDraft_("visitTt", facId);
-  try {
-    localStorage.removeItem(visitTimetableDraftKey_(facId));
-  } catch (e) {}
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  const draftKey = visitTtDraftStorageId_(facId, outputYmd);
+  rptAfterPrintArchiveAndClearDraft_("visitTt", draftKey, () => {
+    delete visitTimetableDraftCache_[facId];
+    try { localStorage.removeItem(visitTimetableDraftKey_(facId)); } catch (e) {}
+    if (draftKey !== String(facId)) rptClearDraft_("visitTt", String(facId));
+  });
 }
 
 const DENTAL_DIAGNOSIS_TEMPLATES_={"title":"歯科病名テンプレート集","description":"診断書・カルテ等で使用される歯科の傷病名を分類別に整理した参考データ","sourceNote":"厚生労働省「標準歯科病名マスター」（令和6年4月改定版）の分類体系をベースに作成","categories":[{"categoryId":"caries","categoryName":"う蝕（むし歯）関連","diagnoses":[{"name":"う蝕症","reading":"うしょくしょう","description":"進行度によりC0〜C4に分類。エナメル質のみの初期段階から歯髄まで達した状態まで幅がある"},{"name":"根面う蝕","reading":"こんめんうしょく","description":"歯茎が下がって露出した歯根部分に生じるむし歯。初期・進行の区分がある"},{"name":"二次う蝕","reading":"にじうしょく","description":"詰め物や被せ物の下・境目に新たに生じたむし歯"}]},{"categoryId":"pulp_disease","categoryName":"歯髄疾患","diagnoses":[{"name":"急性歯髄炎","reading":"きゅうせいしずいえん","description":"歯の神経（歯髄）に急性の炎症が生じた状態"},{"name":"壊疽性歯髄炎","reading":"えそせいしずいえん","description":"歯髄が壊死し腐敗が進行した状態"},{"name":"血行性歯髄炎","reading":"けっこうせいしずいえん","description":"血液を介して感染が波及して生じる歯髄炎"},{"name":"残髄炎","reading":"ざんずいえん","description":"根管治療後、取り残された歯髄組織に生じる炎症"},{"name":"上行性歯髄炎","reading":"じょうこうせいしずいえん","description":"歯周組織側から根管を通じて歯髄に炎症が波及した状態"},{"name":"慢性増殖性歯髄炎","reading":"まんせいぞうしょくせいしずいえん","description":"歯髄が慢性的に増殖性の炎症を起こしている状態"}]},{"categoryId":"periapical_disease","categoryName":"根尖性歯周疾患","diagnoses":[{"name":"急性化膿性歯根膜炎","reading":"きゅうせいかのうせいしこんまくえん","description":"歯根膜に急性の化膿性炎症が生じた状態"},{"name":"急性根尖性歯周炎","reading":"きゅうせいこんせんせいししゅうえん","description":"歯根の先端（根尖）周囲組織に急性炎症が生じた状態"},{"name":"慢性根尖性歯周炎","reading":"まんせいこんせんせいししゅうえん","description":"根尖周囲組織の慢性的な炎症"},{"name":"歯根嚢胞","reading":"しこんのうほう","description":"根尖病変が進行し、膿の袋（嚢胞）を形成した状態"}]},{"categoryId":"periodontal_disease","categoryName":"歯周疾患（歯肉・歯周組織）","diagnoses":[{"name":"潰瘍性歯肉炎","reading":"かいようせいしにくえん","description":"歯肉に潰瘍を伴う炎症"},{"name":"肥大性歯肉炎","reading":"ひだいせいしにくえん","description":"歯肉が炎症により肥大した状態"},{"name":"慢性萎縮性老人性歯肉炎","reading":"まんせいいしゅくせいろうじんせいしにくえん","description":"加齢に伴う歯肉の萎縮性の慢性炎症"},{"name":"慢性歯肉炎","reading":"まんせいしにくえん","description":"歯肉のみに炎症がとどまる慢性的な状態"},{"name":"急性歯周炎","reading":"きゅうせいししゅうえん","description":"歯周組織に急性の炎症症状が現れた状態"},{"name":"単純性歯周炎","reading":"たんじゅんせいししゅうえん","description":"他の全身疾患を伴わない歯周炎"},{"name":"慢性歯周炎","reading":"まんせいししゅうえん","description":"歯を支える組織が慢性的に破壊されていく状態"},{"name":"化膿性歯周炎","reading":"かのうせいししゅうえん","description":"歯周組織に化膿を伴う炎症"},{"name":"歯周症","reading":"ししゅうしょう","description":"炎症よりも組織の変性が主体となる歯周疾患"},{"name":"歯肉膿瘍","reading":"しにくのうよう","description":"歯肉に限局した膿の貯留"},{"name":"智歯周囲炎","reading":"ちしゅうしゅういえん","description":"親知らず（智歯）周囲の歯肉に生じる炎症"}]},{"categoryId":"tmj_disorder","categoryName":"顎関節疾患","diagnoses":[{"name":"顎関節症I型（咀嚼筋痛障害）","reading":"がくかんせつしょう いちがた","description":"顎を動かす筋肉に痛みが生じるタイプ"},{"name":"顎関節症II型（顎関節痛障害）","reading":"がくかんせつしょう にがた","description":"顎関節そのものに痛みが生じるタイプ"},{"name":"顎関節症III型（関節円板障害）","reading":"がくかんせつしょう さんがた","description":"関節円板の位置異常によるタイプ。復位性・非復位性に分かれる"},{"name":"顎関節症IV型（変形性顎関節症）","reading":"がくかんせつしょう よんがた","description":"関節の骨組織に変形が生じたタイプ"}]},{"categoryId":"oral_surgery_trauma","categoryName":"口腔外科・外傷系","diagnoses":[{"name":"埋伏歯","reading":"まいふくし","description":"骨や歯肉の中に埋まったまま萌出しない歯。智歯（親知らず）に多い"},{"name":"顎骨骨折","reading":"がくこつこっせつ","description":"外傷等により上顎骨・下顎骨が折れた状態"},{"name":"歯の脱臼","reading":"はのだっきゅう","description":"外傷により歯が本来の位置からずれる、または完全に抜け落ちた状態"},{"name":"歯の破折","reading":"はのはせつ","description":"外傷等により歯冠・歯根が折れた状態"},{"name":"顎骨嚢胞","reading":"がくこつのうほう","description":"顎の骨内にできる嚢胞。含歯性嚢胞などが含まれる"},{"name":"口腔腫瘍（良性）","reading":"こうくうしゅよう りょうせい","description":"口腔内にできる良性の腫瘍"},{"name":"口腔腫瘍（悪性）","reading":"こうくうしゅよう あくせい","description":"口腔内にできる悪性の腫瘍"}]},{"categoryId":"mucosal_disease","categoryName":"粘膜疾患","diagnoses":[{"name":"口内炎（アフタ性口内炎）","reading":"こうないえん あふたせい","description":"口腔粘膜にできる円形の炎症性潰瘍"},{"name":"口腔カンジダ症","reading":"こうくうかんじだしょう","description":"カンジダ菌の増殖による口腔粘膜の感染症"},{"name":"白板症","reading":"はくばんしょう","description":"口腔粘膜に生じる白色の病変。前癌病変とされる場合がある"}]},{"categoryId":"developmental_anomaly","categoryName":"歯・顎の発育異常","diagnoses":[{"name":"過剰歯","reading":"かじょうし","description":"通常の歯数より多く形成された歯"},{"name":"エナメル質形成不全","reading":"えなめるしつけいせいふぜん","description":"エナメル質が正常に形成されなかった状態"},{"name":"歯牙欠損（先天性）","reading":"しがけっそん せんてんせい","description":"生まれつき歯が形成されていない状態"}]},{"categoryId":"occlusion_prosthetic","categoryName":"咬合・補綴関連","diagnoses":[{"name":"咬合異常","reading":"こうごういじょう","description":"上下の歯の噛み合わせに異常がある状態"},{"name":"歯列不正","reading":"しれつふせい","description":"歯並びに異常がある状態"},{"name":"補綴物脱離","reading":"ほてつぶつだつり","description":"クラウンやブリッジ、義歯などが外れた状態"},{"name":"補綴物破損","reading":"ほてつぶつはそん","description":"クラウンやブリッジ、義歯などが破損した状態"}]},{"categoryId":"others","categoryName":"その他","diagnoses":[{"name":"知覚過敏症","reading":"ちかくかびんしょう","description":"冷たいものや歯ブラシの刺激等で歯がしみる症状"},{"name":"口腔習癖関連異常","reading":"こうくうしゅうへきかんれんいじょう","description":"指しゃぶりや歯ぎしり等の習癖に関連する異常"}]}]};
@@ -16113,18 +16227,13 @@ function printOralFunctionPrecision_() {
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
-  if (ctx.patientId && ctx.examDate) {
-    rptAutoSaveArchiveOnPrint_("ofpi");
-    rptClearDraft_("ofpi", ofpiDraftKey_(ctx.patientId, ctx.examDate));
-  }
+  rptTriggerPrintWhenReady_(w);
   lastOfpiContext_ = ctx;
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  if (ctx.patientId && ctx.examDate) {
+    rptAfterPrintArchiveAndClearDraft_("ofpi", ofpiDraftKey_(ctx.patientId, ctx.examDate));
+  } else {
+    showToast("印刷画面を開きました");
+  }
 }
 
 /** ── ⑩ 診断書 ── */
@@ -16479,18 +16588,13 @@ function printShindan_() {
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
-  if (ctx.patient_id && ctx.issue_date_ymd) {
-    rptAutoSaveArchiveOnPrint_("shindan");
-    rptClearDraft_("shindan", shindanDraftKey_(ctx.patient_id, ctx.issue_date_ymd));
-  }
+  rptTriggerPrintWhenReady_(w);
   lastShindanContext_ = ctx;
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  if (ctx.patient_id && ctx.issue_date_ymd) {
+    rptAfterPrintArchiveAndClearDraft_("shindan", shindanDraftKey_(ctx.patient_id, ctx.issue_date_ymd));
+  } else {
+    showToast("印刷画面を開きました");
+  }
 }
 
 function findLatestPeriodicExamRecord_(records, examYmd, code) {
@@ -16540,13 +16644,27 @@ async function loadOfpiFormDataForPatient_(pid, examDate, opts) {
     sub.textContent = `${p ? p.name || pid : pid}${room ? "（" + room + "）" : ""} — 341様式準拠・4項目入力`;
   }
   let teethData = {};
+  let records = [];
   try {
-    const json = await gasCall("getTeethData", pid);
-    teethData = JSON.parse(json || "{}");
-    migrateLegacyTeethProsthesis(teethData);
+    const raw = await gasCall("getOfpiFormData", pid, examDate);
+    const data = JSON.parse(raw);
+    if (!data || !data.ok) throw new Error((data && data.error) || "取得失敗");
+    teethData = JSON.parse(data.teeth_json || "{}");
+    records = data.records || [];
   } catch (_) {
-    teethData = {};
+    try {
+      const [teethJson, recJson] = await Promise.all([
+        gasCall("getTeethData", pid),
+        gasCall("getTreatmentsByPatient", pid)
+      ]);
+      teethData = JSON.parse(teethJson || "{}");
+      records = JSON.parse(recJson || "[]");
+    } catch (_2) {
+      teethData = {};
+      records = [];
+    }
   }
+  migrateLegacyTeethProsthesis(teethData);
   ofpiTeethDataCache_ = teethData;
   const teethCount = countRemainingTeethFromChart_(teethData);
   const draftKey = ofpiDraftKey_(pid, examDate);
@@ -16561,22 +16679,18 @@ async function loadOfpiFormDataForPatient_(pid, examDate, opts) {
       tonguePressures: ["", "", "", "", ""],
       moistureValues: ["", "", ""]
     });
-    try {
-      const recJson = await gasCall("getTreatmentsByPatient", pid);
-      const records = JSON.parse(recJson || "[]");
-      const tongueM = ofpiPrefillFromExamRecord_(records, examDate);
-      if (tongueM) {
-        document.querySelectorAll(".ofpi-tongue-inp").forEach((el, i) => {
-          el.value = tongueM[i] != null ? String(tongueM[i]) : "";
-        });
-      }
-      const moistureM = ofpiPrefillMoistureFromExamRecord_(records, examDate);
-      if (moistureM) {
-        document.querySelectorAll(".ofpi-moisture-inp").forEach((el, i) => {
-          el.value = moistureM[i] != null ? String(moistureM[i]) : "";
-        });
-      }
-    } catch (_) {}
+    const tongueM = ofpiPrefillFromExamRecord_(records, examDate);
+    if (tongueM) {
+      document.querySelectorAll(".ofpi-tongue-inp").forEach((el, i) => {
+        el.value = tongueM[i] != null ? String(tongueM[i]) : "";
+      });
+    }
+    const moistureM = ofpiPrefillMoistureFromExamRecord_(records, examDate);
+    if (moistureM) {
+      document.querySelectorAll(".ofpi-moisture-inp").forEach((el, i) => {
+        el.value = moistureM[i] != null ? String(moistureM[i]) : "";
+      });
+    }
   }
   lastOfpiContext_ = collectOfpiForm_();
   if (lastOfpiContext_) lastOfpiContext_.remainingTeethFromChart = teethCount;
@@ -16977,15 +17091,8 @@ ${getRptPrintWhitespaceCss_()}
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
-  });
-  rptAutoSaveArchiveOnPrint_("svList");
-  if (lastSupervisorListContext) rptClearDraft_("svList", lastSupervisorListContext.visit_date);
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  rptTriggerPrintWhenReady_(w);
+  rptAfterPrintArchiveAndClearDraft_("svList", lastSupervisorListContext?.visit_date || "");
 }
 
 function getStaffLinesForIss_() {
@@ -17011,7 +17118,7 @@ function clinicalMonthlyDraftKey_() {
 
 function issDraftKey_() {
   const facId = getIssFacilityId_();
-  const ymd = document.getElementById("issEntryDate")?.value || document.getElementById("reportVisitDate")?.value;
+  const ymd = document.getElementById("reportVisitDate")?.value;
   return facId && ymd ? `${facId}_${ymd}` : "";
 }
 
@@ -17181,7 +17288,10 @@ function saveVisitTimetablePreviewDraft_() {
     return;
   }
   flushVisitTimetableDraft_();
-  rptDraftSavePromise_(rptSaveDraftAsync_("visitTt", lastVisitTimetableCtx_.facId, visitTimetableDraftCache_[lastVisitTimetableCtx_.facId] || loadVisitTimetableDraft_(lastVisitTimetableCtx_.facId)));
+  const ctx = lastVisitTimetableCtx_;
+  const payload = visitTimetableDraftCache_[ctx.facId] || loadVisitTimetableDraft_(ctx.facId);
+  const key = visitTtDraftStorageId_(ctx.facId, ctx.outputYmd) || String(ctx.facId);
+  rptDraftSavePromise_(rptSaveDraftAsync_("visitTt", key, payload));
 }
 
 function clearFaxDailyPreviewDraft_() {
@@ -17284,11 +17394,16 @@ function clearVisitTimetablePreviewDraft_() {
     return;
   }
   const facId = lastVisitTimetableCtx_.facId;
+  const outputYmd = lastVisitTimetableCtx_.outputYmd;
   delete visitTimetableDraftCache_[facId];
   try {
     localStorage.removeItem(visitTimetableDraftKey_(facId));
   } catch (e) {}
-  rptClearDraftAsync_("visitTt", facId).then(() => {
+  const key = visitTtDraftStorageId_(facId, outputYmd) || String(facId);
+  Promise.all([
+    rptClearDraftAsync_("visitTt", key),
+    key !== String(facId) ? rptClearDraftAsync_("visitTt", String(facId)) : Promise.resolve()
+  ]).then(() => {
     showToast("下書きを消去しました（全端末）。最新データを読み込みます…");
     openVisitTimetableModal();
   }).catch(() => showToast("下書きの消去に失敗しました"));
@@ -18350,6 +18465,62 @@ function issRefreshPreview(fromFormOnly) {
   issBindPreviewInputSync_(inner);
 }
 
+let issOpenGen_ = 0;
+
+function issApplyDraftPayload_(draft, toastMsg) {
+  if (!draft) return false;
+  if (draft.rows) draft.rows.forEach(r => { if (!Array.isArray(r.photos)) r.photos = []; });
+  if (!Array.isArray(draft.footer_photos)) draft.footer_photos = [];
+  lastIssPreviewContext = draft;
+  if (draft.footer != null) {
+    const ft2 = document.getElementById("issFooter");
+    if (ft2) ft2.value = draft.footer;
+  }
+  if (draft.free_area) {
+    const fe = document.getElementById("issFreeTextEd");
+    if (fe && draft.free_area.text != null) fe.innerHTML = faxMarkersToHtml_(draft.free_area.text);
+  }
+  const host = document.getElementById("issRows");
+  if (host && draft.rows && draft.rows.length) {
+    host.innerHTML = "";
+    draft.rows.forEach(r => issAddRow(r.room || "", r.name || "", r.notes || "", r.patient_id || ""));
+  }
+  setIssCategoriesFromDraft_(draft);
+  if (draft.staff && draft.staff.length) {
+    document.querySelectorAll("#issStaffChecks .iss-staff-wrap").forEach(lab => {
+      const sp = lab.querySelector("span");
+      const cb = lab.querySelector("input");
+      const nm = sp ? sp.textContent : "";
+      const hit = draft.staff.find(s => s.name === nm);
+      if (cb && hit) cb.checked = !!hit.checked;
+    });
+  }
+  issRefreshPreview(true);
+  if (toastMsg) showToast(toastMsg);
+  return true;
+}
+
+async function openShareSheetModalLoad_(openGen, facId, ymd, draftKey) {
+  const localPayload = rptLoadDraft_("shareSheet", draftKey);
+  if (localPayload && issApplyDraftPayload_(localPayload, "保存済みの下書きを読み込みました")) {
+    rptLoadDraftFromCloud_("shareSheet", draftKey).then(cloud => {
+      if (openGen !== issOpenGen_ || !cloud || cloud.payload == null) return;
+      const local = rptReadLocalDraft_("shareSheet", draftKey);
+      if (local && (local.savedAt || 0) >= (cloud.savedAt || 0)) return;
+      issApplyDraftPayload_(cloud.payload, "クラウドの下書きを反映しました");
+    }).catch(() => {});
+    return;
+  }
+  await issLoadRowsForFacility_(facId, ymd, true);
+  if (openGen !== issOpenGen_) return;
+  const cloudPayload = await rptLoadDraftAsync_("shareSheet", draftKey).catch(() => null);
+  if (openGen !== issOpenGen_) return;
+  if (cloudPayload && issApplyDraftPayload_(cloudPayload, "クラウドの下書きを読み込みました")) {
+    return;
+  }
+  issRefreshPreview(true);
+}
+
 function openShareSheetModal() {
   clearUndoStack_();
   const facId = getIssFacilityId_();
@@ -18398,42 +18569,8 @@ function openShareSheetModal() {
   }
   setIssCategoriesFromDraft_(null);
   document.getElementById("shareSheetModal").classList.add("show");
-  issLoadRowsForFacility_(facId, ymd, true).then(() => rptLoadDraftAsync_("shareSheet", issDraftKey_()).then(draft => {
-    if (draft) {
-      if (draft.rows) draft.rows.forEach(r => { if (!Array.isArray(r.photos)) r.photos = []; });
-      if (!Array.isArray(draft.footer_photos)) draft.footer_photos = [];
-      lastIssPreviewContext = draft;
-      if (draft.entry_date) {
-        const ed2 = document.getElementById("issEntryDate");
-        if (ed2) ed2.value = draft.entry_date;
-      }
-      if (draft.footer != null) {
-        const ft2 = document.getElementById("issFooter");
-        if (ft2) ft2.value = draft.footer;
-      }
-      if (draft.free_area) {
-        const fe = document.getElementById("issFreeTextEd");
-        if (fe && draft.free_area.text != null) fe.innerHTML = faxMarkersToHtml_(draft.free_area.text);
-      }
-      const host = document.getElementById("issRows");
-      if (host && draft.rows && draft.rows.length) {
-        host.innerHTML = "";
-        draft.rows.forEach(r => issAddRow(r.room || "", r.name || "", r.notes || "", r.patient_id || ""));
-      }
-      setIssCategoriesFromDraft_(draft);
-      if (draft.staff && draft.staff.length) {
-        document.querySelectorAll("#issStaffChecks .iss-staff-wrap").forEach(lab => {
-          const sp = lab.querySelector("span");
-          const cb = lab.querySelector("input");
-          const nm = sp ? sp.textContent : "";
-          const hit = draft.staff.find(s => s.name === nm);
-          if (cb && hit) cb.checked = !!hit.checked;
-        });
-      }
-      showToast("保存済みの下書きを読み込みました");
-    }
-    issRefreshPreview(true);
-  }));
+  const openGen = ++issOpenGen_;
+  void openShareSheetModalLoad_(openGen, facId, ymd, issDraftKey_());
 }
 
 function closeShareSheetModal() {
@@ -18493,10 +18630,10 @@ ${getRptPrintWhitespaceCss_()}
   w.document.open();
   w.document.write(doc);
   w.document.close();
-  w.addEventListener("load", () => {
+  rptTriggerPrintWhenReady_(w, win => {
     const runPhotoLayout = () => {
       try {
-        w.document.querySelectorAll(".iss-photos").forEach(el => {
+        win.document.querySelectorAll(".iss-photos").forEach(el => {
           let maxB = parseFloat(el.style.minHeight) || 72;
           el.querySelectorAll(".iss-photo-widget").forEach(widget => {
             const top = parseFloat(widget.style.top) || 0;
@@ -18508,18 +18645,11 @@ ${getRptPrintWhitespaceCss_()}
       } catch (_) {}
     };
     runPhotoLayout();
-    w.document.querySelectorAll(".iss-photo-widget img").forEach(img => {
+    win.document.querySelectorAll(".iss-photo-widget img").forEach(img => {
       if (!img.complete) img.addEventListener("load", runPhotoLayout, { once: true });
     });
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {}
   });
-  const issKey = issDraftKey_();
-  rptAutoSaveArchiveOnPrint_("shareSheet");
-  if (issKey) rptClearDraft_("shareSheet", issKey);
-  showToast("印刷画面を開きました（確定保存し、下書きを消去しました）");
+  rptAfterPrintArchiveAndClearDraft_("shareSheet", issDraftKey_());
 }
 
 function toggleStatusFilter(key) {
@@ -18947,6 +19077,7 @@ function openFacModal(fid) {
 }
 
 function saveFacilityModal() {
+  if (facilityModalSaveInFlight) return;
   const id = document.getElementById("fm-id").value;
   const targetRaw = document.getElementById("fm-target")?.value;
   const targetNum = parseInt(targetRaw, 10);
@@ -18955,6 +19086,7 @@ function saveFacilityModal() {
   const data = { id, name:document.getElementById("fm-name").value, short: shortRaw || (document.getElementById("fm-name").value ? document.getElementById("fm-name").value.charAt(0) : ""), fax:document.getElementById("fm-fax").value, visitDays:document.getElementById("fm-days").value, cm:document.getElementById("fm-cm").value, target };
   if(!data.name){showToast("施設名は必須です");return;}
   const fn = id ? "updateFacility" : "addFacility";
+  facilityModalSaveInFlight = true;
   gasCall(fn, JSON.stringify(data)).then(result=>{
     if(!id){ data.id=result; data.color="#94a3b8"; if(!data.short) data.short=data.name ? data.name[0] : ""; FACILITIES.push(data); buildFacTabs(); }
     else { const f=FACILITIES.find(x=>x.id===id); if(f) Object.assign(f,data); }
@@ -18965,6 +19097,10 @@ function saveFacilityModal() {
     rebuildPatientFacFilterOptions_();
     if (currentScreen === "calendar") paintCalGrid();
     if (currentScreen === "dashboard") renderDashboard();
+  }).catch(e => {
+    showToast("施設の保存に失敗しました: " + (e && e.message ? e.message : String(e)));
+  }).finally(() => {
+    facilityModalSaveInFlight = false;
   });
 }
 

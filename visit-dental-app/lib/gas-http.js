@@ -4,6 +4,7 @@ const POST_ONLY = new Set([
   'savePhoto',
   'saveReportPreviewDraftSimple',
   'saveReportPreviewDraftChunk',
+  'saveReportPreviewDraftChunkFinish',
   'saveGeneratedDocumentSimple',
   'saveGeneratedDocumentChunk',
 ])

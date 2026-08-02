@@ -3,5 +3,13 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "framework": "vite"
+  "framework": "vite",
+  "functions": {
+    "api/gas-rpc.js": {
+      "maxDuration": 120
+    },
+    "api/gas-check.js": {
+      "maxDuration": 60
+    }
+  }
 }
