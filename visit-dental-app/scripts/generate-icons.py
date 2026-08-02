@@ -11,6 +11,8 @@ SOURCE = Path(
     r"C:\Users\toraz\.cursor\projects\d-ADS-personal-visual-explainers\assets"
     r"\c__Users_toraz_AppData_Roaming_Cursor_User_workspaceStorage_empty-window_images_tooth_ha_pikapika-26723154-dbc6-4eda-a2db-f532948ccbc0.png"
 )
+# 白い歯がタブで消えないよう、テーマ色に合う淡い青背景
+FAVICON_BG = (219, 234, 254, 255)
 
 
 def crop_to_content(im: Image.Image, padding_ratio: float = 0.08) -> Image.Image:
@@ -48,19 +50,18 @@ def main() -> None:
     fit_square(cropped, 192).save(PUBLIC / "pwa-192.png", optimize=True)
     fit_square(cropped, 512).save(PUBLIC / "pwa-512.png", optimize=True)
 
-    # Favicon: white background reads better at 16–32px in browser tabs.
-    favicon_sizes = [16, 32, 48]
-    favicon_images = [
-        fit_square(cropped, s, (255, 255, 255, 255)).convert("RGBA") for s in favicon_sizes
-    ]
-    favicon_images[0].save(
+    for size in (16, 32, 48):
+        fit_square(cropped, size, FAVICON_BG).save(PUBLIC / f"favicon-{size}.png", optimize=True)
+
+    # ICO: 高解像度源から複数サイズを一括生成（Chrome タブは 32px 前後を使用）
+    master = fit_square(cropped, 256, FAVICON_BG)
+    master.save(
         PUBLIC / "favicon.ico",
         format="ICO",
-        sizes=[(s, s) for s in favicon_sizes],
-        append_images=favicon_images[1:],
+        sizes=[(16, 16), (32, 32), (48, 48)],
     )
 
-    print("Wrote:", ", ".join(p.name for p in PUBLIC.glob("favicon.ico")))
+    print("Wrote:", ", ".join(sorted(p.name for p in PUBLIC.glob("favicon*"))))
 
 
 if __name__ == "__main__":

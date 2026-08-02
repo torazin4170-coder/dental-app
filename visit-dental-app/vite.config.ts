@@ -158,6 +158,7 @@ export default defineConfig(({ mode }) => {
         lang: 'ja',
         start_url: './',
         icons: [
+          { src: 'favicon-32.png', sizes: '32x32', type: 'image/png' },
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
