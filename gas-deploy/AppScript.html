@@ -9377,10 +9377,13 @@ function rptPlainHtml_(html) {
   return rptPlainizePreviewHtml_(html);
 }
 
-/** 印刷ウィンドウ：レイアウト完了後に print() を呼ぶ（全帳票共通） */
+/** 印刷ウィンドウ：DOM 反映後すぐ print()（画像 decode 完了は待たない・全帳票共通） */
 function rptTriggerPrintWhenReady_(w, beforePrint) {
   if (!w) return;
-  w.addEventListener("load", () => {
+  let fired = false;
+  const doPrint = () => {
+    if (fired) return;
+    fired = true;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         try {
@@ -9390,7 +9393,18 @@ function rptTriggerPrintWhenReady_(w, beforePrint) {
         } catch (_) {}
       });
     });
-  });
+  };
+  try {
+    const doc = w.document;
+    // document.write + close 後は interactive/complete。load は img decode まで待つため使わない
+    if (!doc || doc.readyState === "complete" || doc.readyState === "interactive") {
+      doPrint();
+    } else {
+      doc.addEventListener("DOMContentLoaded", doPrint, { once: true });
+    }
+  } catch (_) {
+    doPrint();
+  }
 }
 
 function rptPaintPreview_(container, html, root, onPull) {
@@ -9946,9 +9960,9 @@ function rptAutoSaveArchiveOnPrint_(kind) {
     .catch(() => null);
 }
 
-/** 印刷後: 確定保存の成功を待ってから下書き消去（失敗時は下書きを残す） */
+/** 印刷後: ダイアログ表示を優先し、確定保存→下書き消去（失敗時は下書きを残す） */
 function rptAfterPrintArchiveAndClearDraft_(kind, draftKey, extraCleanup) {
-  return rptAutoSaveArchiveOnPrint_(kind).then(res => {
+  const finish = res => {
     if (res && draftKey) {
       rptClearDraft_(kind, draftKey);
       if (typeof extraCleanup === "function") extraCleanup();
@@ -9958,9 +9972,13 @@ function rptAfterPrintArchiveAndClearDraft_(kind, draftKey, extraCleanup) {
     } else {
       showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
     }
-  }).catch(() => {
-    showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
-  });
+  };
+  // 確定保存の payload 組み立て（JSON.stringify 等）が重いため、print() 後に実行
+  setTimeout(() => {
+    rptAutoSaveArchiveOnPrint_(kind).then(finish).catch(() => {
+      showToast("印刷画面を開きました（確定保存に失敗したため下書きは残しています）");
+    });
+  }, 0);
 }
 
 function formatDocArchiveSavedAt_(ms) {
