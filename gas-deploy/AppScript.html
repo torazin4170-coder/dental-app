@@ -4582,12 +4582,60 @@ function quarterlyOverviewCellHtml_(info) {
   return `<span class="qo-cell ${m.cls}" title="${escAttr(m.title)}">${escHtml(m.text)}</span>`;
 }
 
+function getQuarterlyOverviewInageDoctorFilter_() {
+  const facId = String((document.getElementById("quarterlyOverviewFac") || {}).value || "all");
+  const sel = document.getElementById("quarterlyOverviewInageDoctor");
+  if (!sel) return "";
+  const slot = String(sel.value || "").trim();
+  if (!slot) return "";
+  if (facId !== "all" && !isInageFacilityById_(facId)) return "";
+  return slot;
+}
+
+function updateQuarterlyOverviewInageDoctorFilterWrap_() {
+  const facId = String((document.getElementById("quarterlyOverviewFac") || {}).value || "all");
+  const wrap = document.getElementById("quarterlyOverviewInageDoctorWrap");
+  const sel = document.getElementById("quarterlyOverviewInageDoctor");
+  if (!wrap || !sel) return;
+  const show = facId === "all" || isInageFacilityById_(facId);
+  wrap.style.display = show ? "block" : "none";
+  if (!show) {
+    sel.value = "";
+    return;
+  }
+  const cur = sel.value;
+  const docList = getInageDoctorNamesList_();
+  sel.innerHTML =
+    `<option value="">（すべて）</option>` +
+    docList.map((name, i) => `<option value="${i + 1}">${escHtml(name)}</option>`).join("");
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  else sel.value = "";
+}
+
+function onQuarterlyOverviewFacChange_() {
+  updateQuarterlyOverviewInageDoctorFilterWrap_();
+  renderQuarterlyOverviewTable_();
+}
+
+function quarterlyOverviewShowsDrColumn_(facFilter) {
+  facFilter = String(facFilter || "all");
+  if (facFilter !== "all") return isInageFacilityById_(facFilter);
+  return (FACILITIES || []).some(f => isInageFacilityById_(f.id));
+}
+
 function buildQuarterlyOverviewGroups_() {
   const refYmd = getQuarterlyOverviewRefYmd_();
   const facFilter = String((document.getElementById("quarterlyOverviewFac") || {}).value || "all");
+  const docF = getQuarterlyOverviewInageDoctorFilter_();
   let patients = (PATIENTS || []).filter(p => (p.status || "active") === "active");
   if (facFilter && facFilter !== "all") {
     patients = patients.filter(p => String(p.fac) === String(facFilter));
+  }
+  if (docF) {
+    patients = patients.filter(p => {
+      if (!isInageFacilityById_(p.fac)) return facFilter !== "all";
+      return String(p.assigned_doctor || "").trim() === docF;
+    });
   }
   patients = patients.slice().sort(comparePatientNoForReport_);
   const groups = groupPatientsByFacilityOrdered_(patients);
@@ -4619,16 +4667,31 @@ function renderQuarterlyOverviewTable_() {
     return;
   }
   const headCols = QUARTERLY_OVERVIEW_CODES_
-    .map(c => `<th>${escHtml(c === PERIODIC_EXAM_FKYOKU_ ? "F局" : c === PERIODIC_EXAM_TONGUE_ ? "舌圧" : "湿潤度")}</th>`)
+    .map(c => `<th class="qo-th-exam">${escHtml(c === PERIODIC_EXAM_FKYOKU_ ? "F局" : c === PERIODIC_EXAM_TONGUE_ ? "舌圧" : "湿潤度")}</th>`)
     .join("");
+  const showDrCol = quarterlyOverviewShowsDrColumn_(String((document.getElementById("quarterlyOverviewFac") || {}).value || "all"));
+  const colgroup =
+    `<colgroup>` +
+    `<col class="qo-col-no">` +
+    `<col class="qo-col-name">` +
+    (showDrCol ? `<col class="qo-col-dr">` : "") +
+    QUARTERLY_OVERVIEW_CODES_.map(() => `<col class="qo-col-exam">`).join("") +
+    `</colgroup>`;
+  const headDr = showDrCol ? `<th class="qo-th-dr">担当Dr</th>` : "";
   let html = `<p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.45">基準日: <strong>${escHtml(getQuarterlyOverviewRefYmd_())}</strong> ／ 直近18か月の記録を参照（${quarterlyOverviewRecords_.length}件）</p>`;
   groups.forEach(g => {
     const facName = (g.facility && g.facility.name) ? String(g.facility.name) : "施設";
     html += `<div class="qo-fac-block"><div class="qo-fac-title">${escHtml(facName)}（${g.rows.length}名）</div>`;
-    html += `<div class="qo-scroll"><table class="qo-table"><thead><tr><th>番号</th><th>氏名</th>${headCols}</tr></thead><tbody>`;
+    html += `<div class="qo-scroll"><table class="qo-table">${colgroup}<thead><tr><th class="qo-th-no">番号</th><th class="qo-th-name">氏名</th>${headDr}${headCols}</tr></thead><tbody>`;
     g.rows.forEach(({ patient: p, cols }) => {
       html += `<tr><td class="qo-no">${escHtml(visitTimetablePatientNo_(p) || "—")}</td>`;
       html += `<td class="qo-name">${escHtml(p.name || p.id || "")}</td>`;
+      if (showDrCol) {
+        const drCell = isInageFacilityById_(p.fac)
+          ? inageDoctorBadgeHtml_(p.assigned_doctor) || "—"
+          : "—";
+        html += `<td class="qo-dr">${drCell}</td>`;
+      }
       QUARTERLY_OVERVIEW_CODES_.forEach(code => {
         html += `<td>${quarterlyOverviewCellHtml_(cols[code])}</td>`;
       });
@@ -4651,6 +4714,7 @@ function populateQuarterlyOverviewFacSelect_() {
 
 function renderQuarterlyOverviewTab_() {
   populateQuarterlyOverviewFacSelect_();
+  updateQuarterlyOverviewInageDoctorFilterWrap_();
   const dateEl = document.getElementById("quarterlyOverviewRefDate");
   if (dateEl && !dateEl.value) {
     dateEl.value =

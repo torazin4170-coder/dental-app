@@ -821,11 +821,17 @@
       .qo-fac-block { margin-bottom: 18px; }
       .qo-fac-title { font-size: 13px; font-weight: 800; color: #334155; margin: 0 0 8px; padding: 8px 10px; background: #f1f5f9; border-radius: 8px; }
       .qo-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-      .qo-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 520px; }
-      .qo-table th, .qo-table td { border-bottom: 1px solid #e2e8f0; padding: 8px 6px; text-align: center; vertical-align: middle; }
+      .qo-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 520px; table-layout: fixed; }
+      .qo-table th, .qo-table td { border-bottom: 1px solid #e2e8f0; padding: 8px 6px; vertical-align: middle; }
       .qo-table th { background: #f8fafc; font-weight: 800; color: #475569; font-size: 11px; position: sticky; top: 0; z-index: 1; }
-      .qo-table td.qo-name { text-align: left; font-weight: 700; color: #0f172a; max-width: 120px; }
-      .qo-table td.qo-no { font-weight: 700; color: #64748b; white-space: nowrap; }
+      .qo-table .qo-col-no { width: 52px; }
+      .qo-table .qo-col-name { width: 34%; }
+      .qo-table .qo-col-dr { width: 72px; }
+      .qo-table .qo-col-exam { width: auto; }
+      .qo-table th.qo-th-no, .qo-table td.qo-no { text-align: center; white-space: nowrap; }
+      .qo-table th.qo-th-name, .qo-table td.qo-name { text-align: left; font-weight: 700; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .qo-table th.qo-th-dr, .qo-table td.qo-dr { text-align: center; font-size: 10px; padding: 6px 4px; }
+      .qo-table td.qo-no { color: #64748b; }
       .qo-cell { display: inline-block; padding: 3px 6px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; line-height: 1.2; }
       .qo-cell.qo-never { background: #f1f5f9; color: #64748b; }
       .qo-cell.qo-ok { background: #dcfce7; color: #166534; }
@@ -1028,7 +1034,13 @@
         <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">基準日（この日で「選択可か」を判定）</label>
         <input type="date" id="quarterlyOverviewRefDate" onchange="renderQuarterlyOverviewTable_()" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
         <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin:14px 0 6px">施設</label>
-        <select id="quarterlyOverviewFac" onchange="renderQuarterlyOverviewTable_()" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit"></select>
+        <select id="quarterlyOverviewFac" onchange="onQuarterlyOverviewFacChange_()" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit"></select>
+        <div id="quarterlyOverviewInageDoctorWrap" style="display:none;margin-top:14px">
+          <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">担当Drで絞る（稲毛施設）</label>
+          <select id="quarterlyOverviewInageDoctor" onchange="renderQuarterlyOverviewTable_()" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
+            <option value="">（すべて）</option>
+          </select>
+        </div>
         <button type="button" class="btn btn-secondary" style="width:100%;margin-top:12px;padding:12px;font-size:14px;font-weight:800" onclick="refreshQuarterlyOverview_()">🔄 一覧を更新（直近18か月分を再取得）</button>
       </div>
       <div class="qo-legend">

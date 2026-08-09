@@ -19,5 +19,6 @@
 
 ## 作業完了時
 
+- `gas-deploy/` の UI 変更後は **commit + `git push github main` まで実施**（ユーザーが毎回「push して」と言わなくてよい）。詳細は `.cursor/skills/dental-app-adjustments/SKILL.md`。
 - `node scripts/what-to-deploy.mjs` の出力をユーザーに簡潔に伝える。
 - 変更が gas-deploy のみなら「push だけで完了」と明示する。
