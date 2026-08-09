@@ -174,7 +174,7 @@ function openReportPatientPicker(target) {
         : "施設を選ぶとその施設の患者だけ表示されます（未選択時は全員）。";
     }
   }
-  const list = getActivePatientsForReport_(facId);
+  const list = getActivePatientsForReport_(facId).slice().sort(comparePatientNoForReport_);
   const host = document.getElementById("reportPatientPickerList");
   if (!host) return;
   if (!list.length) {
@@ -2347,11 +2347,18 @@ function refreshExamHistoryTable_(pid) {
     const teethHistory = JSON.parse(teethJson || "[]");
     examHistoryRowRecords_ = records;
     examHistoryCache_ = buildPatientExamHistory_(records, teethHistory);
+    mergeTreatmentRecordsIntoLocal_(records);
+    if (selectedPatient && String(selectedPatient.id) === String(pid) && currentScreen === "record") {
+      renderTreatmentChips_();
+    }
     renderExamHistoryTable_(examHistoryCache_);
   }).catch(() => {
     const records = (localRecords || []).filter(r => String(r.patient_id) === String(pid));
     examHistoryRowRecords_ = records;
     examHistoryCache_ = buildPatientExamHistory_(records, []);
+    if (selectedPatient && String(selectedPatient.id) === String(pid) && currentScreen === "record") {
+      renderTreatmentChips_();
+    }
     renderExamHistoryTable_(examHistoryCache_);
   });
 }
@@ -4154,6 +4161,16 @@ function comparePatientRoom_(a, b) {
   return ra.localeCompare(rb, "ja");
 }
 
+/** 帳簿タブ・患者ピッカー用（patient_no → 居室の番号順） */
+function comparePatientNoForReport_(a, b) {
+  const na = visitTimetablePatientNo_(a);
+  const nb = visitTimetablePatientNo_(b);
+  const pa = parseInt(String(na).replace(/\D/g, ""), 10);
+  const pb = parseInt(String(nb).replace(/\D/g, ""), 10);
+  if (!isNaN(pa) && !isNaN(pb) && pa !== pb) return pa - pb;
+  return String(na).localeCompare(String(nb), "ja", { numeric: true });
+}
+
 /** 施設マスタの並びに沿って患者を施設ごとに分け、各施設内は居室順 */
 function groupPatientsByFacilityOrdered_(list) {
   const order = (FACILITIES || []).map(f => f.id);
@@ -4401,12 +4418,37 @@ function recordHasTreatment_(rec, code) {
   return recordTreatmentList_(rec).some(t => normalizeTreatmentCodeForMatch_(t) === target);
 }
 
+/** 3か月制限の前回実施日探索用（当月 localRecords ＋ 患者全履歴） */
+function recordsForQuarterlyRestrictionLookup_(pid) {
+  const out = [];
+  const seen = new Set();
+  const add = r => {
+    if (!r) return;
+    const id = String(r.id != null ? r.id : "");
+    const key = id || `${r.patient_id}_${r.visit_date}_${r.treatments}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(r);
+  };
+  (localRecords || []).forEach(r => {
+    if (String(r.patient_id) === String(pid)) add(r);
+  });
+  if (selectedPatient && String(selectedPatient.id) === String(pid) && examHistoryRowRecords_.length) {
+    examHistoryRowRecords_.forEach(add);
+  }
+  if (quarterlyOverviewRecords_.length) {
+    quarterlyOverviewRecords_.forEach(r => {
+      if (String(r.patient_id) === String(pid)) add(r);
+    });
+  }
+  return out;
+}
+
 /** 診療記録から前回実施日（いちばん新しい visit_date） */
 function getLastRestrictedTreatmentDate_(pid, treatmentCode, opts) {
   opts = opts || {};
   let latest = "";
-  (localRecords || []).forEach(r => {
-    if (String(r.patient_id) !== String(pid)) return;
+  recordsForQuarterlyRestrictionLookup_(pid).forEach(r => {
     if (opts.excludeTreatmentId && String(r.id) === String(opts.excludeTreatmentId)) return;
     if (!recordHasTreatment_(r, treatmentCode)) return;
     const ymd = formatDateInputVal(r.visit_date) || "";
@@ -4455,6 +4497,193 @@ function isRestricted(pid, treatmentCode, opts) {
     }
   }
   return getQuarterlyRestrictionInfo_(pid, treatmentCode, opts).restricted;
+}
+
+/** ── 定期検査タブ：3か月制限一覧 ── */
+let quarterlyOverviewRecords_ = [];
+let quarterlyOverviewLoading_ = false;
+
+const QUARTERLY_OVERVIEW_CODES_ = [
+  PERIODIC_EXAM_TONGUE_,
+  PERIODIC_EXAM_MOISTURE_,
+  PERIODIC_EXAM_FKYOKU_
+];
+
+function getQuarterlyOverviewRefYmd_() {
+  const el = document.getElementById("quarterlyOverviewRefDate");
+  return (
+    formatDateInputVal(el && el.value) ||
+    formatDateInputVal((document.getElementById("reportVisitDate") || {}).value) ||
+    getTodayYmdJstForRecord_()
+  );
+}
+
+function buildRecentMonthKeys_(count, refYmd) {
+  const d = parseYmdNoon_(refYmd) || parseYmdNoon_(getTodayYmdJstForRecord_());
+  if (!d || isNaN(d.getTime())) return [];
+  const yms = [];
+  for (let i = 0; i < count; i++) {
+    const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    yms.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return yms;
+}
+
+async function fetchQuarterlyOverviewRecords_() {
+  const yms = buildRecentMonthKeys_(18, getQuarterlyOverviewRefYmd_());
+  const merged = [];
+  const seen = new Set();
+  for (let i = 0; i < yms.length; i += 6) {
+    const chunk = yms.slice(i, i + 6);
+    const parts = await Promise.all(
+      chunk.map(ym => gasCall("getMonthlyRecords", ym).catch(() => "[]"))
+    );
+    parts.forEach(json => {
+      let arr = [];
+      try {
+        arr = JSON.parse(json || "[]");
+      } catch (_) {
+        arr = [];
+      }
+      (arr || []).forEach(r => {
+        const id = String(r.id != null ? r.id : "");
+        const key = id || `${r.patient_id}_${r.visit_date}_${r.treatments}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(r);
+      });
+    });
+  }
+  quarterlyOverviewRecords_ = merged;
+  mergeTreatmentRecordsIntoLocal_(merged);
+  return merged;
+}
+
+function quarterlyOverviewCellMeta_(info) {
+  if (!info || !info.lastYmd) {
+    return { cls: "qo-never", text: "未", title: "記録なし（選択可）" };
+  }
+  if (info.restricted) {
+    return {
+      cls: "qo-wait",
+      text: `${formatMdJpShort_(info.eligibleFromYmd)}〜`,
+      title: `前回 ${formatMdJpShort_(info.lastYmd)} — ${formatMdJpShort_(info.eligibleFromYmd)}から選択可`
+    };
+  }
+  return {
+    cls: "qo-ok",
+    text: `可 ${formatMdJpShort_(info.lastYmd)}`,
+    title: `前回 ${formatMdJpShort_(info.lastYmd)} — 選択可`
+  };
+}
+
+function quarterlyOverviewCellHtml_(info) {
+  const m = quarterlyOverviewCellMeta_(info);
+  return `<span class="qo-cell ${m.cls}" title="${escAttr(m.title)}">${escHtml(m.text)}</span>`;
+}
+
+function buildQuarterlyOverviewGroups_() {
+  const refYmd = getQuarterlyOverviewRefYmd_();
+  const facFilter = String((document.getElementById("quarterlyOverviewFac") || {}).value || "all");
+  let patients = (PATIENTS || []).filter(p => (p.status || "active") === "active");
+  if (facFilter && facFilter !== "all") {
+    patients = patients.filter(p => String(p.fac) === String(facFilter));
+  }
+  patients = patients.slice().sort(comparePatientNoForReport_);
+  const groups = groupPatientsByFacilityOrdered_(patients);
+  return groups.map(g => {
+    const rows = g.patients.map(p => {
+      const cols = {};
+      QUARTERLY_OVERVIEW_CODES_.forEach(code => {
+        cols[code] = getQuarterlyRestrictionInfo_(p.id, code, { refYmd });
+      });
+      return { patient: p, cols };
+    });
+    return { facId: g.facId, facility: g.facility, rows };
+  });
+}
+
+function renderQuarterlyOverviewTable_() {
+  const host = document.getElementById("quarterlyOverviewHost");
+  if (!host) return;
+  if (quarterlyOverviewLoading_) return;
+  if (!quarterlyOverviewRecords_.length) {
+    host.innerHTML =
+      '<p style="padding:16px;color:var(--muted);text-align:center;line-height:1.55">「一覧を更新」を押すと、施設ごとの表を表示します。</p>';
+    return;
+  }
+  const groups = buildQuarterlyOverviewGroups_();
+  if (!groups.length) {
+    host.innerHTML =
+      '<p style="padding:16px;color:var(--muted);text-align:center;line-height:1.55">該当する患者がいません。</p>';
+    return;
+  }
+  const headCols = QUARTERLY_OVERVIEW_CODES_
+    .map(c => `<th>${escHtml(c === PERIODIC_EXAM_FKYOKU_ ? "F局" : c === PERIODIC_EXAM_TONGUE_ ? "舌圧" : "湿潤度")}</th>`)
+    .join("");
+  let html = `<p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.45">基準日: <strong>${escHtml(getQuarterlyOverviewRefYmd_())}</strong> ／ 直近18か月の記録を参照（${quarterlyOverviewRecords_.length}件）</p>`;
+  groups.forEach(g => {
+    const facName = (g.facility && g.facility.name) ? String(g.facility.name) : "施設";
+    html += `<div class="qo-fac-block"><div class="qo-fac-title">${escHtml(facName)}（${g.rows.length}名）</div>`;
+    html += `<div class="qo-scroll"><table class="qo-table"><thead><tr><th>番号</th><th>氏名</th>${headCols}</tr></thead><tbody>`;
+    g.rows.forEach(({ patient: p, cols }) => {
+      html += `<tr><td class="qo-no">${escHtml(visitTimetablePatientNo_(p) || "—")}</td>`;
+      html += `<td class="qo-name">${escHtml(p.name || p.id || "")}</td>`;
+      QUARTERLY_OVERVIEW_CODES_.forEach(code => {
+        html += `<td>${quarterlyOverviewCellHtml_(cols[code])}</td>`;
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table></div></div>";
+  });
+  host.innerHTML = html;
+}
+
+function populateQuarterlyOverviewFacSelect_() {
+  const sel = document.getElementById("quarterlyOverviewFac");
+  if (!sel) return;
+  const cur = sel.value || "all";
+  sel.innerHTML =
+    `<option value="all"${cur === "all" ? " selected" : ""}>全施設</option>` + buildFacilitySelectOptionsHtml_(cur === "all" ? "" : cur);
+  if (cur && cur !== "all" && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  else sel.value = "all";
+}
+
+function renderQuarterlyOverviewTab_() {
+  populateQuarterlyOverviewFacSelect_();
+  const dateEl = document.getElementById("quarterlyOverviewRefDate");
+  if (dateEl && !dateEl.value) {
+    dateEl.value =
+      formatDateInputVal((document.getElementById("reportVisitDate") || {}).value) ||
+      getTodayYmdJstForRecord_();
+  }
+  if (!quarterlyOverviewRecords_.length && !quarterlyOverviewLoading_) {
+    refreshQuarterlyOverview_();
+  } else {
+    renderQuarterlyOverviewTable_();
+  }
+}
+
+async function refreshQuarterlyOverview_() {
+  if (quarterlyOverviewLoading_) return;
+  const host = document.getElementById("quarterlyOverviewHost");
+  quarterlyOverviewLoading_ = true;
+  if (host) {
+    host.innerHTML =
+      '<div class="fax-loading-wrap"><div class="fax-loading-dots">…</div><div class="fax-loading-msg">直近18か月の診療記録を取得しています…</div></div>';
+  }
+  try {
+    await fetchQuarterlyOverviewRecords_();
+    renderQuarterlyOverviewTable_();
+    showToast("定期検査一覧を更新しました");
+  } catch (e) {
+    if (host) {
+      host.innerHTML = `<p style="padding:16px;color:#dc2626;text-align:center;line-height:1.55">取得に失敗しました: ${escHtml(e && e.message ? e.message : String(e))}</p>`;
+    }
+    showToast("一覧の取得に失敗しました");
+  } finally {
+    quarterlyOverviewLoading_ = false;
+  }
 }
 
 function markRestricted(pid, treatments, visitYmd) {
@@ -8725,6 +8954,7 @@ function switchSettingsTab(tab) {
   }
   if (tab === "facilities") renderMgmtFacilities();
   if (tab === "reports") renderReportsTab();
+  if (tab === "quarterly") renderQuarterlyOverviewTab_();
   if (tab === "doctor") {
     renderCategoryOrderEditors_();
     const sl = document.getElementById("iss-staff-settings-list");
@@ -9514,7 +9744,7 @@ async function rptLoadDraftFromCloud_(kind, id) {
   }
 }
 
-/** ローカル下書きが無い端末ではクラウドを先に試し、無ければ onGenerate */
+/** ローカル下書きが無い端末ではクラウドを並行取得し、プレビュー生成は先に開始 */
 async function rptOpenReportPreferCloudDraft_(kind, key, opts) {
   const applyDraft = opts && opts.applyDraft;
   const onGenerate = opts && opts.onGenerate;
@@ -9534,11 +9764,11 @@ async function rptOpenReportPreferCloudDraft_(kind, key, opts) {
     return;
   }
   if (showLoading) showLoading();
-  const cloudPayload = await rptLoadDraftAsync_(kind, key).catch(() => null);
-  if (cloudPayload && applyDraft(cloudPayload, "クラウドの下書きを読み込みました")) {
-    return;
-  }
+  const cloudPromise = rptLoadDraftAsync_(kind, key).catch(() => null);
   if (onGenerate) onGenerate();
+  cloudPromise.then(cloudPayload => {
+    if (cloudPayload && applyDraft(cloudPayload, "クラウドの下書きを読み込みました")) {}
+  }).catch(() => {});
 }
 
 async function rptClearDraftFromCloud_(kind, id) {
@@ -11277,7 +11507,12 @@ function buildFaxDailyDocumentHtml_(opts) {
 }
 
 function showFaxDailyPreviewLoading_(msg) {
-  const inner = document.getElementById("faxDailyPreviewInner");
+  showReportPreviewLoading_("faxDailyPreviewInner", msg);
+}
+
+/** 帳票プレビュー共通の読み込み表示 */
+function showReportPreviewLoading_(hostId, msg) {
+  const inner = document.getElementById(hostId);
   if (!inner) return;
   inner.innerHTML =
     `<div class="fax-loading-wrap"><div class="fax-loading-dots">⋯</div><div class="fax-loading-msg">${escHtml(msg || "読み込み中…")}</div></div>`;
@@ -14728,29 +14963,54 @@ function openKentaiReportModal() {
   const kd = document.getElementById("kentai-checkup-date");
   if (kd) kd.value = d;
   const kKey = `${pid}_${d}`;
-  rptLoadDraftAsync_("kentai", kKey).then(draft => {
-    if (draft) {
-      applyKentaiFormDraftPayload_(draft);
-      showToast("保存済みの下書きを読み込みました");
-    } else {
-      lastKentaiPreviewHdr_ = null;
-      lastKentaiFamilyTeeth_ = null;
-      kentaiSelectedBridgeId_ = null;
-      kentaiBridgeAddModeActive_ = false;
-      kentaiBridgeAddAnchorKey_ = null;
-      closeKentaiToothSymbolPopover_();
-      ["kentai-text-oral", "kentai-text-denture", "kentai-text-perio", "kentai-text-caries", "kentai-text-overall"].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = "";
-      });
-      ["kentai-need-oral", "kentai-need-denture", "kentai-need-perio", "kentai-need-caries"].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = "あり";
-      });
-    }
-    populateRptClinicSelect_(document.getElementById("kentaiClinicSelect"), (draft && draft.hdr && draft.hdr.clinic) || document.getElementById("clinic-name")?.value || "");
-    document.getElementById("kentaiReportModal")?.classList.add("show");
+  document.getElementById("kentaiReportModal")?.classList.add("show");
+  const localDraft = rptLoadDraft_("kentai", kKey);
+  if (localDraft) {
+    applyKentaiFormDraftPayload_(localDraft);
+    populateRptClinicSelect_(
+      document.getElementById("kentaiClinicSelect"),
+      (localDraft.hdr && localDraft.hdr.clinic) || document.getElementById("clinic-name")?.value || ""
+    );
     refreshKentaiPreviewDom({ skipPull: true });
+  } else {
+    showReportPreviewLoading_("kentai-preview-host", "読み込んでいます…");
+    lastKentaiPreviewHdr_ = null;
+    lastKentaiFamilyTeeth_ = null;
+    kentaiSelectedBridgeId_ = null;
+    kentaiBridgeAddModeActive_ = false;
+    kentaiBridgeAddAnchorKey_ = null;
+    closeKentaiToothSymbolPopover_();
+    ["kentai-text-oral", "kentai-text-denture", "kentai-text-perio", "kentai-text-caries", "kentai-text-overall"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    ["kentai-need-oral", "kentai-need-denture", "kentai-need-perio", "kentai-need-caries"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "あり";
+    });
+    populateRptClinicSelect_(document.getElementById("kentaiClinicSelect"), document.getElementById("clinic-name")?.value || "");
+  }
+  rptLoadDraftAsync_("kentai", kKey).then(draft => {
+    if (draft && !localDraft) {
+      applyKentaiFormDraftPayload_(draft);
+      populateRptClinicSelect_(
+        document.getElementById("kentaiClinicSelect"),
+        (draft.hdr && draft.hdr.clinic) || document.getElementById("clinic-name")?.value || ""
+      );
+      showToast("保存済みの下書きを読み込みました");
+      refreshKentaiPreviewDom({ skipPull: true });
+    } else if (localDraft) {
+      rptLoadDraftFromCloud_("kentai", kKey).then(cloud => {
+        if (!cloud || cloud.payload == null) return;
+        const local = rptReadLocalDraft_("kentai", kKey);
+        if (local && (local.savedAt || 0) >= (cloud.savedAt || 0)) return;
+        applyKentaiFormDraftPayload_(cloud.payload);
+        showToast("クラウドの下書きを反映しました");
+        refreshKentaiPreviewDom({ skipPull: true });
+      }).catch(() => {});
+    } else {
+      refreshKentaiPreviewDom({ skipPull: true });
+    }
   });
 }
 
@@ -14890,9 +15150,10 @@ function openFaxDailyPreviewModal() {
   document.getElementById("faxDailyModal")?.classList.add("show");
   showFaxDailyPreviewLoading_("診療データを読み込んでいます…");
   lastFaxDailyContext = null;
-  const loadBatch = gasCall("getFaxDailyBatchData", dateYmd, "")
-    .then(json => {
-      const batch = JSON.parse(json);
+  const loadBatch = Promise.all([
+    gasCall("getFaxDailyBatchData", dateYmd, "").then(json => JSON.parse(json)),
+    rptLoadDraftAsync_("faxDaily", dateYmd)
+  ]).then(([batch, draft]) => {
       let facIds = (batch.facility_ids || []).map(String);
       if (!facIds.length) {
         const hintFac = getReportFacId_();
@@ -14902,9 +15163,7 @@ function openFaxDailyPreviewModal() {
       Object.keys(batch.pages || {}).forEach(fid => {
         pagesByFac[fid] = buildFaxDailyContextFromData_(fid, dateYmd, batch.pages[fid]);
       });
-      return rptLoadDraftAsync_("faxDaily", dateYmd).then(draft =>
-        finishFaxDailyPreviewFromPages_(dateYmd, facIds, pagesByFac, batch.clinic_name, draft)
-      );
+      return finishFaxDailyPreviewFromPages_(dateYmd, facIds, pagesByFac, batch.clinic_name, draft);
     })
     .catch(e => {
       if (!isUnknownRpcError_(e)) throw e;
@@ -15075,20 +15334,59 @@ function normalizeVisitTimetableDraft_(o) {
   };
 }
 
+/** ⑧ 手書き行の氏名照合用（空白除去） */
+function visitTimetableNormalizeName_(name) {
+  return String(name || "").trim().replace(/\s+/g, "");
+}
+
+/** ⑧ 下書きから無効・重複行を除去（番号変更後の手書き行、退所患者など） */
+function pruneVisitTimetableDraft_(draft, facId) {
+  const norm = normalizeVisitTimetableDraft_(draft);
+  const activeIds = new Set(getVisitTimetablePatientsAll_(facId).map(p => String(p.id)));
+  const excluded = new Set((norm.excludedPatientIds || []).map(String));
+  const activeNames = new Set();
+  getVisitTimetablePatientsAll_(facId).forEach(p => {
+    const nm = visitTimetableNormalizeName_(p.name);
+    if (nm) activeNames.add(nm);
+  });
+  const rows = {};
+  Object.keys(norm.rows || {}).forEach(key => {
+    const saved = norm.rows[key];
+    const pm = /^p:(.+)$/.exec(key);
+    if (pm) {
+      const pid = String(pm[1]);
+      if (activeIds.has(pid) && !excluded.has(pid)) rows[key] = saved;
+      return;
+    }
+    if (!saved || typeof saved !== "object") return;
+    const sn = visitTimetableNormalizeName_(saved.name);
+    if (sn && activeNames.has(sn)) return;
+    rows[key] = saved;
+  });
+  return Object.assign({}, norm, { rows });
+}
+
+function visitTimetableManualRowIsDuplicate_(savedName, facId) {
+  const sn = visitTimetableNormalizeName_(savedName);
+  if (!sn) return false;
+  return getVisitTimetablePatientsAll_(facId).some(p => visitTimetableNormalizeName_(p.name) === sn);
+}
+
 function loadVisitTimetableDraft_(facId) {
   if (visitTimetableDraftCache_[facId]) return visitTimetableDraftCache_[facId];
-  const ymdHint = lastVisitTimetableCtx_ && lastVisitTimetableCtx_.outputYmd;
+  const ymdHint =
+    (lastVisitTimetableCtx_ && lastVisitTimetableCtx_.outputYmd) || getTodayYmdJstForRecord_();
   let stored = rptLoadDraft_("visitTt", visitTtDraftStorageId_(facId, ymdHint));
   if (!stored) stored = rptLoadDraft_("visitTt", String(facId));
   if (stored) {
-    const norm = normalizeVisitTimetableDraft_(stored);
+    const norm = pruneVisitTimetableDraft_(stored, facId);
     visitTimetableDraftCache_[facId] = norm;
     return norm;
   }
   try {
     const raw = localStorage.getItem(visitTimetableDraftKey_(facId));
     if (raw) {
-      const norm = normalizeVisitTimetableDraft_(JSON.parse(raw));
+      const norm = pruneVisitTimetableDraft_(JSON.parse(raw), facId);
       visitTimetableDraftCache_[facId] = norm;
       return norm;
     }
@@ -15097,23 +15395,26 @@ function loadVisitTimetableDraft_(facId) {
 }
 
 async function loadVisitTimetableDraftAsync_(facId) {
-  let draft = await rptLoadDraftAsync_("visitTt", String(facId));
-  if (!draft) {
-    draft = await rptLoadDraftAsync_("visitTt", visitTtDraftStorageId_(facId, getTodayYmdJstForRecord_()));
-  }
-  if (draft && draft.outputYmd) {
-    const dated = await rptLoadDraftAsync_("visitTt", visitTtDraftStorageId_(facId, draft.outputYmd));
-    if (dated) draft = dated;
-  }
+  const today = getTodayYmdJstForRecord_();
+  const [dated, legacy] = await Promise.all([
+    rptLoadDraftAsync_("visitTt", visitTtDraftStorageId_(facId, today)),
+    rptLoadDraftAsync_("visitTt", String(facId))
+  ]);
+  let draft = dated || legacy;
   if (draft) {
-    const norm = normalizeVisitTimetableDraft_(draft);
+    const norm = pruneVisitTimetableDraft_(draft, facId);
     visitTimetableDraftCache_[facId] = norm;
     return norm;
   }
   const legacy = loadVisitTimetableDraft_(facId);
-  if (legacy && (Object.keys(legacy.rows).length || legacy.outputYmd)) {
-    const key = visitTtDraftStorageId_(facId, legacy.outputYmd || getTodayYmdJstForRecord_());
-    rptSaveDraftAsync_("visitTt", key, legacy).catch(() => {});
+  if (
+    legacy &&
+    (Object.keys(legacy.rows).length ||
+      legacy.headerDoctorSlot ||
+      legacy.headerDoctorText ||
+      (legacy.excludedPatientIds && legacy.excludedPatientIds.length))
+  ) {
+    visitTimetableDraftCache_[facId] = legacy;
   }
   return legacy;
 }
@@ -15290,11 +15591,17 @@ function buildVisitTimetableEditorRows_(facId) {
     const key = p ? `p:${p.id}` : `__e_${i}`;
     const saved = (draft.rows && draft.rows[key]) || {};
     const treatSaved = saved.treat;
+    let savedName = saved.name != null && String(saved.name) !== "" ? String(saved.name) : "";
+    let savedNo = saved.no != null && String(saved.no).trim() !== "" ? String(saved.no) : "";
+    if (!p && savedName && visitTimetableManualRowIsDuplicate_(savedName, facId)) {
+      savedName = "";
+      savedNo = "";
+    }
     rows.push({
       key,
       patientId: p ? p.id : null,
-      name: p ? (p.name || "") : (saved.name != null && String(saved.name) !== "" ? String(saved.name) : ""),
-      no: p ? visitTimetablePatientNo_(p) : (saved.no != null && String(saved.no).trim() !== "" ? String(saved.no) : ""),
+      name: p ? (p.name || "") : savedName,
+      no: p ? visitTimetablePatientNo_(p) : savedNo,
       m0: saved.m0 != null ? String(saved.m0) : "",
       time: saved.time != null && String(saved.time) !== "" ? String(saved.time) : "～",
       treat: treatSaved != null ? String(treatSaved) : visitTimetableDefaultTreat_(p)
@@ -15505,6 +15812,13 @@ function openVisitTimetableModal() {
     showToast("この施設に有効な患者がいません");
     return;
   }
+  document.getElementById("visitTimetableModal")?.classList.add("show");
+  showReportPreviewLoading_("visitTimetablePreviewInner", "読み込んでいます…");
+  const editBody = document.getElementById("visitTimetableEditBody");
+  if (editBody) {
+    editBody.innerHTML =
+      '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);font-size:13px">読み込み中…</td></tr>';
+  }
   loadVisitTimetableDraftAsync_(facId).then(draft => finishOpenVisitTimetableModal_(facId, draft, allActive));
 }
 
@@ -15512,7 +15826,9 @@ function finishOpenVisitTimetableModal_(facId, draft, allActive) {
   allActive = allActive || getVisitTimetablePatientsAll_(facId);
   const fac = (FACILITIES || []).find(f => String(f.id) === String(facId));
   const facName = (fac && fac.name) ? String(fac.name) : "施設";
-  const outputYmd = (draft && draft.outputYmd) ? draft.outputYmd : getTodayYmdJstForRecord_();
+  draft = pruneVisitTimetableDraft_(draft, facId);
+  visitTimetableDraftCache_[facId] = draft;
+  const outputYmd = getTodayYmdJstForRecord_();
   const inage = isInageFacilityById_(facId);
   let defaultHdr = draft.headerDoctorSlot || "";
   if (inage && !/^\d+$/.test(defaultHdr)) {
@@ -16596,10 +16912,11 @@ async function openShindanModal() {
     return;
   }
   syncKentaiReportPatientLabel_();
-  const issueDate = document.getElementById("reportVisitDate")?.value || getTodayYmdJstForRecord_();
   initShindanTemplateUi_();
-  await loadShindanFormDataForPatient_(pid, issueDate, { toastDraft: true });
   document.getElementById("shindanModal")?.classList.add("show");
+  showReportPreviewLoading_("shindanPreviewInner", "読み込んでいます…");
+  const issueDate = document.getElementById("reportVisitDate")?.value || getTodayYmdJstForRecord_();
+  void loadShindanFormDataForPatient_(pid, issueDate, { toastDraft: true });
 }
 
 function closeShindanModal() {
@@ -16666,6 +16983,18 @@ function findLatestPeriodicExamRecord_(records, examYmd, code) {
   return rec || null;
 }
 
+/** ⑨ 検査日デフォルト：舌圧検査を実施した最新の診療日 */
+function findLatestTonguePressureExamYmd_(records) {
+  if (!records || !records.length) return "";
+  let latest = "";
+  records.forEach(r => {
+    if (!recordHasTreatment_(r, PERIODIC_EXAM_TONGUE_)) return;
+    const ymd = formatDateInputVal(r.visit_date) || "";
+    if (ymd && (!latest || ymd > latest)) latest = ymd;
+  });
+  return latest;
+}
+
 function examMeasurementsFromVisitRecord_(records, examYmd, code, len, legacySlot) {
   const rec = findLatestPeriodicExamRecord_(records, examYmd, code);
   if (!rec) return null;
@@ -16691,7 +17020,7 @@ function ofpiPrefillMoistureFromExamRecord_(records, examYmd) {
   return examMeasurementsFromVisitRecord_(records, examYmd, PERIODIC_EXAM_MOISTURE_, 3, 0);
 }
 
-async function loadOfpiFormDataForPatient_(pid, examDate, opts) {
+async function loadOfpiFormDataForPatient_(pid, examDateHint, opts) {
   opts = opts || {};
   lastOfpiContext_ = null;
   const p = (PATIENTS || []).find(x => String(x.id) === String(pid));
@@ -16703,7 +17032,7 @@ async function loadOfpiFormDataForPatient_(pid, examDate, opts) {
   let teethData = {};
   let records = [];
   try {
-    const raw = await gasCall("getOfpiFormData", pid, examDate);
+    const raw = await gasCall("getOfpiFormData", pid, examDateHint || "");
     const data = JSON.parse(raw);
     if (!data || !data.ok) throw new Error((data && data.error) || "取得失敗");
     teethData = JSON.parse(data.teeth_json || "{}");
@@ -16724,6 +17053,18 @@ async function loadOfpiFormDataForPatient_(pid, examDate, opts) {
   migrateLegacyTeethProsthesis(teethData);
   ofpiTeethDataCache_ = teethData;
   const teethCount = countRemainingTeethFromChart_(teethData);
+  let examDate = formatDateInputVal(examDateHint) || "";
+  if (opts.pickExamDateFromRecords) {
+    const latestTongue = findLatestTonguePressureExamYmd_(records);
+    if (latestTongue) examDate = latestTongue;
+  }
+  if (!examDate) {
+    examDate =
+      formatDateInputVal(document.getElementById("reportVisitDate")?.value) ||
+      getTodayYmdJstForRecord_();
+  }
+  const dateEl = document.getElementById("ofpiExamDate");
+  if (dateEl) dateEl.value = examDate;
   const draftKey = ofpiDraftKey_(pid, examDate);
   const draft = await rptLoadDraftAsync_("ofpi", draftKey);
   if (draft) {
@@ -16756,11 +17097,8 @@ async function loadOfpiFormDataForPatient_(pid, examDate, opts) {
 
 async function reloadOfpiFormForPatient_() {
   const pid = getReportPatientId_() || "";
-  const examDate = document.getElementById("ofpiExamDate")?.value
-    || document.getElementById("reportVisitDate")?.value
-    || getTodayYmdJstForRecord_();
   if (!pid) return;
-  await loadOfpiFormDataForPatient_(pid, examDate, { toastDraft: false });
+  await loadOfpiFormDataForPatient_(pid, null, { toastDraft: false, pickExamDateFromRecords: true });
 }
 
 async function openOralFunctionPrecisionModal() {
@@ -16778,11 +17116,9 @@ async function openOralFunctionPrecisionModal() {
     return;
   }
   syncKentaiReportPatientLabel_();
-  const examDate = document.getElementById("reportVisitDate")?.value || getTodayYmdJstForRecord_();
-  const dateEl = document.getElementById("ofpiExamDate");
-  if (dateEl) dateEl.value = examDate;
-  await loadOfpiFormDataForPatient_(pid, examDate, { toastDraft: true });
   document.getElementById("ofpiModal")?.classList.add("show");
+  showReportPreviewLoading_("ofpiPreviewInner", "読み込んでいます…");
+  void loadOfpiFormDataForPatient_(pid, null, { toastDraft: true, pickExamDateFromRecords: true });
 }
 
 function refreshVisitTimetablePreview_() {
@@ -17086,23 +17422,21 @@ function openSupervisorListModal() {
   }
   err.style.display = "none";
   err.textContent = "";
-  const prevInner = document.getElementById("svListPreviewInner");
-  if (prevInner) prevInner.innerHTML = "";
-  return gasCall("getSupervisorDailyListData", dateYmd).then(json => {
-    const data = JSON.parse(json);
-    return rptLoadDraftAsync_("svList", dateYmd).then(draft => {
+  document.getElementById("svListModal").classList.add("show");
+  showReportPreviewLoading_("svListPreviewInner", "リストを読み込んでいます…");
+  return Promise.all([
+    gasCall("getSupervisorDailyListData", dateYmd).then(json => JSON.parse(json)),
+    rptLoadDraftAsync_("svList", dateYmd)
+  ]).then(([data, draft]) => {
     const base = buildSupervisorListContextFromData_(data);
     lastSupervisorListContext = draft ? mergeSupervisorListDraft_(base, draft) : base;
     if (draft) showToast("保存済みの下書きを読み込みました");
     rptBindEmphasisBarButtons_();
     refreshSvListPreview();
-    document.getElementById("svListModal").classList.add("show");
-    });
   }).catch(e => {
     lastSupervisorListContext = null;
     err.textContent = "取得に失敗しました: " + (e && e.message ? e.message : String(e));
     err.style.display = "block";
-    document.getElementById("svListModal").classList.add("show");
   });
 }
 
@@ -18568,14 +18902,16 @@ async function openShareSheetModalLoad_(openGen, facId, ymd, draftKey) {
     }).catch(() => {});
     return;
   }
-  await issLoadRowsForFacility_(facId, ymd, true);
-  if (openGen !== issOpenGen_) return;
-  const cloudPayload = await rptLoadDraftAsync_("shareSheet", draftKey).catch(() => null);
-  if (openGen !== issOpenGen_) return;
-  if (cloudPayload && issApplyDraftPayload_(cloudPayload, "クラウドの下書きを読み込みました")) {
-    return;
-  }
-  issRefreshPreview(true);
+  await Promise.all([
+    issLoadRowsForFacility_(facId, ymd, true),
+    rptLoadDraftAsync_("shareSheet", draftKey).catch(() => null)
+  ]).then(([, cloudPayload]) => {
+    if (openGen !== issOpenGen_) return;
+    if (cloudPayload && issApplyDraftPayload_(cloudPayload, "クラウドの下書きを読み込みました")) {
+      return;
+    }
+    issRefreshPreview(true);
+  });
 }
 
 function openShareSheetModal() {
