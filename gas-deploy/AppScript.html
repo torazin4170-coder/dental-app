@@ -15406,17 +15406,17 @@ async function loadVisitTimetableDraftAsync_(facId) {
     visitTimetableDraftCache_[facId] = norm;
     return norm;
   }
-  const legacy = loadVisitTimetableDraft_(facId);
+  const legacyLocal = loadVisitTimetableDraft_(facId);
   if (
-    legacy &&
-    (Object.keys(legacy.rows).length ||
-      legacy.headerDoctorSlot ||
-      legacy.headerDoctorText ||
-      (legacy.excludedPatientIds && legacy.excludedPatientIds.length))
+    legacyLocal &&
+    (Object.keys(legacyLocal.rows).length ||
+      legacyLocal.headerDoctorSlot ||
+      legacyLocal.headerDoctorText ||
+      (legacyLocal.excludedPatientIds && legacyLocal.excludedPatientIds.length))
   ) {
-    visitTimetableDraftCache_[facId] = legacy;
+    visitTimetableDraftCache_[facId] = legacyLocal;
   }
-  return legacy;
+  return legacyLocal;
 }
 
 function saveVisitTimetableDraft_(facId, rowsObj, ctx) {
