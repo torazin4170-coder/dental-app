@@ -282,6 +282,12 @@ function treatmentSelectionHasMushoKenshin_(selectedTreats) {
   );
 }
 
+function treatmentSelectionHasShoshin_(selectedTreats) {
+  return treatmentCodesFromSelection_(selectedTreats).some(
+    c => String(c).trim() === "初診"
+  );
+}
+
 function treatmentSelectionHasRegular_(selectedTreats) {
   return treatmentCodesFromSelection_(selectedTreats).some(c => {
     const t = String(c).trim();
@@ -293,8 +299,9 @@ function treatmentSelectionHasRegular_(selectedTreats) {
 function computeIntakeStageAfterTreatmentSave_(selectedTreats) {
   const hasMk = treatmentSelectionHasMushoKenshin_(selectedTreats);
   const hasRegular = treatmentSelectionHasRegular_(selectedTreats);
+  const hasShoshin = treatmentSelectionHasShoshin_(selectedTreats);
+  if (hasShoshin || hasRegular) return "";
   if (hasMk && !hasRegular) return "musho_kenshin";
-  if (hasRegular) return "";
   return null;
 }
 
@@ -15313,11 +15320,39 @@ ${getRptPrintWhitespaceCss_()}
   rptAfterPrintArchiveAndClearDraft_("faxDaily", lastFaxDailyBatch_.visit_date_ymd);
 }
 
-/** 患者に「初診」処置の記録があるか */
+/** ⑧ タイムテーブル用：患者の初診判定に使う記録（当月 localRecords だけでは前月初診を見落とす） */
+let visitTimetablePatientRecordsCache_ = {};
+
+function recordsForVisitTimetableLookup_(pid) {
+  const out = [];
+  const seen = new Set();
+  const add = r => {
+    if (!r) return;
+    const id = String(r.id != null ? r.id : "");
+    const key = id || `${r.patient_id}_${r.visit_date}_${r.treatments}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(r);
+  };
+  (localRecords || []).forEach(r => {
+    if (String(r.patient_id) === String(pid)) add(r);
+  });
+  const cached = visitTimetablePatientRecordsCache_[String(pid)];
+  if (Array.isArray(cached)) cached.forEach(add);
+  if (selectedPatient && String(selectedPatient.id) === String(pid) && examHistoryRowRecords_.length) {
+    examHistoryRowRecords_.forEach(add);
+  }
+  if (quarterlyOverviewRecords_.length) {
+    quarterlyOverviewRecords_.forEach(r => {
+      if (String(r.patient_id) === String(pid)) add(r);
+    });
+  }
+  return out;
+}
+
+/** 患者に「初診」処置の記録があるか（当月以外も含めて判定） */
 function patientHasShoshinRecord_(pid) {
-  return (localRecords || []).some(r =>
-    String(r.patient_id || "") === String(pid || "") && recordHasTreatment_(r, "初診")
-  );
+  return recordsForVisitTimetableLookup_(pid).some(r => recordHasTreatment_(r, "初診"));
 }
 
 /** 無料検診済みだが初診前 → タイムテーブル対象外 */
@@ -15328,6 +15363,44 @@ function isMushoKenshinAwaitingShoshin_(p) {
   return (localRecords || []).some(r =>
     String(r.patient_id || "") === String(p.id || "") && recordHasTreatment_(r, MUSHO_KENSHIN_TREATMENT)
   );
+}
+
+/** ⑧ 初診判定のため、無料検診タグ付き患者の全履歴を先読み */
+function visitTimetablePrefetchCandidateIds_(facId) {
+  const ids = new Set();
+  (PATIENTS || []).forEach(p => {
+    if ((p.status || "active") !== "active" || String(p.fac) !== String(facId)) return;
+    if (isMushoKenshinIntake_(p.intake_stage)) ids.add(String(p.id));
+    else if ((localRecords || []).some(r =>
+      String(r.patient_id) === String(p.id) &&
+      recordHasTreatment_(r, MUSHO_KENSHIN_TREATMENT) &&
+      !recordHasTreatment_(r, "初診")
+    )) ids.add(String(p.id));
+  });
+  return [...ids];
+}
+
+async function prefetchVisitTimetablePatientRecords_(facId) {
+  const ids = visitTimetablePrefetchCandidateIds_(facId);
+  if (!ids.length) return;
+  const fetched = await Promise.all(
+    ids.map(pid =>
+      gasCall("getTreatmentsByPatient", pid)
+        .then(json => ({ pid, records: JSON.parse(json || "[]") }))
+        .catch(() => ({ pid, records: [] }))
+    )
+  );
+  fetched.forEach(({ pid, records }) => {
+    visitTimetablePatientRecordsCache_[pid] = records;
+    if (records.some(r => recordHasTreatment_(r, "初診"))) {
+      mergeTreatmentRecordsIntoLocal_(records);
+      const p = PATIENTS.find(x => String(x.id) === pid);
+      if (p && isMushoKenshinIntake_(p.intake_stage)) {
+        p.intake_stage = "";
+        gasCall("updatePatient", JSON.stringify({ id: pid, intake_stage: "" })).catch(() => {});
+      }
+    }
+  });
 }
 
 /** ⑧ 施設の有効患者（居室順・担当Dr絞り込み前） */
@@ -15349,7 +15422,10 @@ function getVisitTimetablePatients_(facId, headerDoctorSlot) {
         : (lastVisitTimetableCtx_ && lastVisitTimetableCtx_.headerDoctorSlot) || ""
     ).trim();
     if (/^\d+$/.test(slot)) {
-      list = list.filter(p => String(p.assigned_doctor || "").trim() === slot);
+      list = list.filter(p => {
+        const ad = String(p.assigned_doctor || "").trim();
+        return ad === slot || !ad;
+      });
     } else {
       list = [];
     }
@@ -15883,7 +15959,11 @@ function openVisitTimetableModal() {
     editBody.innerHTML =
       '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);font-size:13px">読み込み中…</td></tr>';
   }
-  loadVisitTimetableDraftAsync_(facId).then(draft => finishOpenVisitTimetableModal_(facId, draft, allActive));
+  visitTimetablePatientRecordsCache_ = {};
+  Promise.all([
+    loadVisitTimetableDraftAsync_(facId),
+    prefetchVisitTimetablePatientRecords_(facId)
+  ]).then(([draft]) => finishOpenVisitTimetableModal_(facId, draft, allActive));
 }
 
 function finishOpenVisitTimetableModal_(facId, draft, allActive) {
