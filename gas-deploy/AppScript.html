@@ -8845,6 +8845,14 @@ function showDayRecords(dateStr, day) {
           const fac = FACILITIES.find(x => x.id === fid);
           const fname = fac?.name || (fid === "_unknown" ? "施設未設定" : fid);
           const col = fac?.color || "#94a3b8";
+          byFac[fid].sort((a, b) => {
+            const pa = PATIENTS.find(x => x.id === a.r.patient_id);
+            const pb = PATIENTS.find(x => x.id === b.r.patient_id);
+            if (pa && pb) return comparePatientNoForReport_(pa, pb);
+            if (pa) return -1;
+            if (pb) return 1;
+            return String(a.r.patient_id || "").localeCompare(String(b.r.patient_id || ""), "ja");
+          });
           let block = `<div class="patient-fac-heading" style="margin-top:12px"><span class="patient-fac-heading-dot" style="background:${col}"></span><span>${escHtml(fname)}</span><span style="font-size:11px;font-weight:600;color:var(--muted)">（${byFac[fid].length}名）</span></div>`;
           block += byFac[fid].map(({ r, i }) => {
             const p = PATIENTS.find(x => x.id === r.patient_id);
