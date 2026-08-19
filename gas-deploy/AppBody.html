@@ -889,6 +889,9 @@
       .tt-name-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .tt-row-remove-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #fca5a5; background: #fee2e2; color: #dc2626; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
       .tt-row-remove-btn:hover { background: #fca5a5; border-color: #ef4444; }
+      .tt-manual-name-wrap input.tt-inp-name { flex: 1; min-width: 0; }
+      .tt-edit-row-actions { display: flex; gap: 8px; margin-top: 8px; }
+      .tt-add-row-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 13px; font-weight: 800; }
       .tt-edit-table input.tt-inp-treat { text-align: left; padding-left: 10px; padding-right: 6px; }
       .tt-edit-table input.tt-inp-name { text-align: left; padding-left: 10px; padding-right: 6px; }
       .tt-edit-table input.tt-inp:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: #fff; }
@@ -1429,7 +1432,10 @@
             <tbody id="visitTimetableEditBody"></tbody>
           </table>
         </div>
-        <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">患者行の<strong>番号・患者氏名</strong>は<strong>患者リストの最新データ</strong>を自動表示します。氏名右の<strong style="color:#dc2626">×</strong>で行を除外できます（下書き消去でリセット）。<strong>時刻・治療内容</strong>は任意に修正できます。左端の<strong>当月診療回数</strong>も自動（0回は空欄）。稲毛施設は右プレビューで<strong>各行の担当Dr</strong>も変更できます。</p>
+        <div class="tt-edit-row-actions">
+          <button type="button" class="btn btn-secondary tt-add-row-btn" onclick="addVisitTimetableManualRow_()">＋ 行を追加</button>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">患者行の<strong>番号・患者氏名</strong>は<strong>患者リストの最新データ</strong>を自動表示します。患者行の氏名右<strong style="color:#dc2626">×</strong>でその患者を除外、<strong>手書き行</strong>の<strong style="color:#dc2626">×</strong>で行自体を削除できます（下書き消去でリセット）。<strong>＋ 行を追加</strong>で空行を増やせます。<strong>時刻・治療内容</strong>は任意に修正できます。左端の<strong>当月診療回数</strong>も自動（0回は空欄）。稲毛施設は右プレビューで<strong>各行の担当Dr</strong>も変更できます。</p>
       </div>
       <div style="display:flex;flex-direction:column;min-height:0;flex:1">
         <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;flex-shrink:0">プレビュー（印刷イメージ）</div>

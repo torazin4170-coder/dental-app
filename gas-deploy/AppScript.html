@@ -15437,6 +15437,8 @@ let lastVisitTimetableCtx_ = null;
 let visitTimetableDraftSaveTimer_ = null;
 let visitTimetablePreviewTimer_ = null;
 const VISIT_TT_DRAFT_VER = 3;
+const VISIT_TT_DEFAULT_MANUAL_ROWS_ = 5;
+const VISIT_TT_MANUAL_ROW_KEY_PREFIX_ = "m:";
 
 function visitTimetableDraftKey_(facId) {
   return `visitTimetableDraft_v${VISIT_TT_DRAFT_VER}_${facId}`;
@@ -15462,7 +15464,15 @@ let visitTimetableDraftCache_ = {};
 
 function normalizeVisitTimetableDraft_(o) {
   if (!o || typeof o !== "object") {
-    return { rows: {}, outputYmd: "", headerDoctorSlot: "", headerDoctorText: "", pageLayout: "one", excludedPatientIds: [] };
+    return {
+      rows: {},
+      outputYmd: "",
+      headerDoctorSlot: "",
+      headerDoctorText: "",
+      pageLayout: "one",
+      excludedPatientIds: [],
+      manualRowKeys: []
+    };
   }
   return {
     rows: o.rows && typeof o.rows === "object" ? o.rows : {},
@@ -15470,7 +15480,76 @@ function normalizeVisitTimetableDraft_(o) {
     headerDoctorSlot: o.headerDoctorSlot || "",
     headerDoctorText: o.headerDoctorText || "",
     pageLayout: o.pageLayout === "two" ? "two" : "one",
-    excludedPatientIds: Array.isArray(o.excludedPatientIds) ? o.excludedPatientIds.map(String) : []
+    excludedPatientIds: Array.isArray(o.excludedPatientIds) ? o.excludedPatientIds.map(String) : [],
+    manualRowKeys: Array.isArray(o.manualRowKeys) ? o.manualRowKeys.map(String) : []
+  };
+}
+
+function visitTimetableIsManualRowKey_(key) {
+  const k = String(key || "");
+  return k.startsWith(VISIT_TT_MANUAL_ROW_KEY_PREFIX_) || /^__e_\d+$/.test(k);
+}
+
+function visitTimetableNewManualRowKey_() {
+  return `${VISIT_TT_MANUAL_ROW_KEY_PREFIX_}${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function visitTimetableExtractManualRowKeys_(rows) {
+  return (rows || []).filter(r => !r.patientId).map(r => String(r.key || "")).filter(Boolean);
+}
+
+function visitTimetableResolveManualRowKeys_(draft) {
+  draft = normalizeVisitTimetableDraft_(draft);
+  const keys = [];
+  const seen = new Set();
+  const add = k => {
+    const s = String(k || "");
+    if (!s || seen.has(s)) return;
+    seen.add(s);
+    keys.push(s);
+  };
+  const manualFromRows = Object.keys(draft.rows || {})
+    .filter(k => visitTimetableIsManualRowKey_(k))
+    .sort((a, b) => {
+      const ea = /^__e_(\d+)$/.exec(a);
+      const eb = /^__e_(\d+)$/.exec(b);
+      if (ea && eb) return parseInt(ea[1], 10) - parseInt(eb[1], 10);
+      return a.localeCompare(b, "ja");
+    });
+  (draft.manualRowKeys || []).forEach(add);
+  manualFromRows.forEach(add);
+  if (!keys.length) {
+    const hasDraftContent =
+      Object.keys(draft.rows || {}).length ||
+      (draft.excludedPatientIds && draft.excludedPatientIds.length) ||
+      draft.headerDoctorSlot ||
+      draft.headerDoctorText;
+    if (!hasDraftContent) {
+      for (let i = 0; i < VISIT_TT_DEFAULT_MANUAL_ROWS_; i++) {
+        add(`${VISIT_TT_MANUAL_ROW_KEY_PREFIX_}init_${i}`);
+      }
+    }
+  }
+  return keys;
+}
+
+function visitTimetableManualRowFromDraft_(key, draft, facId) {
+  const saved = (draft.rows && draft.rows[key]) || {};
+  const treatSaved = saved.treat;
+  let savedName = saved.name != null && String(saved.name) !== "" ? String(saved.name) : "";
+  let savedNo = saved.no != null && String(saved.no).trim() !== "" ? String(saved.no) : "";
+  if (savedName && visitTimetableManualRowIsDuplicate_(savedName, facId)) {
+    savedName = "";
+    savedNo = "";
+  }
+  return {
+    key,
+    patientId: null,
+    name: savedName,
+    no: savedNo,
+    m0: saved.m0 != null ? String(saved.m0) : "",
+    time: saved.time != null && String(saved.time) !== "" ? String(saved.time) : "～",
+    treat: treatSaved != null ? String(treatSaved) : ""
   };
 }
 
@@ -15503,7 +15582,8 @@ function pruneVisitTimetableDraft_(draft, facId) {
     if (sn && activeNames.has(sn)) return;
     rows[key] = saved;
   });
-  return Object.assign({}, norm, { rows });
+  const manualRowKeys = visitTimetableResolveManualRowKeys_({ ...norm, rows });
+  return Object.assign({}, norm, { rows, manualRowKeys });
 }
 
 function visitTimetableManualRowIsDuplicate_(savedName, facId) {
@@ -15569,7 +15649,12 @@ function saveVisitTimetableDraft_(facId, rowsObj, ctx) {
     pageLayout: ctx.pageLayout === "two" ? "two" : "one",
     updatedAt: new Date().toISOString(),
     rows: rowsObj,
-    excludedPatientIds: ctx.excludedPatientIds || (cached && cached.excludedPatientIds) || []
+    excludedPatientIds: ctx.excludedPatientIds || (cached && cached.excludedPatientIds) || [],
+    manualRowKeys:
+      ctx.manualRowKeys ||
+      (Array.isArray(ctx.rowsList) ? visitTimetableExtractManualRowKeys_(ctx.rowsList) : null) ||
+      (cached && cached.manualRowKeys) ||
+      []
   };
   visitTimetableDraftCache_[facId] = normalizeVisitTimetableDraft_(payload);
   const key = visitTtDraftStorageId_(facId, payload.outputYmd) || String(facId);
@@ -15723,30 +15808,23 @@ function buildVisitTimetableEditorRows_(facId) {
   const draft = loadVisitTimetableDraft_(facId);
   const excluded = new Set((draft.excludedPatientIds || []).map(String));
   const visiblePatients = patients.filter(p => !excluded.has(String(p.id)));
-  const MIN_ROWS = 15;
-  const rowCount = Math.max(MIN_ROWS, visiblePatients.length);
+  const manualKeys = visitTimetableResolveManualRowKeys_(draft);
   const rows = [];
-  for (let i = 0; i < rowCount; i++) {
-    const p = visiblePatients[i] || null;
-    const key = p ? `p:${p.id}` : `__e_${i}`;
+  visiblePatients.forEach(p => {
+    const key = `p:${p.id}`;
     const saved = (draft.rows && draft.rows[key]) || {};
     const treatSaved = saved.treat;
-    let savedName = saved.name != null && String(saved.name) !== "" ? String(saved.name) : "";
-    let savedNo = saved.no != null && String(saved.no).trim() !== "" ? String(saved.no) : "";
-    if (!p && savedName && visitTimetableManualRowIsDuplicate_(savedName, facId)) {
-      savedName = "";
-      savedNo = "";
-    }
     rows.push({
       key,
-      patientId: p ? p.id : null,
-      name: p ? (p.name || "") : savedName,
-      no: p ? visitTimetablePatientNo_(p) : savedNo,
+      patientId: p.id,
+      name: p.name || "",
+      no: visitTimetablePatientNo_(p),
       m0: saved.m0 != null ? String(saved.m0) : "",
       time: saved.time != null && String(saved.time) !== "" ? String(saved.time) : "～",
       treat: treatSaved != null ? String(treatSaved) : visitTimetableDefaultTreat_(p)
     });
-  }
+  });
+  manualKeys.forEach(key => rows.push(visitTimetableManualRowFromDraft_(key, draft, facId)));
   const refYmd = lastVisitTimetableCtx_ ? lastVisitTimetableCtx_.outputYmd : getTodayYmdJstForRecord_();
   return visitTimetableApplyAutoM0ToRows_(visitTimetableApplyMasterPatientFieldsToRows_(rows), refYmd);
 }
@@ -15772,6 +15850,40 @@ function removeVisitTimetablePatientRow_(patientId) {
   showToast("行を除外しました（下書き消去でリセットできます）");
 }
 
+function addVisitTimetableManualRow_() {
+  if (!lastVisitTimetableCtx_) return;
+  flushVisitTimetableDraft_();
+  const rows = collectVisitTimetableRowsFromDom_();
+  rows.push({
+    key: visitTimetableNewManualRowKey_(),
+    patientId: null,
+    name: "",
+    no: "",
+    m0: "",
+    time: "～",
+    treat: ""
+  });
+  lastVisitTimetableCtx_.rows = rows;
+  renderVisitTimetableEditor_();
+  scheduleVisitTimetableDraftSave_();
+  showToast("行を追加しました");
+}
+
+function removeVisitTimetableManualRow_(rowKey) {
+  if (!lastVisitTimetableCtx_ || rowKey == null || rowKey === "") return;
+  flushVisitTimetableDraft_();
+  const facId = lastVisitTimetableCtx_.facId;
+  const draft = visitTimetableDraftCache_[facId] || loadVisitTimetableDraft_(facId);
+  const key = String(rowKey);
+  lastVisitTimetableCtx_.rows = collectVisitTimetableRowsFromDom_().filter(r => String(r.key) !== key);
+  draft.manualRowKeys = visitTimetableExtractManualRowKeys_(lastVisitTimetableCtx_.rows);
+  if (draft.rows && draft.rows[key]) delete draft.rows[key];
+  visitTimetableDraftCache_[facId] = draft;
+  renderVisitTimetableEditor_();
+  scheduleVisitTimetableDraftSave_();
+  showToast("行を削除しました");
+}
+
 function visitTimetableM0CellHtml_(row) {
   if (row && row.patientId) {
     const v = row.m0 != null ? String(row.m0) : "";
@@ -15793,6 +15905,12 @@ function visitTimetableMasterFieldCellHtml_(field, row) {
   return visitTimetableInpHtml_(field, row ? row[field] : "");
 }
 
+function visitTimetableManualNameCellHtml_(row) {
+  const key = escAttr(String(row.key || ""));
+  const v = row && row.name != null ? String(row.name) : "";
+  return `<span class="tt-name-remove-wrap tt-manual-name-wrap"><input type="text" class="tt-inp tt-inp-name" data-tt-field="name" value="${escAttr(v)}" oninput="scheduleVisitTimetableDraftSave_()"><button type="button" class="tt-row-remove-btn" onclick="removeVisitTimetableManualRow_('${key}')" title="この行を削除">×</button></span>`;
+}
+
 function renderVisitTimetableEditor_() {
   const body = document.getElementById("visitTimetableEditBody");
   if (!body || !lastVisitTimetableCtx_) return;
@@ -15800,10 +15918,13 @@ function renderVisitTimetableEditor_() {
   body.innerHTML = rows
     .map(r => {
       const pidAttr = r.patientId ? ` data-patient-id="${escAttr(String(r.patientId))}"` : "";
+      const nameCell = r.patientId
+        ? visitTimetableMasterFieldCellHtml_("name", r)
+        : visitTimetableManualNameCellHtml_(r);
       return `<tr data-tt-key="${escAttr(r.key)}"${pidAttr}>
       <td>${visitTimetableM0CellHtml_(r)}</td>
-      <td>${visitTimetableMasterFieldCellHtml_("no", r)}</td>
-      <td>${visitTimetableMasterFieldCellHtml_("name", r)}</td>
+      <td>${r.patientId ? visitTimetableMasterFieldCellHtml_("no", r) : visitTimetableInpHtml_("no", r.no)}</td>
+      <td>${nameCell}</td>
       <td>${visitTimetableInpHtml_("time", r.time)}</td>
       <td>${visitTimetableInpHtml_("treat", r.treat)}</td>
     </tr>`;
@@ -15860,7 +15981,9 @@ function scheduleVisitTimetableDraftSave_() {
       outputYmd: lastVisitTimetableCtx_.outputYmd,
       headerDoctorSlot: lastVisitTimetableCtx_.headerDoctorSlot,
       headerDoctorText: lastVisitTimetableCtx_.headerDoctorText,
-      pageLayout: getVisitTimetablePageLayout_()
+      pageLayout: getVisitTimetablePageLayout_(),
+      rowsList: rows,
+      manualRowKeys: visitTimetableExtractManualRowKeys_(rows)
     });
     scheduleVisitTimetablePreviewRefresh_();
   }, 400);
@@ -15876,7 +15999,9 @@ function flushVisitTimetableDraft_() {
     outputYmd: lastVisitTimetableCtx_.outputYmd,
     headerDoctorSlot: lastVisitTimetableCtx_.headerDoctorSlot,
     headerDoctorText: lastVisitTimetableCtx_.headerDoctorText,
-    pageLayout: getVisitTimetablePageLayout_()
+    pageLayout: getVisitTimetablePageLayout_(),
+    rowsList: rows,
+    manualRowKeys: visitTimetableExtractManualRowKeys_(rows)
   });
 }
 
@@ -15901,6 +16026,7 @@ function onVisitTimetableOutputDateChange_() {
 function onVisitTimetableHeaderDoctorChange_() {
   syncVisitTimetableCtxFromToolbar_();
   if (!lastVisitTimetableCtx_) return;
+  flushVisitTimetableDraft_();
   lastVisitTimetableCtx_.rows = buildVisitTimetableEditorRows_(lastVisitTimetableCtx_.facId);
   renderVisitTimetableEditor_();
   const n = getVisitTimetablePatients_(lastVisitTimetableCtx_.facId, lastVisitTimetableCtx_.headerDoctorSlot).length;
