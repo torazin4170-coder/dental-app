@@ -2737,6 +2737,45 @@ function isUnknownRpcError_(err) {
   return /Unknown function|未対応|not found|502/i.test(msg);
 }
 
+/** RPC エラーをトースト向けに短く・読みやすく整形（HTML 漏れ防止） */
+function formatUserFacingRpcError_(err) {
+  const msg = String(err && err.message ? err.message : err || "不明なエラー");
+  if (/<!doctype|<html|<script|nonce=|window\[|ppConfig|GAS_WEBAPP/i.test(msg)) {
+    return "サーバーが想定外の応答（HTML）を返しました。設定→接続状態、または GAS の再デプロイを確認してください。";
+  }
+  if (msg.length > 140) return msg.slice(0, 140) + "…";
+  return msg;
+}
+
+function isRpcTimeoutError_(err) {
+  const msg = String(err && err.message ? err.message : err || "");
+  return /タイムアウト/.test(msg) || !!(err && err.name === "AbortError");
+}
+
+function treatmentVisitSlotKeyClient_(visitDate, visitTimeStart) {
+  return normalizeVisitDateKey(visitDate) + "\t" + (visitTimeStart != null ? String(visitTimeStart) : "");
+}
+
+/** タイムアウト後にサーバー側で保存済みか確認 */
+function verifyTreatmentSaveAfterTimeout_(ctx) {
+  const pid = ctx.pid;
+  const data = ctx.data;
+  const visitDateVal = ctx.visitDateVal;
+  const editingId = ctx.editingId;
+  return gasCall("getTreatmentsByPatient", pid).then(json => {
+    const records = JSON.parse(json);
+    if (editingId) {
+      const hit = records.find(r => String(r.id) === String(editingId));
+      if (!hit) return { ok: false };
+      return { ok: true, id: editingId, mode: "update", partial: hit.treatments !== data.treatments };
+    }
+    const key = treatmentVisitSlotKeyClient_(visitDateVal, data.visit_time_start);
+    const hit = records.find(r => treatmentVisitSlotKeyClient_(r.visit_date, r.visit_time_start) === key);
+    if (!hit) return { ok: false };
+    return { ok: true, id: hit.id, mode: "new", partial: hit.treatments !== data.treatments };
+  }).catch(() => ({ ok: false }));
+}
+
 /** 起動データ取得（新API優先・旧GASでは4分割にフォールバック） */
 function fetchInitData_(initYm) {
   return gasCall("getInitData", initYm)
@@ -3737,7 +3776,8 @@ function switchScreen(name, options) {
   options = options || {};
   if ((currentScreen === "record" || currentScreen === "history") &&
       name !== "record" && name !== "history" &&
-      hasRecordDraftUnsaved()) {
+      hasRecordDraftUnsaved() &&
+      !treatmentRecordSaveInFlight) {
     if (!confirm("未保存の診療メモ・処置・次回予定または歯式に変更があります。このまま移動すると失われることがあります。移動しますか？")) return;
   }
   if (name !== "record" && name !== "history") clearUndoStack_();
@@ -4300,6 +4340,7 @@ function closePatientCareModal(save) {
       independence: patientMedical.independence,
       dementia_level: patientMedical.dementiaLevel
     };
+    setDataSyncBanner_("歯式・医療情報を保存中…");
     Promise.all([
       gasCall("saveMedicalInfo", pid, JSON.stringify(med)),
       gasCall("saveTeethData", pid, JSON.stringify(currentTeethData))
@@ -4308,7 +4349,8 @@ function closePatientCareModal(save) {
         refreshTeethBaseline();
         showToast("歯式・医療情報を保存しました");
       })
-      .catch(e => showToast("保存エラー: " + (e && e.message ? e.message : String(e))));
+      .catch(e => showToast("保存エラー: " + formatUserFacingRpcError_(e)))
+      .finally(() => setDataSyncBanner_(""));
   }
   returnRollableClinicalToRecordIfNeeded();
   document.getElementById("patientCareModal")?.classList.remove("show");
@@ -5184,10 +5226,37 @@ function checkTreatmentRecordDuplicateBeforeSave_(patientId, visitDate, visitTim
   return false;
 }
 
-function handleTreatmentSaveError_(e, label) {
-  const msg = e && e.message ? e.message : String(e);
-  if (msg.indexOf("同じ診療日") !== -1) showRecordDuplicateWarn_(msg);
-  else showToast((label || "保存") + "エラー: " + msg);
+function handleTreatmentSaveError_(e, label, recoveryCtx) {
+  const msg = formatUserFacingRpcError_(e);
+  if (msg.indexOf("同じ診療日") !== -1) {
+    showRecordDuplicateWarn_(msg);
+    return;
+  }
+  if (recoveryCtx && isRpcTimeoutError_(e)) {
+    showToast("保存結果を確認中…");
+    verifyTreatmentSaveAfterTimeout_(recoveryCtx).then(hit => {
+      if (hit && hit.ok) {
+        if (hit.mode === "update") {
+          applyTreatmentUpdateSuccess_(recoveryCtx.data, recoveryCtx.pid, recoveryCtx.visitDateVal, hit.id);
+        } else {
+          applyTreatmentNewSuccess_(
+            recoveryCtx.data,
+            recoveryCtx.pid,
+            recoveryCtx.visitDateVal,
+            hit.id,
+            hit.partial ? "通信遅延のため内容を要確認" : null,
+            { skipToast: true }
+          );
+        }
+        const note = hit.partial ? "（内容の一部は要確認）" : "";
+        showToast("保存は完了していました（通信が遅延したため確認しました）" + note);
+      } else {
+        showToast((label || "保存") + "エラー: " + msg);
+      }
+    });
+    return;
+  }
+  showToast((label || "保存") + "エラー: " + msg);
 }
 
 /** 履歴カード等の診療日表示 */
@@ -6565,6 +6634,75 @@ function localHistoryRecordsForPatient_(pid) {
     .sort((a, b) => String(b.visit_date || "").localeCompare(String(a.visit_date || "")));
 }
 
+function applyTreatmentUpdateSuccess_(data, pid, visitDateVal, recordId) {
+  syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
+  mergeTreatmentRecordsIntoLocal_([{
+    ...data,
+    visit_date: visitDateVal,
+    id: recordId,
+    visit_time_start: data.visit_time_start || "",
+    visit_time_end: data.visit_time_end || "",
+    exam_data: data.exam_data || ""
+  }]);
+  markRestricted(
+    pid,
+    [...selectedTreatments].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
+    visitDateVal
+  );
+  editingTreatmentId = null;
+  refreshTeethBaseline();
+  refreshTreatmentBaseline();
+  clearUndoStack_();
+  const list = localHistoryRecordsForPatient_(pid);
+  openHistory(pid, { records: list });
+  paintCalGrid();
+  gasCall("getTreatmentsByPatient", pid).then(json => {
+    const remote = JSON.parse(json);
+    mergeTreatmentRecordsIntoLocal_(remote);
+    if (currentHistoryPatientId && String(currentHistoryPatientId) === String(pid)) {
+      const el = document.getElementById("historyList");
+      if (el) renderHistoryList(remote, el);
+    }
+    paintCalGrid();
+  }).catch(() => {});
+}
+
+function applyTreatmentNewSuccess_(data, pid, visitDateVal, id, partialWarning, opts) {
+  opts = opts || {};
+  syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
+  markRestricted(
+    pid,
+    [...selectedTreatments].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
+    visitDateVal
+  );
+  localRecords.push({
+    ...data,
+    visit_date: visitDateVal,
+    id,
+    visit_time_start: data.visit_time_start || "",
+    visit_time_end: data.visit_time_end || "",
+    exam_data: data.exam_data || "",
+    _clientSavedAt: Date.now()
+  });
+  selectedNextTreatments.clear();
+  applyPatientVisitStatsFromRecords_();
+  refreshTeethBaseline();
+  refreshTreatmentBaseline();
+  clearUndoStack_();
+  clearRecordDuplicateWarn_();
+  if (document.activeElement && typeof document.activeElement.blur === "function") {
+    try { document.activeElement.blur(); } catch (_) {}
+  }
+  backToList({ patientId: pid });
+  if (!opts.skipToast) {
+    if (partialWarning) {
+      showToast("記録を保存しました（注意: " + partialWarning + "）");
+    } else {
+      showToast("記録を保存しました（歯式・患者メモも保存済み）");
+    }
+  }
+}
+
 function saveTreatmentRecord() {
   if (!selectedPatient) return;
   if (!selectedTreatments.size) { showToast("処置内容を1つ以上選択してください"); return; }
@@ -6597,48 +6735,22 @@ function saveTreatmentRecord() {
 
   treatmentRecordSaveInFlight = true;
   setTreatmentRecordSaving_(true);
+  setDataSyncBanner_("診療記録を保存中…（他の画面へ移れます）");
+
+  const recoveryCtx = { data, pid, visitDateVal, editingId: editingTreatmentId || null };
 
   if (editingTreatmentId) {
     data.id = editingTreatmentId;
     saveTreatmentWithFallback_(data, pid, editingTreatmentId)
       .then(() => {
-        syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
-        mergeTreatmentRecordsIntoLocal_([{
-          ...data,
-          visit_date: visitDateVal,
-          id: editingTreatmentId,
-          visit_time_start: data.visit_time_start || "",
-          visit_time_end: data.visit_time_end || "",
-          exam_data: data.exam_data || ""
-        }]);
-        markRestricted(
-          pid,
-          [...selectedTreatments].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
-          visitDateVal
-        );
-        editingTreatmentId = null;
-        refreshTeethBaseline();
+        applyTreatmentUpdateSuccess_(data, pid, visitDateVal, editingTreatmentId);
         showToast("記録を更新しました（歯式・患者メモも保存済み）");
-        refreshTreatmentBaseline();
-        clearUndoStack_();
-        const list = localHistoryRecordsForPatient_(pid);
-        openHistory(pid, { records: list });
-        paintCalGrid();
-        // 裏でサーバ履歴を取り直し（画面はブロックしない）
-        gasCall("getTreatmentsByPatient", pid).then(json => {
-          const remote = JSON.parse(json);
-          mergeTreatmentRecordsIntoLocal_(remote);
-          if (currentHistoryPatientId && String(currentHistoryPatientId) === String(pid)) {
-            const el = document.getElementById("historyList");
-            if (el) renderHistoryList(remote, el);
-          }
-          paintCalGrid();
-        }).catch(() => {});
       })
-      .catch(e => handleTreatmentSaveError_(e, "更新"))
+      .catch(e => handleTreatmentSaveError_(e, "更新", recoveryCtx))
       .finally(() => {
         treatmentRecordSaveInFlight = false;
         setTreatmentRecordSaving_(false);
+        setDataSyncBanner_("");
       });
     return;
   }
@@ -6647,41 +6759,13 @@ function saveTreatmentRecord() {
     .then(result => {
       const id = typeof result === "object" ? result.id : result;
       const partialWarning = typeof result === "object" ? result.partialWarning : null;
-      syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
-      markRestricted(
-        pid,
-        [...selectedTreatments].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
-        visitDateVal
-      );
-      localRecords.push({
-        ...data,
-        visit_date: visitDateVal,
-        id,
-        visit_time_start: data.visit_time_start || "",
-        visit_time_end: data.visit_time_end || "",
-        exam_data: data.exam_data || "",
-        _clientSavedAt: Date.now()
-      });
-      selectedNextTreatments.clear();
-      applyPatientVisitStatsFromRecords_();
-      refreshTeethBaseline();
-      if (partialWarning) {
-        showToast("記録を保存しました（注意: " + partialWarning + "）");
-      } else {
-        showToast("記録を保存しました（歯式・患者メモも保存済み）");
-      }
-      refreshTreatmentBaseline();
-      clearUndoStack_();
-      clearRecordDuplicateWarn_();
-      if (document.activeElement && typeof document.activeElement.blur === "function") {
-        try { document.activeElement.blur(); } catch (_) {}
-      }
-      backToList({ patientId: pid });
+      applyTreatmentNewSuccess_(data, pid, visitDateVal, id, partialWarning);
     })
-    .catch(e => handleTreatmentSaveError_(e, "保存"))
+    .catch(e => handleTreatmentSaveError_(e, "保存", recoveryCtx))
     .finally(() => {
       treatmentRecordSaveInFlight = false;
       setTreatmentRecordSaving_(false);
+      setDataSyncBanner_("");
     });
 }
 
@@ -7806,7 +7890,7 @@ function saveMedicalInfo(opts) {
   };
   gasCall("saveMedicalInfo", selectedPatient.id, JSON.stringify(data))
     .then(() => { if (!opts.silent) showToast("医療情報を保存しました"); })
-    .catch(e => showToast("保存エラー: " + e));
+    .catch(e => showToast("保存エラー: " + formatUserFacingRpcError_(e)));
 }
 
 // ── 要介護認定等 UI（画像の区分に準拠）──
@@ -19647,7 +19731,7 @@ function closePatientEditModal(saveClinical) {
       gasCall("saveTeethData", pid, JSON.stringify(currentTeethData))
     ])
       .then(() => refreshTeethBaseline())
-      .catch(e => showToast("歯式・医療情報の保存エラー: " + (e && e.message ? e.message : String(e))));
+      .catch(e => showToast("歯式・医療情報の保存エラー: " + formatUserFacingRpcError_(e)));
   }
   returnRollableClinicalToRecordIfNeeded();
   document.getElementById("patientModal")?.classList.remove("show");
@@ -19868,7 +19952,9 @@ function saveDoctorSettings() {
 /* ── Toast ── */
 function showToast(msg) {
   const t = document.getElementById("toast");
-  t.textContent = msg; t.classList.add("show");
+  let text = String(msg != null ? msg : "");
+  if (text.length > 200) text = text.slice(0, 200) + "…";
+  t.textContent = text; t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"), 2800);
 }
 
