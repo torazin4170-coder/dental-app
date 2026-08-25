@@ -258,6 +258,48 @@ function isPatientInHospital_(p) {
   return v === "1" || v === "yes" || v === "true" || v === "入院中";
 }
 
+function getRecordInHospitalChecked_() {
+  return !!document.getElementById("record-in-hospital")?.checked;
+}
+
+/** 診療記録画面：患者マスタの入院中フラグをチェックボックスに反映 */
+function syncRecordInHospitalCheckbox_() {
+  const el = document.getElementById("record-in-hospital");
+  if (!el || !selectedPatient) return;
+  el.checked = isPatientInHospital_(selectedPatient) || selectedTreatments.has("入院中");
+}
+
+/** 診療記録画面：入院中チェック ↔ 報告書ステータス「入院中」チップを同期 */
+function onRecordInHospitalChange_() {
+  if (!selectedPatient) return;
+  const checked = getRecordInHospitalChecked_();
+  if (checked) selectedTreatments.add("入院中");
+  else selectedTreatments.delete("入院中");
+  PATIENT_STATUS_TREATMENTS_.forEach(s => {
+    document.getElementById(`chip-${encodeId(s)}`)?.classList.toggle("sel", selectedTreatments.has(s));
+  });
+  scheduleDraftHudUpdate();
+}
+
+/** 診療記録保存後：入院中ラベルを患者マスタへ反映（チェックボックスが正） */
+function persistPatientInHospitalFromRecord_(pid) {
+  const p = PATIENTS.find(x => x.id === pid);
+  if (!p) return Promise.resolve(false);
+  const want = getRecordInHospitalChecked_() ? "1" : "";
+  const cur = isPatientInHospital_(p) ? "1" : "";
+  if (want === cur) return Promise.resolve(false);
+  return gasCall("updatePatient", JSON.stringify({ id: pid, in_hospital: want })).then(res => {
+    if (res !== "ok") return false;
+    p.in_hospital = want;
+    if (selectedPatient && String(selectedPatient.id) === String(pid)) {
+      selectedPatient.in_hospital = want;
+    }
+    renderPatients();
+    if (typeof renderMgmtPatients === "function") renderMgmtPatients();
+    return true;
+  });
+}
+
 /** 患者マスタの性別（男 / 女 / 空） */
 function normalizePatientGender_(v) {
   const s = String(v != null ? v : "").trim();
@@ -324,11 +366,10 @@ function applyIntakeStageAfterTreatmentSave_(pid, selectedTreats) {
   });
 }
 
-/** 診療記録の報告書ステータス → 患者マスタ（入院中ラベル・退去/逝去） */
+/** 診療記録の報告書ステータス → 患者マスタ（退去/逝去）。入院中ラベルは record-in-hospital で保存 */
 function computePatientMasterUpdatesAfterTreatmentSave_(selectedTreats) {
   const codes = treatmentCodesFromSelection_(selectedTreats).map(c => String(c).trim());
   const payload = {};
-  if (codes.includes("入院中")) payload.in_hospital = "1";
   if (codes.includes("ご逝去")) payload.status = "deceased";
   else if (codes.includes("退所")) payload.status = "left";
   return payload;
@@ -340,10 +381,6 @@ function applyPatientMasterAfterTreatmentSave_(pid, selectedTreats) {
   const want = computePatientMasterUpdatesAfterTreatmentSave_(selectedTreats);
   const payload = { id: pid };
   const notes = [];
-  if (want.in_hospital !== undefined && !isPatientInHospital_(p)) {
-    payload.in_hospital = "1";
-    notes.push("入院中");
-  }
   if (want.status === "deceased" && (p.status || "active") !== "deceased") {
     payload.status = "deceased";
     notes.push("逝去");
@@ -354,10 +391,8 @@ function applyPatientMasterAfterTreatmentSave_(pid, selectedTreats) {
   if (Object.keys(payload).length <= 1) return Promise.resolve(false);
   return gasCall("updatePatient", JSON.stringify(payload)).then(res => {
     if (res !== "ok") return false;
-    if (payload.in_hospital !== undefined) p.in_hospital = "1";
     if (payload.status !== undefined) p.status = payload.status;
     if (selectedPatient && String(selectedPatient.id) === String(pid)) {
-      if (payload.in_hospital !== undefined) selectedPatient.in_hospital = p.in_hospital;
       if (payload.status !== undefined) selectedPatient.status = p.status;
     }
     renderPatients();
@@ -1908,6 +1943,7 @@ function togglePatientStatusChip_(code) {
   PATIENT_STATUS_TREATMENTS_.forEach(s => {
     document.getElementById(`chip-${encodeId(s)}`)?.classList.toggle("sel", selectedTreatments.has(s));
   });
+  if (c === "入院中") syncRecordInHospitalCheckbox_();
   scheduleDraftHudUpdate();
 }
 
@@ -2915,7 +2951,8 @@ function snapTreatmentForm() {
     visitEH: eh ? eh.value : "",
     visitEM: em ? em.value : "",
     notesTones: serializeNotesTones_(),
-    editId: editingTreatmentId || ""
+    editId: editingTreatmentId || "",
+    inHospital: getRecordInHospitalChecked_()
   });
 }
 
@@ -3418,6 +3455,8 @@ function applyTreatmentSnap_(t) {
   selectedNextTreatments.forEach(c => {
     document.getElementById(`nchip-${encodeId(c)}`)?.classList.add("next-sel");
   });
+  const inh = document.getElementById("record-in-hospital");
+  if (inh) inh.checked = t.inHospital != null ? !!t.inHospital : selectedTreatments.has("入院中");
   renderExamInputs_();
   clearRecordDuplicateWarn_();
 }
@@ -5411,6 +5450,7 @@ function applyRecordPrefill(prefill) {
   syncVisitTimeDigitalFromHiddens_();
   loadExamInputsFromData_(p.exam_data);
   renderExamInputs_();
+  syncRecordInHospitalCheckbox_();
 }
 
 /**
@@ -5455,6 +5495,11 @@ function openRecord(pid, options) {
   clearVisitTimeDigitalFields_();
 
   renderTreatmentChips_();
+  if (isPatientInHospital_(selectedPatient)) {
+    selectedTreatments.add("入院中");
+    document.getElementById(`chip-${encodeId("入院中")}`)?.classList.add("sel");
+  }
+  syncRecordInHospitalCheckbox_();
   loadExamInputsFromData_(null);
   refreshExamHistoryTable_(selectedPatient.id);
 
@@ -6623,9 +6668,18 @@ function finishTreatmentSideSaves_(pid) {
     if (notesRes !== "ok") showToast("患者メモの保存に失敗しました（診療記録・歯式は保存済み）");
     return Promise.all([
       applyIntakeStageAfterTreatmentSave_(pid, selectedTreatments),
+      persistPatientInHospitalFromRecord_(pid),
       applyPatientMasterAfterTreatmentSave_(pid, selectedTreatments)
     ]);
   });
+}
+
+function afterTreatmentRecordSaved_(pid) {
+  return Promise.all([
+    persistPatientInHospitalFromRecord_(pid),
+    applyIntakeStageAfterTreatmentSave_(pid, selectedTreatments),
+    applyPatientMasterAfterTreatmentSave_(pid, selectedTreatments)
+  ]).catch(() => {});
 }
 
 function localHistoryRecordsForPatient_(pid) {
@@ -6742,6 +6796,7 @@ function saveTreatmentRecord() {
   if (editingTreatmentId) {
     data.id = editingTreatmentId;
     saveTreatmentWithFallback_(data, pid, editingTreatmentId)
+      .then(() => afterTreatmentRecordSaved_(pid))
       .then(() => {
         applyTreatmentUpdateSuccess_(data, pid, visitDateVal, editingTreatmentId);
         showToast("記録を更新しました（歯式・患者メモも保存済み）");
@@ -6759,6 +6814,9 @@ function saveTreatmentRecord() {
     .then(result => {
       const id = typeof result === "object" ? result.id : result;
       const partialWarning = typeof result === "object" ? result.partialWarning : null;
+      return afterTreatmentRecordSaved_(pid).then(() => ({ id, partialWarning }));
+    })
+    .then(({ id, partialWarning }) => {
       applyTreatmentNewSuccess_(data, pid, visitDateVal, id, partialWarning);
     })
     .catch(e => handleTreatmentSaveError_(e, "保存", recoveryCtx))

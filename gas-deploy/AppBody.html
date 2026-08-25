@@ -282,6 +282,14 @@
       </div>
     </div>
 
+    <div class="form-group" style="margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:10px;font-weight:700;cursor:pointer;margin:0">
+        <input type="checkbox" id="record-in-hospital" style="width:18px;height:18px;accent-color:#7c3aed"
+          onchange="onRecordInHospitalChange_()">
+        <span>入院中（患者リストにラベル表示）</span>
+      </label>
+    </div>
+
     <!-- 処置内容 -->
     <div class="section-title">処置内容を選択</div>
     <p style="font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.45">上の<strong style="color:#991b1b">報告書ステータス</strong>（初診・入院中・退所・ご逝去）は②上司向けリストで<strong style="color:#dc2626">赤字</strong>になります。「無料検診」だけを選ぶと、その日の記録と患者の無料検診タグが付きます。他の処置と一緒に保存するとタグは自動で外れます。<strong>入院中</strong>は患者リストにラベル表示、<strong>退所・ご逝去</strong>は設定管理のステータスと同期します。</p>
