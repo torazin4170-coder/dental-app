@@ -9385,21 +9385,39 @@ function rptSetPath_(obj, path, val) {
   cur[lk] = val;
 }
 
+/** プレビュー編集セル1件分の値を読む（改行・リッチ装飾対応） */
+function rptReadPreviewCellValue_(el) {
+  if (!el) return "";
+  if (el.getAttribute("data-rpt-rich") === "1") {
+    const html = el.innerHTML || "";
+    if (el.classList.contains("rpt-edit-multiline") && !/<span[^>]*\bfax-em-/i.test(html)) {
+      return rptMultilineHtmlToText_(el);
+    }
+    return faxHtmlToMarkers_(html);
+  }
+  if (el.classList.contains("rpt-edit-multiline")) return rptMultilineHtmlToText_(el);
+  return String(el.innerText != null ? el.innerText : el.textContent || "").trim();
+}
+
+/** フォーカス中の編集セルを先にコンテキストへ反映（ボタン操作直前の取りこぼし防止） */
+function rptFlushFocusedPreviewEdits_(container, root) {
+  if (!container || !root) return;
+  const ae = document.activeElement;
+  if (!ae || !container.contains(ae)) return;
+  const el = ae.matches("[data-rpt-path]") ? ae : ae.closest("[data-rpt-path]");
+  if (!el || !container.contains(el)) return;
+  const path = el.getAttribute("data-rpt-path");
+  if (!path) return;
+  rptSetPath_(root, path, rptReadPreviewCellValue_(el));
+}
+
 function rptPullEdits_(container, root) {
   if (!container || !root) return;
+  rptFlushFocusedPreviewEdits_(container, root);
   container.querySelectorAll("[data-rpt-path]").forEach(el => {
     const path = el.getAttribute("data-rpt-path");
     if (!path) return;
-    let val;
-    if (el.getAttribute("data-rpt-rich") === "1") {
-      val = faxHtmlToMarkers_(el.innerHTML);
-    } else if (el.classList.contains("rpt-edit-multiline")) {
-      val = rptMultilineHtmlToText_(el);
-    } else {
-      val = el.innerText != null ? el.innerText : el.textContent || "";
-      val = val.trim();
-    }
-    rptSetPath_(root, path, val);
+    rptSetPath_(root, path, rptReadPreviewCellValue_(el));
   });
 }
 
@@ -13274,7 +13292,7 @@ function psPhotoWidgetOccupiedHeight_(ph) {
 }
 
 function normalizePersonalSheetPatientRow_(p, opts) {
-  const preserveBody = !!(opts && opts.preserveBody);
+  const preserveBody = !!(opts && opts.preserveBody) || !!p._body_user_edited;
   const photosIn = Array.isArray(p.photos) ? p.photos : [];
   const visits = Array.isArray(p.visits) ? p.visits : [];
   const autoBody = buildPersonalSheetPatientBodyFromVisits_(p);
@@ -13299,6 +13317,7 @@ function normalizePersonalSheetPatientRow_(p, opts) {
     visits
   };
   if (p._show_extra) out._show_extra = true;
+  if (p._body_user_edited) out._body_user_edited = true;
   return out;
 }
 
@@ -13717,11 +13736,9 @@ function psReorderPatientsFromDom_(host, ctx) {
       const relM = pth.match(/^patients\.\d+\.(.+)$/);
       if (!relM) return;
       const key = relM[1];
-      let val;
-      if (el.getAttribute("data-rpt-rich") === "1") val = faxHtmlToMarkers_(el.innerHTML);
-      else val = el.innerText != null ? el.innerText : el.textContent || "";
-      if (!el.classList.contains("rpt-edit-multiline")) val = String(val).trim();
+      const val = rptReadPreviewCellValue_(el);
       p[key] = val;
+      if (key === "body" || key === "extra_comment") p._body_user_edited = true;
     });
     psPullPhotosFromRow_(row, p);
     if (String(p.extra_comment || "").trim()) p._show_extra = true;
@@ -13781,11 +13798,40 @@ function psPullPersonalSheetEdits_() {
   else if (sel) ctx.clinic_name = sel.value;
 }
 
+function psSyncPersonalSheetPreviewCellToContext_(el) {
+  const host = document.getElementById("personalSheetPreviewInner");
+  const ctx = lastPersonalSheetContext;
+  if (!host || !ctx || !el || !host.contains(el)) return;
+  const path = el.getAttribute("data-rpt-path");
+  if (!path) return;
+  rptSetPath_(ctx, path, rptReadPreviewCellValue_(el));
+  const m = path.match(/^patients\.(\d+)\.(body|extra_comment)$/);
+  if (m && ctx.patients && ctx.patients[m[1]]) ctx.patients[m[1]]._body_user_edited = true;
+}
+
+function psBindPreviewLiveSync_(host) {
+  if (!host || host.dataset.psLiveSyncBound === "1") return;
+  host.dataset.psLiveSyncBound = "1";
+  host.addEventListener("input", e => {
+    const el = e.target.closest("[data-rpt-path]");
+    if (el) psSyncPersonalSheetPreviewCellToContext_(el);
+  });
+}
+
 function psBindPatientToolbarActions_(container) {
   if (!container) return;
+  if (container._psToolbarPreHandler) {
+    container.removeEventListener("mousedown", container._psToolbarPreHandler);
+    container.removeEventListener("touchstart", container._psToolbarPreHandler);
+  }
   if (container._psToolbarClickHandler) {
     container.removeEventListener("click", container._psToolbarClickHandler);
   }
+  const onPreAction = e => {
+    const btn = e.target.closest(".ps-row-del, .ps-row-photo, .ps-row-comment");
+    if (!btn || !container.contains(btn)) return;
+    psPullPersonalSheetEdits_();
+  };
   const onClick = e => {
     const btn = e.target.closest(".ps-row-del, .ps-row-photo, .ps-row-comment");
     if (!btn || !container.contains(btn)) return;
@@ -13799,7 +13845,10 @@ function psBindPatientToolbarActions_(container) {
     }
     else if (btn.classList.contains("ps-row-comment")) psEnsureExtraComment_(idx);
   };
+  container.addEventListener("mousedown", onPreAction);
+  container.addEventListener("touchstart", onPreAction, { passive: true });
   container.addEventListener("click", onClick);
+  container._psToolbarPreHandler = onPreAction;
   container._psToolbarClickHandler = onClick;
 }
 
@@ -13811,8 +13860,16 @@ function paintPersonalSheetPreview_(ctx) {
     if (String(p.extra_comment || "").trim()) p._show_extra = true;
   });
   delete host.dataset.rptBound;
+  delete host.dataset.psLiveSyncBound;
   host.innerHTML = buildPersonalSheetGridDocumentHtml_(ctx, false);
-  rptBindPreviewEdits_(host, ctx, () => psPullPersonalSheetEdits_());
+  rptBindPreviewEdits_(host, ctx, () => {
+    psReorderPatientsFromDom_(host, ctx);
+    const free = document.getElementById("personalSheetClinicFree");
+    const sel = document.getElementById("personalSheetClinicSelect");
+    if (free && String(free.value || "").trim()) ctx.clinic_name = String(free.value).trim();
+    else if (sel) ctx.clinic_name = sel.value;
+  });
+  psBindPreviewLiveSync_(host);
   psBindPatientToolbarActions_(host);
   psBindPhotoManipulators_(host);
   psBindPhotoImageLoads_(host);
@@ -13866,7 +13923,7 @@ function psRemovePatientAtIndex_(idx) {
     return;
   }
   ctx.patients.splice(i, 1);
-  ctx.patients = ctx.patients.filter(p => p && (p.patient_id || p.name || String(p.body || "").trim()));
+  ctx.patients = ctx.patients.filter(p => p && (p.patient_id || p.name || String(p.body || "").trim() || p._body_user_edited));
   ctx.patient_count = ctx.patients.length;
   if (!ctx.patients.length) showToast("全員除外しました。再読み込みするか施設・年月を変えてください");
   else showToast("患者を除外しました");
