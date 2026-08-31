@@ -800,8 +800,9 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
   overflow-x: auto;
   overflow-y: auto;
   padding-bottom: 8px;
-  max-height: min(52vh, calc(96dvh - 320px));
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: min(36vh, 280px);
+  max-height: none;
 }
 #kentaiReportModal .modal-actions.report-preview-modal-footer {
   flex-shrink: 0;

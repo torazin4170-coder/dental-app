@@ -436,27 +436,9 @@
     <style>
       .settings-tab { flex:1;min-width:64px;padding:10px 3px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent; }
       .settings-tab.active { color:var(--accent);border-bottom-color:var(--accent); }
-      #faxDailyModal.modal-overlay.show,
-      #svListModal.modal-overlay.show,
-      #shareSheetModal.modal-overlay.show,
-      #monthCareModal.modal-overlay.show,
-      #visitTimetableModal.modal-overlay.show,
-      #kentaiReportModal.modal-overlay.show,
-      #personalSheetModal.modal-overlay.show,
-      #patientPpsModal.modal-overlay.show,
-      #ofpiModal.modal-overlay.show,
-      #shindanModal.modal-overlay.show { align-items: stretch; padding: 0; }
-      @media (min-width: 768px) {
-        #faxDailyModal.modal-overlay.show,
-        #svListModal.modal-overlay.show,
-        #shareSheetModal.modal-overlay.show,
-        #monthCareModal.modal-overlay.show,
-        #visitTimetableModal.modal-overlay.show,
-        #kentaiReportModal.modal-overlay.show,
-        #personalSheetModal.modal-overlay.show,
-        #patientPpsModal.modal-overlay.show,
-        #ofpiModal.modal-overlay.show,
-        #shindanModal.modal-overlay.show { align-items: center; padding: 8px; }
+      :is(#faxDailyModal, #svListModal, #shareSheetModal, #monthCareModal, #visitTimetableModal, #kentaiReportModal, #personalSheetModal, #patientPpsModal, #ofpiModal, #shindanModal, #docArchiveModal).modal-overlay.show {
+        align-items: stretch;
+        padding: 0;
       }
       .ps-doc { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif; color: #111; font-size: 10pt; line-height: 1.45; }
       .ps-doc table { border-collapse: collapse; width: 100%; }
@@ -473,25 +455,39 @@
       #patientPpsPreviewInner .teeth-chart-root { min-width: max-content; }
       #patientPpsPreviewInner .rpt-edit:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
       .fax-daily-modal-sheet {
-        max-height: min(96dvh, 96vh);
-        max-width: min(1100px, 98vw);
+        max-width: 100vw;
         width: 100%;
-        margin: 0 auto;
-        border-radius: 18px 18px 0 0;
+        max-height: 100dvh;
+        height: 100dvh;
+        margin: 0;
+        border-radius: 0;
         display: flex;
         flex-direction: column;
-        overflow-x: hidden;
-        overflow-y: auto;
+        overflow: hidden;
         -webkit-overflow-scrolling: touch;
         padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
       }
-      @media (min-width: 768px) {
-        .fax-daily-modal-sheet { border-radius: 18px; margin: 6px auto; }
+      .fax-daily-modal-sheet .modal-actions.report-preview-modal-footer,
+      .fax-daily-modal-sheet > .btn-cancel { flex-shrink: 0; }
+      .fax-daily-modal-sheet .report-preview-scroll {
+        flex: 1 1 auto;
+        min-height: min(36vh, 280px);
+        max-height: none;
+      }
+      .fax-daily-modal-sheet .report-preview-split {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #docArchiveModal .fax-daily-modal-sheet #docArchiveList {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
       }
       .report-preview-scroll {
-        flex: 1 1 auto;
-        min-height: min(62vh, calc(96dvh - 220px));
-        max-height: min(78vh, calc(96dvh - 160px));
         overflow: auto;
         -webkit-overflow-scrolling: touch;
         border: 1px solid var(--border);
@@ -501,15 +497,14 @@
       }
       .report-preview-form-pane {
         flex: 1 1 auto;
-        min-height: min(52vh, calc(96dvh - 240px));
-        max-height: min(62vh, calc(96dvh - 200px));
+        min-height: min(40vh, 320px);
+        max-height: none;
         overflow: auto;
         -webkit-overflow-scrolling: touch;
         padding-right: 4px;
         margin-bottom: 8px;
       }
       #shareSheetModal .report-preview-split { min-height: 0; flex: 1 1 auto; overflow: hidden; gap: 8px; }
-      #shareSheetModal .fax-daily-modal-sheet { overflow: hidden; max-width: min(1280px, 98vw); }
       #shareSheetModal .iss-modal-head-row {
         display: flex;
         flex-wrap: wrap;
@@ -549,7 +544,7 @@
       #shareSheetModal .report-preview-form-pane {
         flex: 0 1 auto;
         min-height: 0;
-        max-height: min(38vh, calc(96dvh - 220px));
+        max-height: min(42vh, calc(100dvh - 220px));
       }
       #shareSheetModal .iss-preview-pane {
         flex: 1 1 auto;
@@ -570,25 +565,15 @@
         #shareSheetModal .report-preview-form-pane {
           flex: 0 0 30%;
           max-width: 340px;
-          max-height: calc(96dvh - 120px);
+          max-height: calc(100dvh - 120px);
         }
         #shareSheetModal .iss-preview-pane { flex: 1 1 70%; }
         #shareSheetModal .rpt-preview-hint { display: none; }
         #shareSheetModal #issPreviewScroll.report-preview-scroll {
-          min-height: calc(96dvh - 130px);
+          min-height: calc(100dvh - 130px);
         }
       }
-      /* ④ 月次（ケアマネ）：画面幅いっぱい＋参考コメントをサイドに固定 */
-      #monthCareModal.modal-overlay.show { align-items: stretch; padding: 0; }
-      #monthCareModal .fax-daily-modal-sheet {
-        max-width: 100vw;
-        width: 100%;
-        max-height: 100dvh;
-        height: 100dvh;
-        margin: 0;
-        border-radius: 0;
-        overflow: hidden;
-      }
+      /* ④ 月次（ケアマネ）：参考コメントをサイドに固定 */
       #monthCareModal .month-care-head-block { flex-shrink: 0; }
       #monthCareModal .month-care-preview-split {
         display: flex;
@@ -664,29 +649,19 @@
       @media (min-width: 900px) {
         #visitTimetableModal .report-preview-split { flex-direction: row; gap: 12px; }
         #visitTimetableModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
-        #visitTimetableModal .report-preview-scroll { min-height: min(52vh, calc(96dvh - 200px)); }
-      #ofpiModal.modal-overlay.show { align-items: flex-end; }
-      @media (min-width: 720px) {
-        #ofpiModal.modal-overlay.show { align-items: center; padding: 12px; }
-        #ofpiModal .modal-sheet { max-width: 960px; max-height: 96dvh; border-radius: 16px; }
+        #visitTimetableModal .report-preview-scroll { min-height: calc(100dvh - 200px); }
       }
       #ofpiModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
-      @media (min-width: 720px) {
+      @media (min-width: 900px) {
         #ofpiModal .report-preview-split { flex-direction: row; gap: 12px; }
         #ofpiModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
-        #ofpiModal .report-preview-scroll { min-height: min(52vh, calc(96dvh - 200px)); }
-      #shindanModal.modal-overlay.show { align-items: flex-end; }
-      @media (min-width: 768px) {
-        #shindanModal.modal-overlay.show { align-items: center; padding: 12px; }
-        #shindanModal .modal-sheet { max-width: 960px; max-height: 96dvh; border-radius: 16px; }
+        #ofpiModal .report-preview-scroll { min-height: calc(100dvh - 200px); }
       }
       #shindanModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
-      @media (min-width: 768px) {
+      @media (min-width: 900px) {
         #shindanModal .report-preview-split { flex-direction: row; gap: 12px; }
         #shindanModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
-        #shindanModal .report-preview-scroll { min-height: min(52vh, calc(96dvh - 200px)); }
-      }
-      }
+        #shindanModal .report-preview-scroll { min-height: calc(100dvh - 200px); }
       }
       .tt-preview-host { transform-origin: top left; }
       .tt-preview-host .tt-doc { font-size: 9pt; }
