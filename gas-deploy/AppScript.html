@@ -14391,6 +14391,10 @@ function clearPersonalSheetPreviewDraft_() {
 }
 
 function personalSheetHtmlForPrint_() {
+  const host = document.getElementById("personalSheetPreviewInner");
+  if (host && host.querySelector(".ps-grid-doc")) {
+    return rptPlainHtml_(host.innerHTML);
+  }
   const ctx = lastPersonalSheetContext;
   if (!ctx) return "";
   return buildPersonalSheetGridDocumentHtml_(ctx, true);
