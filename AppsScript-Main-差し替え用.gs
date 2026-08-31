@@ -1579,6 +1579,49 @@ function getFacilityMonthlyCareReportData(facId, ymOpt) {
   });
 }
 
+var MUSHO_KENSHIN_TREATMENT_GS_ = "無料検診";
+var PATIENT_STATUS_TREATMENTS_GS_ = ["初診", "入院中", "退所", "ご逝去"];
+
+function treatmentCodesListGs_(treatments) {
+  return String(treatments || "").split(/[、,]/).map(function (s) { return String(s).trim(); }).filter(Boolean);
+}
+
+/** 無料検診・報告書ステータス以外の処置が1つ以上あるか */
+function recordHasCountableTreatmentGs_(rec) {
+  return treatmentCodesListGs_(rec && rec.treatments != null ? rec.treatments : rec).some(function (c) {
+    return c && c !== MUSHO_KENSHIN_TREATMENT_GS_ && PATIENT_STATUS_TREATMENTS_GS_.indexOf(c) === -1;
+  });
+}
+
+function recordHasTreatmentCodeGs_(rec, code) {
+  return treatmentCodesListGs_(rec && rec.treatments != null ? rec.treatments : rec).indexOf(String(code || "")) !== -1;
+}
+
+/** 患者ごとの初診日（「初診」チップの最古日。無ければ数えられる処置の最古日。無料検診のみの日は含めない） */
+function buildFirstConsultDateByPidGs_(rows, header) {
+  var byShoshin = {};
+  var byCountable = {};
+  if (!rows || rows.length < 2) return {};
+  for (var j = 1; j < rows.length; j++) {
+    var t0 = rowToObj(header, rows[j]);
+    var pid0 = String(t0.patient_id || "");
+    var vd0 = visitDateYMD_(t0.visit_date);
+    if (!pid0 || !vd0) continue;
+    if (recordHasTreatmentCodeGs_(t0, "初診")) {
+      if (!byShoshin[pid0] || vd0.localeCompare(byShoshin[pid0]) < 0) byShoshin[pid0] = vd0;
+    }
+    if (recordHasCountableTreatmentGs_(t0)) {
+      if (!byCountable[pid0] || vd0.localeCompare(byCountable[pid0]) < 0) byCountable[pid0] = vd0;
+    }
+  }
+  var out = {};
+  Object.keys(byShoshin).forEach(function (pid) { out[pid] = byShoshin[pid]; });
+  Object.keys(byCountable).forEach(function (pid) {
+    if (!out[pid] || byCountable[pid].localeCompare(out[pid]) < 0) out[pid] = byCountable[pid];
+  });
+  return out;
+}
+
 /**
  * 施設単位・指定月の看護・医療従事者向け月次報告用データ（患者一覧＋訪問別記録）
  * @param {string} facId
@@ -1604,19 +1647,7 @@ function getFacilityClinicalMonthlyReportData(facId, ymOpt) {
   var settings = JSON.parse(getSettings());
   var patients = JSON.parse(getPatients(null));
 
-  var minDateByPid = {};
-  if (rows.length >= 2) {
-    var headerAll = rows[0];
-    for (var j = 1; j < rows.length; j++) {
-      var t0 = rowToObj(headerAll, rows[j]);
-      var pid0 = String(t0.patient_id);
-      var vd0 = visitDateYMD_(t0.visit_date);
-      if (!pid0 || !vd0) continue;
-      if (!minDateByPid[pid0] || vd0.localeCompare(minDateByPid[pid0]) < 0) {
-        minDateByPid[pid0] = vd0;
-      }
-    }
-  }
+  var minDateByPid = rows.length >= 2 ? buildFirstConsultDateByPidGs_(rows, rows[0]) : {};
 
   if (rows.length < 2) {
     return JSON.stringify({

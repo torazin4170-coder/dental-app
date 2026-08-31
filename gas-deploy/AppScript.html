@@ -1479,6 +1479,17 @@ function getPatientFirstConsultDate_(pid) {
   return byShoshin || byCountable || "";
 }
 
+/** ⑥施設月次など：診療行に「初診」ラベルを付けるか（無料検診のみの日は付けない） */
+function psVisitShowsShoshin_(visit, patient) {
+  if (!visit) return false;
+  if (recordHasTreatment_(visit, "初診")) return true;
+  if (!recordHasCountableTreatment_(visit)) return false;
+  const pid = patient && (patient.patient_id || patient.id);
+  const firstConsult = pid ? getPatientFirstConsultDate_(pid) : "";
+  const vkey = formatDateInputVal(visit.visit_date);
+  return !!(firstConsult && vkey && vkey === firstConsult);
+}
+
 /** ④月次：無料検診のみの日を除き、初診日以降・退所/ご逝去より前の診療のみ残す */
 function filterVisitsForMonthCareReport_(visits, patientId) {
   const firstConsult = patientId ? getPatientFirstConsultDate_(patientId) : "";
@@ -12425,17 +12436,15 @@ function buildClinicalMonthlyDraft_(data) {
     lines.push(`■ ${String(p.room || "").trim()} ${String(p.name || "").trim()} 様${cov ? `（${cov}）` : ""}`);
     let markedFirst = false;
     pv.forEach(v => {
-      const vkey = fv(v.visit_date);
-      const fkey = fv(p.first_visit_date_ever);
-      const isFirst = !markedFirst && vkey && fkey && vkey === fkey;
-      if (isFirst) markedFirst = true;
+      const showShoshin = !markedFirst && psVisitShowsShoshin_(v, p);
+      if (showShoshin) markedFirst = true;
       const md = formatMdSlashForClinical_(v.visit_date);
       const ta = String(v.visit_time_start || "").trim();
       const tb = String(v.visit_time_end || "").trim();
       let timePart = "";
       if (ta && tb) timePart = ` ${ta}–${tb}`;
       else if (ta) timePart = ` ${ta}–`;
-      lines.push(`${md}${timePart}${isFirst ? " 初診" : ""}`);
+      lines.push(`${md}${timePart}${showShoshin ? " 初診" : ""}`);
       const tx = formatTreatmentTextForReport_((v.treatments || "").trim());
       if (tx) lines.push(`処置：${tx}`);
       const nx = (v.notes || "").trim();
@@ -13212,12 +13221,9 @@ function psMergeVisitNotesIntoBody_(body, visits) {
 function buildPersonalSheetPatientBodyFromVisits_(p) {
   const lines = [];
   let markedFirst = false;
-  const fv = d => formatDateInputVal(d);
   (p.visits || []).forEach(v => {
-    const vkey = fv(v.visit_date);
-    const fkey = fv(p.first_visit_date_ever);
-    const isFirst = !markedFirst && vkey && fkey && vkey === fkey;
-    if (isFirst) markedFirst = true;
+    const showShoshin = !markedFirst && psVisitShowsShoshin_(v, p);
+    if (showShoshin) markedFirst = true;
     const md = formatMdSlashForClinical_(v.visit_date);
     const ta = String(v.visit_time_start || "").trim();
     const tb = String(v.visit_time_end || "").trim();
@@ -13225,7 +13231,7 @@ function buildPersonalSheetPatientBodyFromVisits_(p) {
     if (ta && tb) timePart = ` ${ta}-${tb}`;
     else if (ta) timePart = ` ${ta}-`;
     const tx = formatTreatmentTextForReport_((v.treatments || "").trim());
-    const head = `${md}${timePart}${isFirst ? " 初診" : ""}`.trim();
+    const head = `${md}${timePart}${showShoshin ? " 初診" : ""}`.trim();
     if (head || tx) lines.push(`${head}${tx ? `  ${tx}` : ""}`.trim());
     const nx = notesForPersonalSheetBody_(v.notes);
     if (nx) lines.push(nx);
@@ -14423,7 +14429,7 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .ps-toolbar-row, .ps-grid-hint, .ps-row-toolbar { display: none !important; }
 .fax-em-red { color: #dc2626 !important; font-weight: 800; }
 .fax-em-hl { background: #fef08a !important; padding: 0 2px; }
-.fax-em-box { border: 1px solid #334155; padding: 1px 4px; display: inline-block; }
+.fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; line-height: 1.45; margin: 2px 0; }
 ${getRptPrintWhitespaceCss_()}
 `;
 }
