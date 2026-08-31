@@ -922,6 +922,12 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
   touch-action: manipulation;
 }
 #monthCareRefChips .mc-ref-chip-del:hover { background: #fee2e2; color: #b91c1c; }
+@media (min-width: 900px) {
+  #monthCarePreviewInner .mc-matrix-doc--preview {
+    width: min(860px, 100%);
+    font-size: 11px;
+  }
+}
 @media (min-width: 768px) {
   #monthCarePreviewInner .mc-matrix-doc--preview { font-size: 11px; }
   #monthCarePreviewInner .mc-matrix-cell { min-height: 320px; }

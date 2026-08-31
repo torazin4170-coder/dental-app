@@ -578,6 +578,88 @@
           min-height: calc(96dvh - 130px);
         }
       }
+      /* ④ 月次（ケアマネ）：画面幅いっぱい＋参考コメントをサイドに固定 */
+      #monthCareModal.modal-overlay.show { align-items: stretch; padding: 0; }
+      #monthCareModal .fax-daily-modal-sheet {
+        max-width: 100vw;
+        width: 100%;
+        max-height: 100dvh;
+        height: 100dvh;
+        margin: 0;
+        border-radius: 0;
+        overflow: hidden;
+      }
+      #monthCareModal .month-care-head-block { flex-shrink: 0; }
+      #monthCareModal .month-care-preview-split {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+        gap: 10px;
+      }
+      #monthCareModal .month-care-preview-pane {
+        flex: 1 1 auto;
+        min-height: 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #monthCareModal #monthCarePreviewScroll.report-preview-scroll {
+        flex: 1 1 auto;
+        min-height: min(36vh, 280px);
+        max-height: none;
+        margin-bottom: 0;
+      }
+      #monthCareModal .month-care-ref-pane {
+        flex: 0 0 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        background: #f8fafc;
+        max-height: min(42vh, 360px);
+        overflow: hidden;
+      }
+      #monthCareModal .month-care-ref-pane #monthCareRefChips {
+        flex: 1 1 auto;
+        min-height: 80px;
+        max-height: none;
+        overflow: auto;
+      }
+      @media (min-width: 900px) {
+        #monthCareModal .month-care-preview-split {
+          flex-direction: row;
+          align-items: stretch;
+          gap: 14px;
+        }
+        #monthCareModal .month-care-preview-pane { flex: 1 1 auto; }
+        #monthCareModal .month-care-ref-pane {
+          flex: 0 0 min(380px, 34vw);
+          max-width: 420px;
+          max-height: none;
+          height: auto;
+          align-self: stretch;
+        }
+        #monthCareModal #monthCarePreviewScroll.report-preview-scroll {
+          min-height: calc(100dvh - 240px);
+        }
+        #monthCareModal .month-care-ref-pane #monthCareRefChips {
+          min-height: min(48vh, 420px);
+        }
+      }
+      @media (max-width: 899px) {
+        #monthCareModal .month-care-ref-pane {
+          position: sticky;
+          bottom: 0;
+          z-index: 2;
+          box-shadow: 0 -6px 16px rgba(15, 23, 42, 0.08);
+        }
+      }
+      #monthCareModal .modal-actions.report-preview-modal-footer { flex-shrink: 0; }
       #visitTimetableModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
       @media (min-width: 900px) {
         #visitTimetableModal .report-preview-split { flex-direction: row; gap: 12px; }
@@ -1747,37 +1829,43 @@
 <div class="modal-overlay" id="monthCareModal">
   <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="monthCareModalTitle">
     <div class="modal-handle"></div>
-    <div class="modal-title" id="monthCareModalTitle">月次報告（五香様式・4マス）</div>
-    <div id="monthCareModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
-    <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・対象年月</strong>で<strong>下書きを再生成</strong>すると、診療記録のある全患者が居室順で4マスプレビューに並びます。印刷しない患者はプレビューで「除外」できます（退所・ご逝去の記録日より前まで）。</p>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <button type="button" id="monthCareRegenBtn" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="generateMonthCareDraft()">🔄 下書きを再生成</button>
-    </div>
-    <p class="rpt-preview-hint" id="monthCarePreviewHint">プレビューの<strong>チェック</strong>をタップでオン/オフ、<strong>コメント欄</strong>をタップで編集できます。</p>
-    <div id="monthCarePreviewScroll" class="report-preview-scroll" style="margin-bottom:12px">
-      <div id="monthCarePreviewInner"></div>
-    </div>
-    <div id="monthCareBodyTaWrap" style="display:none">
-    <label for="monthCareBodyTa" style="display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">本文（ケアマネ・ご家族向け・編集可）</label>
-    <textarea id="monthCareBodyTa" class="report-preview-compact-ta" rows="8" placeholder="下書きを生成するとここに入ります。文体や表現をそのまま修正してください。" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;line-height:1.65;font-family:inherit;resize:vertical"></textarea>
-    </div>
-    <div id="monthCareRefPanel" style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:12px;background:#f8fafc">
-      <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px">参考コメント（カテゴリから挿入・追加／削除可）</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-        <label for="monthCareRefCat" style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">カテゴリ</label>
-        <select id="monthCareRefCat" style="flex:1;min-width:160px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit"></select>
+    <div class="month-care-head-block">
+      <div class="modal-title" id="monthCareModalTitle">月次報告（五香様式・4マス）</div>
+      <div id="monthCareModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・対象年月</strong>で<strong>下書きを再生成</strong>すると、診療記録のある全患者が居室順で4マスプレビューに並びます。印刷しない患者はプレビューで「除外」できます（退所・ご逝去の記録日より前まで）。</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <button type="button" id="monthCareRegenBtn" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="generateMonthCareDraft()">🔄 下書きを再生成</button>
       </div>
-      <input type="search" id="monthCareRefFilter" placeholder="文言を絞り込み…" autocomplete="off"
-        style="width:100%;margin-top:8px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit">
-      <div id="monthCareRefChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;max-height:min(18vh,140px);overflow:auto;padding:2px 0"></div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;margin-top:10px">
-        <input type="text" id="monthCareRefAddInput" placeholder="新しい参考コメントを入力…" autocomplete="off"
-          style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit">
-        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:8px 12px;white-space:nowrap" onclick="addMonthCareRefPhrase_()">＋ 追加</button>
-      </div>
-      <p id="monthCareRefNote" style="font-size:10px;color:var(--muted);margin:8px 0 0;line-height:1.45">文言をタップで<strong>編集中のコメント欄</strong>へ挿入。右の × で一覧から削除（この端末に保存）。</p>
     </div>
-    <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45">※診療記録からの自動生成です。医学的表現のまま残したい箇所はそのまま、伝わりやすい言い換えはご自由に加えてください。</p>
+    <div class="month-care-preview-split">
+      <div class="month-care-preview-pane">
+        <p class="rpt-preview-hint" id="monthCarePreviewHint">プレビューの<strong>チェック</strong>をタップでオン/オフ、<strong>コメント欄</strong>をタップで編集できます。参考コメントは右（スマホは下）に常時表示されます。</p>
+        <div id="monthCarePreviewScroll" class="report-preview-scroll">
+          <div id="monthCarePreviewInner"></div>
+        </div>
+        <div id="monthCareBodyTaWrap" style="display:none">
+          <label for="monthCareBodyTa" style="display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">本文（ケアマネ・ご家族向け・編集可）</label>
+          <textarea id="monthCareBodyTa" class="report-preview-compact-ta" rows="8" placeholder="下書きを生成するとここに入ります。文体や表現をそのまま修正してください。" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;line-height:1.65;font-family:inherit;resize:vertical"></textarea>
+        </div>
+      </div>
+      <div id="monthCareRefPanel" class="month-care-ref-pane">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px;flex-shrink:0">参考コメント（カテゴリから挿入・追加／削除可）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex-shrink:0">
+          <label for="monthCareRefCat" style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">カテゴリ</label>
+          <select id="monthCareRefCat" style="flex:1;min-width:160px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit"></select>
+        </div>
+        <input type="search" id="monthCareRefFilter" placeholder="文言を絞り込み…" autocomplete="off"
+          style="width:100%;margin-top:8px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit;flex-shrink:0">
+        <div id="monthCareRefChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;padding:2px 0"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;margin-top:10px;flex-shrink:0">
+          <input type="text" id="monthCareRefAddInput" placeholder="新しい参考コメントを入力…" autocomplete="off"
+            style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit">
+          <button type="button" class="btn btn-secondary" style="font-size:12px;padding:8px 12px;white-space:nowrap" onclick="addMonthCareRefPhrase_()">＋ 追加</button>
+        </div>
+        <p id="monthCareRefNote" style="font-size:10px;color:var(--muted);margin:8px 0 0;line-height:1.45;flex-shrink:0">文言をタップで<strong>編集中のコメント欄</strong>へ挿入。右の × で一覧から削除（この端末に保存）。</p>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45;flex-shrink:0">※診療記録からの自動生成です。医学的表現のまま残したい箇所はそのまま、伝わりやすい言い換えはご自由に加えてください。</p>
     <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
       <button type="button" class="btn btn-secondary" onclick="saveMonthCarePreviewDraft_()">💾 下書き保存</button>
       <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('monthCare','overwrite')">📁 確定保存</button>
