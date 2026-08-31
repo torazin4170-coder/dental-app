@@ -13275,18 +13275,21 @@ function psPhotoWidgetOccupiedHeight_(ph) {
   return bbox.h + actionsH;
 }
 
-function normalizePersonalSheetPatientRow_(p) {
+function normalizePersonalSheetPatientRow_(p, opts) {
+  const preserveBody = !!(opts && opts.preserveBody);
   const photosIn = Array.isArray(p.photos) ? p.photos : [];
   const visits = Array.isArray(p.visits) ? p.visits : [];
   const autoBody = buildPersonalSheetPatientBodyFromVisits_(p);
   const savedBody = p.body != null ? String(p.body) : "";
   let body;
-  if (visits.length) {
+  if (preserveBody) {
+    body = savedBody;
+  } else if (visits.length) {
     body = savedBody.trim() ? psMergeVisitNotesIntoBody_(savedBody, visits) : autoBody;
   } else {
     body = savedBody;
   }
-  return {
+  const out = {
     patient_id: p.patient_id || "",
     room: p.room != null ? String(p.room) : "",
     name: p.name || "",
@@ -13297,6 +13300,8 @@ function normalizePersonalSheetPatientRow_(p) {
     photos: photosIn.map((ph, i) => normalizePersonalSheetPhoto_(ph, i)).filter(ph => ph.data_url),
     visits
   };
+  if (p._show_extra) out._show_extra = true;
+  return out;
 }
 
 function normalizePersonalSheetFromApi_(data) {
@@ -13722,7 +13727,7 @@ function psReorderPatientsFromDom_(host, ctx) {
     });
     psPullPhotosFromRow_(row, p);
     if (String(p.extra_comment || "").trim()) p._show_extra = true;
-    next.push(normalizePersonalSheetPatientRow_(p));
+    next.push(normalizePersonalSheetPatientRow_(p, { preserveBody: true }));
   });
   ctx.patients = next;
   ctx.patient_count = next.length;
@@ -13829,7 +13834,7 @@ function tryApplyPersonalSheetPreviewDraft_(draft) {
   if (!draft || !draft.context) return false;
   lastPersonalSheetContext = {
     ...draft.context,
-    patients: (draft.context.patients || []).map(normalizePersonalSheetPatientRow_)
+    patients: (draft.context.patients || []).map(p => normalizePersonalSheetPatientRow_(p, { preserveBody: true }))
   };
   syncPersonalSheetClinicFields_(draft.context);
   return true;
