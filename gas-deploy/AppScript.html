@@ -9587,16 +9587,14 @@ function rptBindEmphasisBarButtons_() {
 /** 保存用：HTML → 《赤》などのマーカー付きテキスト */
 function faxHtmlToMarkers_(html) {
   let h = String(html || "");
-  h = h.replace(/<br\s*\/?>/gi, "\n");
-  h = h.replace(/<\/(div|p|li|tr|h[1-6])>\s*<(div|p|li|tr|h[1-6])\b[^>]*>/gi, "\n");
-  h = h.replace(/<\/(div|p)>/gi, "\n");
-  h = h.replace(/<(div|p)[^>]*>/gi, "");
   h = h.replace(/<span[^>]*\bfax-em-red\b[^>]*>([\s\S]*?)<\/span>/gi, "《赤》$1《/赤》");
   h = h.replace(/<span[^>]*\bfax-em-hl\b[^>]*>([\s\S]*?)<\/span>/gi, "《黄》$1《/黄》");
   h = h.replace(/<span[^>]*\bfax-em-box\b[^>]*>([\s\S]*?)<\/span>/gi, "【枠】$1【/枠】");
   const d = document.createElement("div");
   d.innerHTML = h;
-  return (d.textContent || "").replace(/\u00a0/g, " ");
+  let s = d.innerText != null ? String(d.innerText) : String(d.textContent || "");
+  s = s.replace(/\u00a0/g, " ");
+  return s;
 }
 
 /** ②上司向けリスト：本日の治療・メモ欄で自動赤字にする語（長い語句を先に） */
@@ -11747,9 +11745,7 @@ function syncFaxLeadSentenceFromParts_(ctx) {
 function refreshFaxDailyPreview() {
   const inner = document.getElementById("faxDailyPreviewInner");
   if (!inner || !lastFaxDailyBatch_) return;
-  const ae = document.activeElement;
-  const editingPreview = ae && inner.contains(ae) && ae.closest("[data-rpt-path]");
-  if (editingPreview) rptPullFaxDailyBatchEdits_(inner, lastFaxDailyBatch_);
+  rptPullFaxDailyBatchEdits_(inner, lastFaxDailyBatch_);
   inner.innerHTML = buildFaxDailyBatchHtml_();
   rptBindFaxDailyBatchEdits_(inner, lastFaxDailyBatch_);
   if (inner.dataset.rptBound !== "faxDailyPreviewInner") {
@@ -12451,6 +12447,8 @@ function refreshClinicalMonthlyPreview() {
   const inner = document.getElementById("clinicalMonthlyPreviewInner");
   if (!inner) return;
   if (lastClinicalMonthlyContext) {
+    rptPullEdits_(inner, lastClinicalMonthlyContext);
+    syncClinicalMonthlyPreviewBodyToTa_();
     if (ta) lastClinicalMonthlyContext.preview_body = ta.value;
     rptPaintPreview_(inner, buildClinicalMonthlyDocumentHtml_(ta ? ta.value : ""), lastClinicalMonthlyContext, syncClinicalMonthlyPreviewBodyToTa_);
   } else {
@@ -17821,6 +17819,8 @@ function buildSupervisorListDocumentHtml_(opts) {
 function refreshSvListPreview() {
   const inner = document.getElementById("svListPreviewInner");
   if (!inner || !lastSupervisorListContext) return;
+  rptPullEdits_(inner, lastSupervisorListContext);
+  svListSyncRowsAllFromVisible_(lastSupervisorListContext);
   rptPaintPreview_(inner, buildSupervisorListDocumentHtml_(), lastSupervisorListContext);
 }
 
@@ -19042,6 +19042,7 @@ function issBindPhotoImageLoads_(container) {
 }
 
 function issPickPhotoForZone_(zone, rowIdx) {
+  issPullPreviewEditsToContext_();
   issCollectFormToContext_();
   issPullAllPhotosFromPreview_();
   issPhotoPickSession_ = { zone: zone || "free_area", rowIdx: rowIdx != null && !isNaN(rowIdx) ? rowIdx : -1 };
@@ -19062,6 +19063,7 @@ function issPickPhotoForZone_(zone, rowIdx) {
 function issHandlePhotoUpload(input) {
   const files = input && input.files;
   if (!files || !files.length) return;
+  issPullPreviewEditsToContext_();
   issCollectFormToContext_();
   issPullAllPhotosFromPreview_();
   const session = issPhotoPickSession_;
@@ -19263,12 +19265,12 @@ function issSyncPreviewEditsToForm_() {
 function issRefreshPreview(fromFormOnly) {
   const inner = document.getElementById("issPreviewInner");
   if (!inner) return;
+  const ae = document.activeElement;
+  const editingPreview = ae && inner.contains(ae) && ae.closest("[data-rpt-path]");
+  const editingIssForm = ae && ae.closest("#issRows, #issFooter, #issFreeTextEd, .iss-staff-wrap, #issCatRadios, #issEntryDate");
   if (lastIssPreviewContext) {
-    const ae = document.activeElement;
-    const editingPreview = ae && inner.contains(ae) && ae.closest("[data-rpt-path]");
-    if (!fromFormOnly || editingPreview) {
-      issPullPreviewEditsToContext_();
-    }
+    const shouldPullPreview = !fromFormOnly || editingPreview || !editingIssForm;
+    if (shouldPullPreview) issPullPreviewEditsToContext_();
   }
   issCollectFormToContext_();
   inner.innerHTML = buildShareSheetPrintHtmlFromContext_(lastIssPreviewContext);
