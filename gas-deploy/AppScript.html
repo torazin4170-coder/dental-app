@@ -14571,13 +14571,20 @@ function renderReportsTab() {
 function ensureKentaiPreviewInputListeners_() {
   if (window._kentaiPreviewListeners) return;
   window._kentaiPreviewListeners = true;
-  const ids = [
-    "kentai-checkup-date", "kentai-need-oral", "kentai-need-denture", "kentai-need-perio", "kentai-need-caries",
-    "kentai-text-oral", "kentai-text-denture", "kentai-text-perio", "kentai-text-caries", "kentai-text-overall"
-  ];
   const onCh = () => {
     if (document.getElementById("kentaiReportModal")?.classList.contains("show")) refreshKentaiPreviewDom();
   };
+  const dateEl = document.getElementById("kentai-checkup-date");
+  if (dateEl) {
+    dateEl.addEventListener("input", onCh);
+    dateEl.addEventListener("change", () => {
+      if (document.getElementById("kentaiReportModal")?.classList.contains("show")) reloadKentaiFormForPatient_();
+    });
+  }
+  const ids = [
+    "kentai-need-oral", "kentai-need-denture", "kentai-need-perio", "kentai-need-caries",
+    "kentai-text-oral", "kentai-text-denture", "kentai-text-perio", "kentai-text-caries", "kentai-text-overall"
+  ];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -14905,7 +14912,6 @@ function bindKentaiPreviewInteractions_(host) {
   const ac = new AbortController();
   kentaiPreviewBindAbort_ = ac;
   const bindOpts = { signal: ac.signal };
-  const touchOpts = { signal: ac.signal, passive: true };
   const capOpts = { signal: ac.signal, capture: true };
   let annotDrag = null;
   function pullAnnotTexts_() { pullKentaiAnnotTextsFromHost_(host); }
@@ -15269,11 +15275,13 @@ function refreshKentaiPreviewDom(opts) {
     lastKentaiFamilyTeeth_ = normalizeFamilyTeeth_(familyTeeth);
     const master = kentaiMasterHdrFields_(p, facName, dateYmd);
     const keepPrev = prevHdr && !pidChanged;
+    const prevDateYmd = keepPrev && prevHdr.dateYmd ? String(prevHdr.dateYmd) : "";
+    const dateYmdChanged = !!prevDateYmd && prevDateYmd !== String(master.dateYmd || "");
     lastKentaiPreviewHdr_ = {
       clinic,
       doctor,
       gender: keepPrev && prevHdr.gender != null ? prevHdr.gender : master.gender,
-      dateJp: keepPrev && prevHdr.dateJp ? prevHdr.dateJp : master.dateJp,
+      dateJp: keepPrev && prevHdr.dateJp && !dateYmdChanged ? prevHdr.dateJp : master.dateJp,
       facName: keepPrev && prevHdr.facName != null ? prevHdr.facName : master.facName,
       facCell: keepPrev && prevHdr.facCell != null ? prevHdr.facCell : master.facCell,
       nameCell: keepPrev && prevHdr.nameCell != null ? prevHdr.nameCell : master.nameCell,
