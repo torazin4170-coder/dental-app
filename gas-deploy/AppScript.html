@@ -15096,23 +15096,31 @@ function bindKentaiPreviewInteractions_(host) {
   host.addEventListener("touchstart", e => {
     const bHandle = e.target.closest(".kentai-bridge-handle");
     if (bHandle && host.contains(bHandle) && e.touches && e.touches[0]) {
+      if (e.cancelable) e.preventDefault();
       startBridgeDrag_(bHandle, e.touches[0].clientX, e.touches[0].clientY);
       return;
     }
     const ann = e.target.closest("[data-kentai-annot]");
     if (ann && host.contains(ann) && e.touches && e.touches[0]) {
+      if (e.cancelable) e.preventDefault();
       startAnnotDrag_(ann, e.touches[0].clientX, e.touches[0].clientY);
     }
-  }, touchOpts);
+  }, { signal: ac.signal, passive: false });
   window.addEventListener("mousemove", e => {
     if (annotDrag) moveAnnotDrag_(e.clientX, e.clientY);
     if (kentaiBridgeDrag_) moveBridgeDrag_(e.clientX, e.clientY);
   }, bindOpts);
   window.addEventListener("mouseup", () => { endAnnotDrag_(); endBridgeDrag_(); }, bindOpts);
   window.addEventListener("touchmove", e => {
-    if (annotDrag && e.touches && e.touches[0]) moveAnnotDrag_(e.touches[0].clientX, e.touches[0].clientY);
-    if (kentaiBridgeDrag_ && e.touches && e.touches[0]) moveBridgeDrag_(e.touches[0].clientX, e.touches[0].clientY);
-  }, touchOpts);
+    if (annotDrag && e.touches && e.touches[0]) {
+      if (e.cancelable) e.preventDefault();
+      moveAnnotDrag_(e.touches[0].clientX, e.touches[0].clientY);
+    }
+    if (kentaiBridgeDrag_ && e.touches && e.touches[0]) {
+      if (e.cancelable) e.preventDefault();
+      moveBridgeDrag_(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { signal: ac.signal, passive: false });
   window.addEventListener("touchend", () => { endAnnotDrag_(); endBridgeDrag_(); }, bindOpts);
   document.addEventListener("click", e => {
     const pop = document.getElementById("kentaiToothSymbolPopover");
