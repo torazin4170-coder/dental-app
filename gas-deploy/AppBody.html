@@ -712,35 +712,47 @@
       .iss-doc .iss-staff-line.iss-pill-row-preview { justify-content: center; }
       .iss-doc .iss-notes-rich { white-space: pre-wrap; word-break: break-word; }
       .report-preview-split { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-      #kentaiReportModal .fax-daily-modal-sheet > .modal-handle,
-      #kentaiReportModal .fax-daily-modal-sheet > .modal-title,
-      #kentaiReportModal .fax-daily-modal-sheet > p,
-      #kentaiReportModal .fax-daily-modal-sheet > .form-group:first-of-type,
-      #kentaiReportModal .fax-daily-modal-sheet > div[style*="display:flex"] {
-        flex-shrink: 0;
+      #kentaiReportModal .fax-daily-modal-sheet.kentai-modal-sheet {
+        overflow: hidden;
       }
-      #kentaiReportModal .kentai-preview-split {
+      #kentaiReportModal .kentai-modal-scroll-body {
         flex: 1 1 auto;
         min-height: 0;
-        overflow: hidden;
-        margin-bottom: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        padding-right: 2px;
       }
-      #kentaiReportModal .kentai-preview-split > label {
+      #kentaiReportModal .fax-daily-modal-sheet > .modal-handle,
+      #kentaiReportModal .fax-daily-modal-sheet > .modal-title,
+      #kentaiReportModal .fax-daily-modal-sheet > p {
+        flex-shrink: 0;
+      }
+      #kentaiReportModal .kentai-preview-block {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        min-height: min(520px, calc(100dvh - 280px));
+      }
+      #kentaiReportModal .kentai-preview-block > label {
         flex-shrink: 0;
         font-size: 12px;
         font-weight: 700;
         color: var(--muted);
         margin-bottom: 6px;
       }
-      #kentaiReportModal .kentai-preview-split .rpt-clinic-bar,
-      #kentaiReportModal .kentai-preview-split .rpt-preview-hint,
-      #kentaiReportModal .kentai-preview-split .kentai-teeth-edit-bar {
+      #kentaiReportModal .kentai-preview-block .rpt-clinic-bar,
+      #kentaiReportModal .kentai-preview-block .rpt-preview-hint,
+      #kentaiReportModal .kentai-preview-block .kentai-teeth-edit-bar {
         flex-shrink: 0;
       }
       #kentaiReportModal #kentai-preview-host {
         flex: 1 1 auto;
-        min-height: 0;
+        min-height: 360px;
         max-height: none;
+        overflow: visible;
       }
       .report-preview-modal-footer { flex-shrink: 0; margin-top: auto; }
       .report-preview-compact-ta { max-height: min(22vh, 200px); }
@@ -1686,10 +1698,11 @@
 
 <!-- 無料検診・歯科検診票 -->
 <div class="modal-overlay" id="kentaiReportModal">
-  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="kentaiModalTitle">
+  <div class="modal-sheet fax-daily-modal-sheet kentai-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="kentaiModalTitle">
     <div class="modal-handle"></div>
     <div class="modal-title" id="kentaiModalTitle">歯科検診票（無料検診）</div>
     <p style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">プレビュー内を直接タップ・編集できます。あり/なし・テキスト・患者名・性別などをその場で修正してから印刷してください。</p>
+    <div class="kentai-modal-scroll-body">
     <input type="hidden" id="kentai-modal-pid">
     <div class="form-group"><label>検診日</label>
       <input type="date" id="kentai-checkup-date" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
@@ -1711,7 +1724,7 @@
       <textarea id="kentai-text-caries"></textarea>
       <textarea id="kentai-text-overall"></textarea>
     </div>
-    <div class="report-preview-split kentai-preview-split">
+    <div class="kentai-preview-block">
       <label>プレビュー（印刷イメージ）</label>
       <div class="rpt-clinic-bar" style="margin-bottom:8px">
         <label for="kentaiClinicSelect">医院名</label>
@@ -1723,6 +1736,7 @@
         <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 10px" onclick="kentaiBridgeDeleteSelected_()">－ 選択ブリッジ削除</button>
       </div>
       <div id="kentai-preview-host" class="report-preview-scroll kentai-preview-scroll-host" style="padding:8px"></div>
+    </div>
     </div>
     <div class="modal-actions report-preview-modal-footer">
       <button type="button" class="btn btn-secondary" onclick="saveKentaiPreviewDraft_()">💾 下書き保存</button>

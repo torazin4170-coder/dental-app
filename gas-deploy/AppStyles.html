@@ -797,18 +797,26 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
 #kentai-preview-host .kentai-yesno-mini.on { font-weight: 800; text-decoration: underline; }
 #kentai-preview-host .kentai-yesno-mini { cursor: default; }
 #kentai-preview-host .kentai-yesno-mini.kentai-denture-pick { cursor: pointer; }
-#kentaiReportModal .kentai-preview-scroll-host {
-  overflow-x: auto;
+#kentaiReportModal .kentai-modal-scroll-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+#kentaiReportModal .kentai-preview-block {
+  display: flex;
+  flex-direction: column;
+  min-height: min(520px, calc(100dvh - 280px));
+}
+#kentaiReportModal .kentai-preview-scroll-host {
+  overflow: visible;
   padding-bottom: 8px;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 360px;
   max-height: none;
-}
-#kentaiReportModal .kentai-preview-split {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
 }
 #kentaiReportModal .modal-actions.report-preview-modal-footer {
   flex-shrink: 0;
