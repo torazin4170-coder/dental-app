@@ -289,6 +289,7 @@ body { font-family: "Hiragino Kaku Gothic ProN",system-ui,sans-serif; background
 .chip.chip-has-qmeta { flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 12px; min-height: 54px; }
 .chip .chip-q-label { line-height: 1.2; }
 .chip .chip-q-meta { display: block; font-size: 9px; font-weight: 800; line-height: 1.25; white-space: nowrap; }
+.chip .chip-q-meta.chip-q-val { font-weight: 700; color: #475569; max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
 .chip .chip-q-wait { color: #b45309; }
 .chip .chip-q-ok { color: #047857; }
 .chip.chip-quarterly-eligible.sel { background: #d1fae5; border-color: #059669; color: #065f46; }
@@ -801,8 +802,13 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
   overflow-y: auto;
   padding-bottom: 8px;
   flex: 1 1 auto;
-  min-height: min(36vh, 280px);
+  min-height: 0;
   max-height: none;
+}
+#kentaiReportModal .kentai-preview-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 #kentaiReportModal .modal-actions.report-preview-modal-footer {
   flex-shrink: 0;

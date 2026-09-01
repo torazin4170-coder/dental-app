@@ -712,6 +712,36 @@
       .iss-doc .iss-staff-line.iss-pill-row-preview { justify-content: center; }
       .iss-doc .iss-notes-rich { white-space: pre-wrap; word-break: break-word; }
       .report-preview-split { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+      #kentaiReportModal .fax-daily-modal-sheet > .modal-handle,
+      #kentaiReportModal .fax-daily-modal-sheet > .modal-title,
+      #kentaiReportModal .fax-daily-modal-sheet > p,
+      #kentaiReportModal .fax-daily-modal-sheet > .form-group:first-of-type,
+      #kentaiReportModal .fax-daily-modal-sheet > div[style*="display:flex"] {
+        flex-shrink: 0;
+      }
+      #kentaiReportModal .kentai-preview-split {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+        margin-bottom: 0;
+      }
+      #kentaiReportModal .kentai-preview-split > label {
+        flex-shrink: 0;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      #kentaiReportModal .kentai-preview-split .rpt-clinic-bar,
+      #kentaiReportModal .kentai-preview-split .rpt-preview-hint,
+      #kentaiReportModal .kentai-preview-split .kentai-teeth-edit-bar {
+        flex-shrink: 0;
+      }
+      #kentaiReportModal #kentai-preview-host {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+      }
       .report-preview-modal-footer { flex-shrink: 0; margin-top: auto; }
       .report-preview-compact-ta { max-height: min(22vh, 200px); }
       .fax-doc { font-size: 11pt; color: #111; line-height: 1.55; font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; }
@@ -1681,7 +1711,8 @@
       <textarea id="kentai-text-caries"></textarea>
       <textarea id="kentai-text-overall"></textarea>
     </div>
-    <div class="form-group"><label>プレビュー（印刷イメージ）</label>
+    <div class="report-preview-split kentai-preview-split">
+      <label>プレビュー（印刷イメージ）</label>
       <div class="rpt-clinic-bar" style="margin-bottom:8px">
         <label for="kentaiClinicSelect">医院名</label>
         <select id="kentaiClinicSelect" onchange="onRptClinicSelectChange_('kentai')"></select>

@@ -4357,7 +4357,10 @@ function returnRollableClinicalToRecordIfNeeded() {
 }
 
 /** 診療画面左カラム：歯式・写真（診療記録・設定モーダルで共通）。pid なしは新規患者モーダル用（空の歯式・写真なし） */
+let teethLoadGen_ = 0;
+
 function initRecordLeftClinicalForPatient_(pid) {
+  teethLoadGen_ += 1;
   currentTeethData = {};
   migrateLegacyTeethProsthesis(currentTeethData);
   paintTeethChart();
@@ -4545,14 +4548,8 @@ function recordsForQuarterlyRestrictionLookup_(pid) {
 
 /** 診療記録から前回実施日（いちばん新しい visit_date） */
 function getLastRestrictedTreatmentDate_(pid, treatmentCode, opts) {
-  opts = opts || {};
-  let latest = "";
-  recordsForQuarterlyRestrictionLookup_(pid).forEach(r => {
-    if (opts.excludeTreatmentId && String(r.id) === String(opts.excludeTreatmentId)) return;
-    if (!recordHasTreatment_(r, treatmentCode)) return;
-    const ymd = formatDateInputVal(r.visit_date) || "";
-    if (ymd && (!latest || ymd > latest)) latest = ymd;
-  });
+  const rec = getLastRestrictedTreatmentRecord_(pid, treatmentCode, opts);
+  let latest = rec ? formatDateInputVal(rec.visit_date) || "" : "";
   const keysToCheck = isFluorideTreatmentCode_(treatmentCode)
     ? [FLUORIDE_TREATMENT_, FLUORIDE_TREATMENT_LEGACY_]
     : [normalizeTreatmentCodeForMatch_(treatmentCode)];
@@ -4562,6 +4559,62 @@ function getLastRestrictedTreatmentDate_(pid, treatmentCode, opts) {
     if (lsYmd && (!latest || lsYmd > latest)) latest = lsYmd;
   });
   return latest;
+}
+
+/** 診療記録から前回実施のレコード本体（編集中の当該記録は除外） */
+function getLastRestrictedTreatmentRecord_(pid, treatmentCode, opts) {
+  opts = opts || {};
+  treatmentCode = normalizeTreatmentCodeForMatch_(treatmentCode);
+  let latest = null;
+  let latestYmd = "";
+  recordsForQuarterlyRestrictionLookup_(pid).forEach(r => {
+    if (opts.excludeTreatmentId && String(r.id) === String(opts.excludeTreatmentId)) return;
+    if (!recordHasTreatment_(r, treatmentCode)) return;
+    const ymd = formatDateInputVal(r.visit_date) || "";
+    if (ymd && (!latestYmd || ymd > latestYmd)) {
+      latestYmd = ymd;
+      latest = r;
+    }
+  });
+  return latest;
+}
+
+/** 定期検査チップ用：前回の数値・F局部位の短い表示 */
+function formatQuarterlyChipPrevDetail_(treatmentCode, rec) {
+  if (!rec) return "";
+  const code = normalizeTreatmentCodeForMatch_(treatmentCode);
+  const examData = parseExamDataField_(rec.exam_data);
+  if (code === PERIODIC_EXAM_TONGUE_) {
+    const saved = examData[PERIODIC_EXAM_TONGUE_];
+    if (saved && saved.value != null && String(saved.value).trim()) {
+      return `${String(saved.value).trim()}kPa`;
+    }
+    const fromNotes = parseExamValueFromNotes_(rec.notes, code);
+    if (fromNotes) return `${fromNotes.value}${fromNotes.unit || "kPa"}`;
+    return "";
+  }
+  if (code === PERIODIC_EXAM_MOISTURE_) {
+    const saved = examData[PERIODIC_EXAM_MOISTURE_];
+    if (saved && saved.value != null && String(saved.value).trim()) {
+      const v = String(saved.value).trim();
+      return v.indexOf("点") !== -1 ? v : `${v}点`;
+    }
+    const fromNotes = parseExamValueFromNotes_(rec.notes, code);
+    if (fromNotes) return `${fromNotes.value}${fromNotes.unit || "点"}`;
+    return "";
+  }
+  if (code === PERIODIC_EXAM_FKYOKU_) {
+    const fk = examData[PERIODIC_EXAM_FKYOKU_];
+    if (fk) {
+      const lbs = fk.labels && fk.labels.length
+        ? fk.labels
+        : (fk.teeth || []).map(toothKeyToShortLabel_);
+      const detail = lbs.filter(Boolean).join("·");
+      if (detail) return detail;
+    }
+    return "";
+  }
+  return "";
 }
 
 function getQuarterlyRestrictionInfo_(pid, treatmentCode, opts) {
@@ -4922,10 +4975,13 @@ function renderTreatmentChips_() {
             const mkCls = isMkChip ? " chip-musho-kenshin" : "";
             const eligibleCls = isQr && !restr ? " chip-quarterly-eligible" : "";
             const qmetaCls = isQr ? " chip-has-qmeta" : "";
+            const lastRec = isQr && info && info.lastYmd ? getLastRestrictedTreatmentRecord_(pid, c, chipOpts) : null;
+            const prevDetail = lastRec ? formatQuarterlyChipPrevDetail_(c, lastRec) : "";
             let metaHtml = "";
             if (isQr && info) {
               if (info.lastYmd) {
                 metaHtml += `<span class="chip-q-meta">前回 ${formatMdJpShort_(info.lastYmd)}</span>`;
+                if (prevDetail) metaHtml += `<span class="chip-q-meta chip-q-val">${escHtml(prevDetail)}</span>`;
               }
               if (restr && info.eligibleFromYmd) {
                 metaHtml += `<span class="chip-q-meta chip-q-wait">${formatMdJpShort_(info.eligibleFromYmd)}から可</span>`;
@@ -4933,10 +4989,11 @@ function renderTreatmentChips_() {
                 metaHtml += `<span class="chip-q-meta chip-q-ok">${info.lastYmd ? "選択可" : "未実施"}</span>`;
               }
             }
+            const prevDetailTitle = prevDetail ? ` / ${prevDetail}` : "";
             const title = restr
-              ? `${c}：前回 ${formatMdJpShort_(info.lastYmd)}（${formatMdJpShort_(info.eligibleFromYmd)}から選択可）`
+              ? `${c}：前回 ${formatMdJpShort_(info.lastYmd)}${prevDetailTitle}（${formatMdJpShort_(info.eligibleFromYmd)}から選択可）`
               : isQr && info && info.lastYmd
-                ? `${c}：前回 ${formatMdJpShort_(info.lastYmd)} — 今回選択可`
+                ? `${c}：前回 ${formatMdJpShort_(info.lastYmd)}${prevDetailTitle} — 今回選択可`
                 : c;
             return `<div class="chip${mkCls}${qmetaCls}${eligibleCls}${restr ? " restricted" : ""}"
             id="chip-${encodeId(c)}"
@@ -6447,7 +6504,11 @@ function migrateLegacyTeethProsthesis(data) {
 
 function renderTeethSummary(pid) {
   ensureTeethChartBlockListener();
+  const gen = ++teethLoadGen_;
+  const reqPid = String(pid || "").trim();
   gasCall("getTeethData", pid).then(json => {
+    if (gen !== teethLoadGen_) return;
+    if (reqPid && selectedPatient && String(selectedPatient.id) !== reqPid) return;
     try {
       currentTeethData = JSON.parse(json || "{}");
       if (!currentTeethData || typeof currentTeethData !== "object") currentTeethData = {};
@@ -6458,6 +6519,8 @@ function renderTeethSummary(pid) {
     paintTeethChart();
     refreshTeethBaseline();
   }).catch(e => {
+    if (gen !== teethLoadGen_) return;
+    if (reqPid && selectedPatient && String(selectedPatient.id) !== reqPid) return;
     currentTeethData = {};
     paintTeethChart();
     refreshTeethBaseline();
@@ -10995,7 +11058,7 @@ function faxDailyExcludePatient_(facId, rowKey) {
   const key = String(rowKey);
   if (!ctx.excluded_patient_ids.includes(key)) ctx.excluded_patient_ids.push(key);
   ctx.rows = sortFaxDailyRows_((ctx.rows || []).filter(r => faxDailyRowKey_(r) !== key));
-  refreshFaxDailyPreview();
+  refreshFaxDailyPreview({ skipPull: true });
 }
 
 function faxDailyRestorePatientFromSelect_(sel) {
@@ -11014,7 +11077,7 @@ function faxDailyRestorePatientFromSelect_(sel) {
   ctx.excluded_patient_ids = (ctx.excluded_patient_ids || []).filter(k => String(k) !== String(rowKey));
   const keys = new Set((ctx.rows || []).map(faxDailyRowKey_));
   if (!keys.has(String(rowKey))) ctx.rows = sortFaxDailyRows_((ctx.rows || []).concat([Object.assign({}, row)]));
-  refreshFaxDailyPreview();
+  refreshFaxDailyPreview({ skipPull: true });
 }
 
 function rptPullFaxDailyBatchEdits_(container, batch) {
@@ -11771,10 +11834,11 @@ function syncFaxLeadSentenceFromParts_(ctx) {
   ctx.lead_sentence = composeFaxLeadSentence_(ctx.lead_visit_label, ctx.lead_next_label);
 }
 
-function refreshFaxDailyPreview() {
+function refreshFaxDailyPreview(opts) {
+  opts = opts || {};
   const inner = document.getElementById("faxDailyPreviewInner");
   if (!inner || !lastFaxDailyBatch_) return;
-  rptPullFaxDailyBatchEdits_(inner, lastFaxDailyBatch_);
+  if (!opts.skipPull) rptPullFaxDailyBatchEdits_(inner, lastFaxDailyBatch_);
   inner.innerHTML = buildFaxDailyBatchHtml_();
   rptBindFaxDailyBatchEdits_(inner, lastFaxDailyBatch_);
   if (inner.dataset.rptBound !== "faxDailyPreviewInner") {
@@ -19279,13 +19343,23 @@ function issPullPreviewEditsToContext_() {
   issSyncPreviewEditsToForm_();
 }
 
+function issSyncPreviewCellToContext_(el) {
+  const inner = document.getElementById("issPreviewInner");
+  const ctx = lastIssPreviewContext;
+  if (!inner || !ctx || !el || !inner.contains(el)) return;
+  const path = el.getAttribute("data-rpt-path");
+  if (!path) return;
+  rptSetPath_(ctx, path, rptReadPreviewCellValue_(el));
+  if (path === "entryLine") issApplyPreviewEntryLineToContext_();
+}
+
 function issBindPreviewInputSync_(inner) {
   if (!inner || inner.dataset.issInputBound === "1") return;
   inner.dataset.issInputBound = "1";
   inner.addEventListener("input", e => {
     const el = e.target.closest("[data-rpt-path]");
     if (!el || !inner.contains(el)) return;
-    debounceIssPreview(false);
+    issSyncPreviewCellToContext_(el);
   });
 }
 
