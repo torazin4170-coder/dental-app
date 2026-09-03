@@ -9462,6 +9462,8 @@ function rptRichMultilineToMarkers_(el) {
         walkEm(ch, "《赤》", "《/赤》");
       } else if (ch.classList && ch.classList.contains("fax-em-hl")) {
         walkEm(ch, "《黄》", "《/黄》");
+      } else if (ch.classList && ch.classList.contains("fax-em-box-black")) {
+        walkEm(ch, "【黒枠】", "【/黒枠】");
       } else if (ch.classList && ch.classList.contains("fax-em-box")) {
         walkEm(ch, "【枠】", "【/枠】");
       } else if (tag === "DIV" || tag === "P") {
@@ -9731,6 +9733,7 @@ function faxHtmlToMarkers_(html) {
   let h = String(html || "");
   h = h.replace(/<span[^>]*\bfax-em-red\b[^>]*>([\s\S]*?)<\/span>/gi, "《赤》$1《/赤》");
   h = h.replace(/<span[^>]*\bfax-em-hl\b[^>]*>([\s\S]*?)<\/span>/gi, "《黄》$1《/黄》");
+  h = h.replace(/<span[^>]*\bfax-em-box-black\b[^>]*>([\s\S]*?)<\/span>/gi, "【黒枠】$1【/黒枠】");
   h = h.replace(/<span[^>]*\bfax-em-box\b[^>]*>([\s\S]*?)<\/span>/gi, "【枠】$1【/枠】");
   h = h.replace(/<br\s*\/?>/gi, "\n");
   h = h.replace(/<\/div>\s*<div\b[^>]*>/gi, "\n");
@@ -9778,6 +9781,7 @@ function faxMarkersToHtml_(raw) {
   t = t.replace(/\n/g, "<br>");
   t = t.replace(/《赤》([\s\S]*?)《\/赤》/g, '<span class="fax-em-red">$1</span>');
   t = t.replace(/《黄》([\s\S]*?)《\/黄》/g, '<span class="fax-em-hl">$1</span>');
+  t = t.replace(/【黒枠】([\s\S]*?)【\/黒枠】/g, '<span class="fax-em-box-black">$1</span>');
   t = t.replace(/【枠】([\s\S]*?)【\/枠】/g, '<span class="fax-em-box">$1</span>');
   return t;
 }
@@ -9796,6 +9800,7 @@ function faxEmSpanClass_(kind) {
   if (kind === "red") return "fax-em-red";
   if (kind === "hl") return "fax-em-hl";
   if (kind === "box") return "fax-em-box";
+  if (kind === "boxBlack") return "fax-em-box-black";
   return "";
 }
 
@@ -9803,7 +9808,8 @@ function faxEmMarkers_(kind) {
   const marks = {
     red: ["《赤》", "《/赤》"],
     hl: ["《黄》", "《/黄》"],
-    box: ["【枠】", "【/枠】"]
+    box: ["【枠】", "【/枠】"],
+    boxBlack: ["【黒枠】", "【/黒枠】"]
   };
   return marks[kind] || null;
 }
@@ -9881,7 +9887,7 @@ function rptEmClear_() {
     return;
   }
   let stored = faxHtmlToMarkers_(el.innerHTML);
-  stored = stored.replace(/《赤》|《\/赤》|《黄》|《\/黄》|【枠】|【\/枠】/g, "");
+  stored = stored.replace(/《赤》|《\/赤》|《黄》|《\/黄》|【黒枠】|【\/黒枠】|【枠】|【\/枠】/g, "");
   el.innerHTML = faxMarkersToHtml_(stored);
   const inner = rptEmActivePreviewInner_();
   rptEmPullActiveContext_(inner);
@@ -9951,6 +9957,13 @@ function rptPlainizePreviewHtml_(html) {
     s.style.background = "#fef08a";
     s.style.padding = "1px 3px";
     s.style.borderRadius = "2px";
+  });
+  wrap.querySelectorAll(".fax-em-box-black").forEach(s => {
+    s.style.display = "inline-block";
+    s.style.border = "2px solid #111";
+    s.style.padding = "2px 6px";
+    s.style.borderRadius = "4px";
+    s.style.margin = "2px 0";
   });
   wrap.querySelectorAll(".fax-em-box").forEach(s => {
     s.style.display = "inline-block";
@@ -12166,7 +12179,7 @@ function insertMonthCareReferencePhrase(raw) {
 
 function softenNotesForMonthCare_(raw) {
   let s = String(raw || "")
-    .replace(/《赤》|《\/赤》|《黄》|《\/黄》|【枠】|【\/枠】/g, "")
+    .replace(/《赤》|《\/赤》|《黄》|《\/黄》|【黒枠】|【\/黒枠】|【枠】|【\/枠】/g, "")
     .trim();
   if (!s) return "";
   s = s.replace(/\r\n/g, "\n").replace(/\n+/g, " ");
@@ -14566,6 +14579,7 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .fax-em-red { color: #dc2626 !important; font-weight: 800; }
 .fax-em-hl { background: #fef08a !important; padding: 0 2px; }
 .fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; line-height: 1.45; margin: 2px 0; }
+.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; line-height: 1.45; margin: 2px 0; }
 ${getRptPrintWhitespaceCss_()}
 `;
 }
@@ -15674,6 +15688,7 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .fax-em-red { color: #dc2626; font-weight: 800; }
 .fax-em-hl { background: #fef08a; padding: 1px 3px; }
 .fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
+.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; }
 ${getRptPrintWhitespaceCss_()}
 </style></head><body>${innerHtml}</body></html>`;
   const w = window.open("", "_blank");
@@ -18112,6 +18127,7 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .fax-em-red { color: #dc2626; font-weight: 800; }
 .fax-em-hl { background: #fef08a; padding: 1px 3px; }
 .fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
+.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; }
 ${getRptPrintWhitespaceCss_()}
 </style></head><body>${innerHtml}</body></html>`;
   const w = window.open("", "_blank");
@@ -19665,6 +19681,7 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .fax-em-red { color: #dc2626; font-weight: 800; }
 .fax-em-hl { background: #fef08a; padding: 1px 3px; }
 .fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
+.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; }
 ${getRptPrintWhitespaceCss_()}
 </style></head><body>${innerHtml}<script>${printLayoutJs}<\/script></body></html>`;
   const w = window.open("", "_blank");
