@@ -9431,6 +9431,54 @@ function rptMultilineHtmlToText_(el) {
   return s;
 }
 
+/** 複数行リッチ欄：DOM を走査して改行と《赤》等マーカーを保持 */
+function rptRichMultilineToMarkers_(el) {
+  if (!el) return "";
+  const out = [];
+  const pushText = t => {
+    if (t == null || t === "") return;
+    out.push(String(t).replace(/\u00a0/g, " "));
+  };
+  const pushNl = () => {
+    if (!out.length) return;
+    if (out[out.length - 1] !== "\n") out.push("\n");
+  };
+  const walkEm = (node, open, close) => {
+    out.push(open);
+    walk(node);
+    out.push(close);
+  };
+  function walk(node) {
+    node.childNodes.forEach(ch => {
+      if (ch.nodeType === Node.TEXT_NODE) {
+        pushText(ch.textContent);
+        return;
+      }
+      if (ch.nodeType !== Node.ELEMENT_NODE) return;
+      const tag = ch.tagName;
+      if (tag === "BR") {
+        pushNl();
+      } else if (ch.classList && ch.classList.contains("fax-em-red")) {
+        walkEm(ch, "《赤》", "《/赤》");
+      } else if (ch.classList && ch.classList.contains("fax-em-hl")) {
+        walkEm(ch, "《黄》", "《/黄》");
+      } else if (ch.classList && ch.classList.contains("fax-em-box")) {
+        walkEm(ch, "【枠】", "【/枠】");
+      } else if (tag === "DIV" || tag === "P") {
+        pushNl();
+        walk(ch);
+        pushNl();
+      } else {
+        walk(ch);
+      }
+    });
+  }
+  walk(el);
+  let s = out.join("");
+  s = s.replace(/\n{3,}$/, "\n\n");
+  return s;
+}
+
 /** 帳票プレビュー：タップ編集（data-rpt-path → コンテキストへ反映・印刷に使用） */
 function rptEdit_(path, text, opts) {
   opts = opts || {};
@@ -9462,14 +9510,16 @@ function rptSetPath_(obj, path, val) {
 /** プレビュー編集セル1件分の値を読む（改行・リッチ装飾対応） */
 function rptReadPreviewCellValue_(el) {
   if (!el) return "";
-  if (el.getAttribute("data-rpt-rich") === "1") {
+  if (el.classList.contains("rpt-edit-multiline")) {
     const html = el.innerHTML || "";
-    if (el.classList.contains("rpt-edit-multiline") && !/<span[^>]*\bfax-em-/i.test(html)) {
-      return rptMultilineHtmlToText_(el);
+    if (el.getAttribute("data-rpt-rich") === "1" && /<span[^>]*\bfax-em-/i.test(html)) {
+      return rptRichMultilineToMarkers_(el);
     }
-    return faxHtmlToMarkers_(html);
+    return rptMultilineHtmlToText_(el);
   }
-  if (el.classList.contains("rpt-edit-multiline")) return rptMultilineHtmlToText_(el);
+  if (el.getAttribute("data-rpt-rich") === "1") {
+    return faxHtmlToMarkers_(el.innerHTML || "");
+  }
   return String(el.innerText != null ? el.innerText : el.textContent || "").trim();
 }
 
@@ -9682,6 +9732,13 @@ function faxHtmlToMarkers_(html) {
   h = h.replace(/<span[^>]*\bfax-em-red\b[^>]*>([\s\S]*?)<\/span>/gi, "《赤》$1《/赤》");
   h = h.replace(/<span[^>]*\bfax-em-hl\b[^>]*>([\s\S]*?)<\/span>/gi, "《黄》$1《/黄》");
   h = h.replace(/<span[^>]*\bfax-em-box\b[^>]*>([\s\S]*?)<\/span>/gi, "【枠】$1【/枠】");
+  h = h.replace(/<br\s*\/?>/gi, "\n");
+  h = h.replace(/<\/div>\s*<div\b[^>]*>/gi, "\n");
+  h = h.replace(/<\/p>\s*<p\b[^>]*>/gi, "\n");
+  h = h.replace(/<div\b[^>]*>/gi, "");
+  h = h.replace(/<\/div>/gi, "\n");
+  h = h.replace(/<p\b[^>]*>/gi, "");
+  h = h.replace(/<\/p>/gi, "\n");
   const d = document.createElement("div");
   d.innerHTML = h;
   let s = d.innerText != null ? String(d.innerText) : String(d.textContent || "");
@@ -13882,9 +13939,20 @@ function psSyncPersonalSheetPreviewCellToContext_(el) {
 function psBindPreviewLiveSync_(host) {
   if (!host || host.dataset.psLiveSyncBound === "1") return;
   host.dataset.psLiveSyncBound = "1";
-  host.addEventListener("input", e => {
+  const syncFromEvent = e => {
     const el = e.target.closest("[data-rpt-path]");
-    if (el) psSyncPersonalSheetPreviewCellToContext_(el);
+    if (el && host.contains(el)) psSyncPersonalSheetPreviewCellToContext_(el);
+  };
+  host.addEventListener("input", syncFromEvent);
+  host.addEventListener("keyup", e => {
+    if (e.key === "Enter") syncFromEvent(e);
+  });
+  host.addEventListener("beforeinput", e => {
+    if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") {
+      const el = e.target.closest("[data-rpt-path]");
+      if (!el || !host.contains(el)) return;
+      requestAnimationFrame(() => psSyncPersonalSheetPreviewCellToContext_(el));
+    }
   });
 }
 
@@ -14007,7 +14075,7 @@ function psEnsureExtraComment_(idx) {
   psPullPersonalSheetEdits_();
   p._show_extra = true;
   if (!String(p.extra_comment || "").trim()) p.extra_comment = "";
-  psRefreshPreview_();
+  psRefreshPreview_({ skipPull: true });
   const host = document.getElementById("personalSheetPreviewInner");
   const el = host && host.querySelector(`[data-rpt-path="patients.${idx}.extra_comment"]`);
   if (el) {
