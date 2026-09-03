@@ -752,6 +752,14 @@ function formatTreatmentTextForReport_(text) {
     .join("、");
 }
 
+/** 行頭に「初診」ラベルを付けるとき、処置文字列から重複する「初診」を除く */
+function formatTreatmentTextForReportSansShoshin_(text) {
+  const s = formatTreatmentTextForReport_(text);
+  if (!s || s === "—" || s === "処置なし" || s === "処置記録なし") return s;
+  const parts = s.split(/[、,]/).map(p => p.trim()).filter(p => p && p !== "初診");
+  return parts.join("、");
+}
+
 function monthlyCareSnippetForCode_(code) {
   const n = normalizeTreatmentCodeForMatch_(code);
   return MONTHLY_CARE_TREAT_SNIPPETS[n] || MONTHLY_CARE_TREAT_SNIPPETS[code];
@@ -12579,7 +12587,9 @@ function buildClinicalMonthlyDraft_(data) {
       if (ta && tb) timePart = ` ${ta}–${tb}`;
       else if (ta) timePart = ` ${ta}–`;
       lines.push(`${md}${timePart}${showShoshin ? " 初診" : ""}`);
-      const tx = formatTreatmentTextForReport_((v.treatments || "").trim());
+      const tx = showShoshin
+        ? formatTreatmentTextForReportSansShoshin_((v.treatments || "").trim())
+        : formatTreatmentTextForReport_((v.treatments || "").trim());
       if (tx) lines.push(`処置：${tx}`);
       const nx = (v.notes || "").trim();
       if (nx) lines.push(nx);
@@ -13364,7 +13374,9 @@ function buildPersonalSheetPatientBodyFromVisits_(p) {
     let timePart = "";
     if (ta && tb) timePart = ` ${ta}-${tb}`;
     else if (ta) timePart = ` ${ta}-`;
-    const tx = formatTreatmentTextForReport_((v.treatments || "").trim());
+    const tx = showShoshin
+      ? formatTreatmentTextForReportSansShoshin_((v.treatments || "").trim())
+      : formatTreatmentTextForReport_((v.treatments || "").trim());
     const head = `${md}${timePart}${showShoshin ? " 初診" : ""}`.trim();
     if (head || tx) lines.push(`${head}${tx ? `  ${tx}` : ""}`.trim());
     const nx = notesForPersonalSheetBody_(v.notes);
