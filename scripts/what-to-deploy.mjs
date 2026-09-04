@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * 変更内容から「何をデプロイすべきか」を表示する。
+ * 変更内容から「何をデプロイすべきか」と「推奨 smoke」を表示する。
  * 用法: node scripts/what-to-deploy.mjs
  */
 import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { detectSmokeTargets, formatSmokeReport, runStaticGuards } from './regression-guards-lib.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -33,6 +34,16 @@ if (!files.length) {
   console.log('変更ファイルはありません（作業ツリーはクリーン）。')
   process.exit(0)
 }
+
+const diffParts = []
+for (const cmd of [
+  'diff HEAD -- gas-deploy visit-dental-app AppsScript-Main',
+  'diff --cached -- gas-deploy visit-dental-app AppsScript-Main',
+]) {
+  const d = git(cmd)
+  if (d) diffParts.push(d)
+}
+const diffText = diffParts.join('\n')
 
 const uiOnly = files.every(
   f => f.startsWith('gas-deploy/') || f.startsWith('visit-dental-app/'),
@@ -77,5 +88,32 @@ if (uiOnly && !mainGs) {
 }
 
 console.log('')
+console.log('━━ 回帰ガード ━━')
+console.log('')
+
+const guard = runStaticGuards(root)
+if (guard.errors.length) {
+  console.log('❌ 静的ガード失敗 — push 前に修正:')
+  guard.errors.forEach(e => console.log('  · ' + e))
+  console.log('')
+  console.log('   確認: node scripts/check-regression-guards.mjs')
+} else {
+  console.log('✅ 静的ガード OK')
+  if (guard.warnings.length) {
+    guard.warnings.forEach(w => console.log('  ⚠ ' + w))
+  }
+}
+
+const triggered = detectSmokeTargets(files, diffText)
+if (triggered.length) {
+  console.log('')
+  console.log('━━ 推奨 smoke（push 前） ━━')
+  console.log('')
+  formatSmokeReport(triggered).forEach(l => console.log(l))
+}
+
+console.log('')
+console.log('push 前: node scripts/check-regression-guards.mjs --diff')
+console.log('E2E:     cd visit-dental-app && npm run regression:e2e')
 console.log('接続確認: （Vercel URL）/api/gas-check')
 console.log('')

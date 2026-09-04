@@ -1,6 +1,6 @@
 ---
 name: dental-app-adjustments
-description: 訪問歯科カルテ（gas-deploy / visit-dental-app）のUI・挙動調整依頼時に従う。gas-deploy 変更後はユーザーの明示がなくても git commit と github main への push まで行い Vercel 反映まで完了させる。
+description: 訪問歯科カルテ（gas-deploy / visit-dental-app）のUI・挙動調整依頼時に従う。gas-deploy 変更後は回帰ガード通過後に git commit と github main への push まで行い Vercel 反映まで完了させる。
 ---
 
 # 訪問歯科カルテ — アプリ調整ワークフlow
@@ -24,10 +24,15 @@ description: 訪問歯科カルテ（gas-deploy / visit-dental-app）のUI・挙
 
 UI 変更を入れたら、ユーザーが「コミットして」と言わなくても次まで実施する:
 
-1. `gas-deploy/` の変更のみをステージ（無関係ファイルは含めない）
-2. 日本語で簡潔な commit message（why 中心）
-3. `git push github main`
-4. ユーザーに **コミット hash** と「1〜3分後に Ctrl+Shift+R」と伝える
+1. **回帰ガード（push 前必須）** — `.cursor/skills/dental-app-regression/SKILL.md` に従う:
+   ```bash
+   node scripts/check-regression-guards.mjs --diff
+   ```
+   失敗時は push しない。smoke-matrix の該当行を ✅/❌/⏭ で報告。
+2. `gas-deploy/`（と e2e 変更時は `visit-dental-app/`）のみをステージ
+3. 日本語で簡潔な commit message（why 中心）
+4. `git push github main`
+5. ユーザーに **コミット hash**、「1〜3分後に Ctrl+Shift+R」、大変更時は [user-smoke-5min.md](dental-app-regression/references/user-smoke-5min.md) を伝える
 
 ## 注意
 
@@ -37,5 +42,6 @@ UI 変更を入れたら、ユーザーが「コミットして」と言わな�
 
 ## 参照
 
+- 回帰 smoke: `.cursor/skills/dental-app-regression/SKILL.md`
 - 詳細デプロイ規則: `.cursor/rules/visit-dental-deploy.md`
 - 本番 URL: https://dental-app-liart-five.vercel.app
