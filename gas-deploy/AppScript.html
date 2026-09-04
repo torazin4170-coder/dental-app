@@ -19418,6 +19418,10 @@ function formatIssNotesDisplayHtml_(raw) {
   return html;
 }
 
+function issRichStaticHtml_(raw, cls) {
+  return `<div class="${cls} rpt-print-preserve-ws">${formatIssNotesDisplayHtml_(raw)}</div>`;
+}
+
 function buildShareSheetPrintHtmlFromContext_(ctx, opts) {
   const forPrint = !!(opts && opts.forPrint);
   ctx = ctx || lastIssPreviewContext || issCollectFormToContext_();
@@ -19442,8 +19446,10 @@ function buildShareSheetPrintHtmlFromContext_(ctx, opts) {
       bodyRows += `<button type="button" class="iss-row-photo" data-iss-row-idx="${i}">📷 写真</button>`;
       bodyRows += `</div></td></tr>`;
     }
-    bodyRows += `<tr data-iss-data-row="1"><td class="iss-td-room">${rptEdit_(`rows.${i}.room`, r.room)}</td><td class="iss-td-name">${rptEdit_(`rows.${i}.name`, r.name)}</td><td class="iss-td-notes">`;
-    bodyRows += rptEditRich_(`rows.${i}.notes`, r.notes, { block: true, tag: "div", cls: "iss-notes-rich", multiline: true });
+    bodyRows += `<tr data-iss-data-row="1"><td class="iss-td-room">${forPrint ? escHtml(r.room || "") : rptEdit_(`rows.${i}.room`, r.room)}</td><td class="iss-td-name">${forPrint ? escHtml(r.name || "") : rptEdit_(`rows.${i}.name`, r.name)}</td><td class="iss-td-notes">`;
+    bodyRows += forPrint
+      ? issRichStaticHtml_(r.notes, "iss-notes-rich")
+      : rptEditRich_(`rows.${i}.notes`, r.notes, { block: true, tag: "div", cls: "iss-notes-rich", multiline: true });
     bodyRows += `<div class="iss-photos-wrap">${renderIssPhotosHtml_(r.photos || [], "row", i, forPrint)}</div>`;
     bodyRows += `</td></tr>`;
   });
@@ -19456,7 +19462,9 @@ function buildShareSheetPrintHtmlFromContext_(ctx, opts) {
   if (!forPrint || footer || footerPhotos.length) {
     footerRow = `<tr class="iss-footer-row"><td colspan="3" class="iss-td-footer">`;
     if (!forPrint) footerRow += `<div class="iss-footer-toolbar"><button type="button" class="iss-footer-photo">📷 写真</button></div>`;
-    footerRow += rptEditRich_("footer", footer, { block: true, tag: "div", cls: "iss-footer-rich", multiline: true });
+    footerRow += forPrint
+      ? issRichStaticHtml_(footer, "iss-footer-rich")
+      : rptEditRich_("footer", footer, { block: true, tag: "div", cls: "iss-footer-rich", multiline: true });
     footerRow += `<div class="iss-photos-wrap">${renderIssPhotosHtml_(ctx.footer_photos || [], "footer", -1, forPrint)}</div>`;
     footerRow += `</td></tr>`;
   }
@@ -19466,7 +19474,9 @@ function buildShareSheetPrintHtmlFromContext_(ctx, opts) {
   let h = `<div class="iss-doc">`;
   h += `<div class="iss-header-block"><div class="iss-main-title">情報共有シート</div>`;
   if (facLine) h += `<div class="iss-fac-line">${escHtml(facLine)}</div>`;
-  h += `${rptEdit_("entryLine", entryLine, { block: true, tag: "div", cls: "iss-entry-date" })}</div>`;
+  h += `${forPrint
+    ? `<div class="iss-entry-date">${escHtml(entryLine)}</div>`
+    : rptEdit_("entryLine", entryLine, { block: true, tag: "div", cls: "iss-entry-date" })}</div>`;
   h += `<div class="iss-cats iss-pill-row-preview">${catsHtml}</div>`;
   h += `<div class="iss-staff-line iss-pill-row-preview">${staffItems.join("")}</div>`;
   h += `<table class="iss-table"><thead><tr><th class="iss-td-room">部屋</th><th class="iss-td-name">患者氏名</th><th>内容</th></tr></thead><tbody>`;
@@ -19475,7 +19485,9 @@ function buildShareSheetPrintHtmlFromContext_(ctx, opts) {
   h += `</tbody></table>`;
   const fa = issEnsureFreeArea_(ctx);
   h += `<div class="iss-free-block">`;
-  h += rptEditRich_("free_area.text", fa.text || "", { block: true, tag: "div", cls: "iss-free-text-rich", multiline: true });
+  h += forPrint
+    ? issRichStaticHtml_(fa.text || "", "iss-free-text-rich")
+    : rptEditRich_("free_area.text", fa.text || "", { block: true, tag: "div", cls: "iss-free-text-rich", multiline: true });
   h += renderIssPhotosHtml_(fa.photos, "free_area", -1, forPrint);
   h += `</div>`;
   h += `</div>`;
@@ -19552,20 +19564,20 @@ function issSyncPreviewEditsToForm_() {
     if (room) block.querySelector('[data-f="room"]').value = room.innerText.trim();
     if (name) block.querySelector('[data-f="name"]').value = name.innerText.trim();
     if (notes) {
-      const val = notes.getAttribute("data-rpt-rich") === "1" ? faxHtmlToMarkers_(notes.innerHTML) : notes.innerText.trim();
+      const val = notes.getAttribute("data-rpt-rich") === "1" ? rptReadPreviewCellValue_(notes) : notes.innerText.trim();
       setIssRowNotesToBlock_(block, val);
     }
   });
   const footEl = inner.querySelector('[data-rpt-path="footer"]');
   const ft = document.getElementById("issFooter");
   if (footEl && ft) {
-    const fv = footEl.getAttribute("data-rpt-rich") === "1" ? faxHtmlToMarkers_(footEl.innerHTML) : footEl.innerText.trim();
+    const fv = footEl.getAttribute("data-rpt-rich") === "1" ? rptReadPreviewCellValue_(footEl) : footEl.innerText.trim();
     ft.value = fv;
   }
   const freePreview = inner.querySelector('[data-rpt-path="free_area.text"]');
   const freeEd = document.getElementById("issFreeTextEd");
   if (freePreview && freeEd) {
-    const fv = freePreview.getAttribute("data-rpt-rich") === "1" ? faxHtmlToMarkers_(freePreview.innerHTML) : freePreview.innerText.trim();
+    const fv = freePreview.getAttribute("data-rpt-rich") === "1" ? rptReadPreviewCellValue_(freePreview) : freePreview.innerText.trim();
     freeEd.innerHTML = faxMarkersToHtml_(fv);
   }
 }
@@ -19733,7 +19745,7 @@ function closeShareSheetModal() {
 
 function issPrint() {
   issPullPreviewEditsToContext_();
-  issCollectFormToContext_();
+  issMergeIssFormMetaToContext_();
   const innerHtml = rptPlainHtmlForFax_(buildShareSheetPrintHtmlFromContext_(lastIssPreviewContext, { forPrint: true }));
   const fac = lastIssPreviewContext && lastIssPreviewContext.facility_label ? lastIssPreviewContext.facility_label : "";
   const title = fac ? `情報共有シート_${fac}` : "情報共有シート";
@@ -19770,8 +19782,8 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .iss-doc .iss-red { color: #dc2626; font-weight: 800; }
 .fax-em-red { color: #dc2626; font-weight: 800; }
 .fax-em-hl { background: #fef08a; padding: 1px 3px; }
-.fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
-.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; }
+.fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 ${getRptPrintWhitespaceCss_()}
 </style></head><body>${innerHtml}<script>${printLayoutJs}<\/script></body></html>`;
   const w = window.open("", "_blank");
