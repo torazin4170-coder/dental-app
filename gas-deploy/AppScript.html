@@ -8515,17 +8515,15 @@ let photoCatSelectInFlight_ = false;
 /** 複数枚選択時のカテゴリ選択キュー */
 let photoUploadQueue_ = [];
 
-/** Drive 写真を <img> で出す用（PRIVATE + file.getUrl ではブラウザが読めないため file_id から埋め込みURLを組む） */
+/** Drive 写真を <img> で出す用（PRIVATE ファイルは driveUrl＝GAS ?driveimg= 経由） */
 function patientPhotoDisplaySrc_(p) {
   if (!p) return "";
   if (p.dataUrl) return p.dataUrl;
+  const u = p.driveUrl ? String(p.driveUrl).trim() : "";
+  if (u) return u;
   const fid = p.id && !String(p.id).startsWith("tmp_") ? String(p.id) : "";
   if (fid) return "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(fid);
-  const u = p.driveUrl ? String(p.driveUrl) : "";
-  if (u.indexOf("uc?export=view") !== -1) return u;
-  const m = u.match(/\/file\/d\/([^/]+)/);
-  if (m) return "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(m[1]);
-  return u;
+  return "";
 }
 
 function isTempPhotoId_(id) {
@@ -8591,7 +8589,7 @@ function loadPhotos(patientId) {
   }
   const seq = (loadPhotosSeqByPid_[pid] || 0) + 1;
   loadPhotosSeqByPid_[pid] = seq;
-  gasCallPatientRead_("getPhotos", pid).then(json => {
+  gasCallPatientRead_("getPhotos", pid, true).then(json => {
     if (loadPhotosSeqByPid_[pid] !== seq) return; // 古い応答は捨てる
     const photos = JSON.parse(json);
     const inflight = localPhotos.filter(l =>
