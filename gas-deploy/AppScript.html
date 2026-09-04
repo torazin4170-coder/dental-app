@@ -8589,7 +8589,7 @@ function loadPhotos(patientId) {
   }
   const seq = (loadPhotosSeqByPid_[pid] || 0) + 1;
   loadPhotosSeqByPid_[pid] = seq;
-  gasCallPatientRead_("getPhotos", pid, true).then(json => {
+  gasCallPatientRead_("getPhotos", pid).then(json => {
     if (loadPhotosSeqByPid_[pid] !== seq) return; // 古い応答は捨てる
     const photos = JSON.parse(json);
     const inflight = localPhotos.filter(l =>
@@ -9690,6 +9690,10 @@ function rptScheduleEmphasisBarCheck_() {
     }
     const ae = document.activeElement;
     if (ae && (ae.closest("#faxEmphasisBar") || ae.closest("#svListEmphasisBar") || ae.closest("#issEmphasisBar") || ae.closest("#personalSheetEmphasisBar") || ae.closest("#recordNotesEmBar") || ae.closest("[data-rpt-rich='1']"))) return;
+    const keepCell = rptEmLastRichCell_;
+    if (keepCell && keepCell.isConnected && bar.id === "issEmphasisBar") {
+      if (keepCell.closest("#issRows, #issFreeTextEd, #issPreviewInner")) return;
+    }
     bar.classList.remove("show");
     bar.setAttribute("aria-hidden", "true");
   }, 80);
@@ -9736,11 +9740,18 @@ function rptBindEmphasisBarButtons_() {
     if (!bar || bar.dataset.rptEmBtnBound === "1") return;
     bar.dataset.rptEmBtnBound = "1";
     bar.querySelectorAll(".fax-em-btn").forEach(btn => {
-      const down = e => {
+      btn.addEventListener("mousedown", e => {
         e.preventDefault();
-      };
-      btn.addEventListener("mousedown", down);
-      btn.addEventListener("touchstart", down, { passive: false });
+        if (rptEmLastRichCell_) rptSaveSelectionFromCell_(rptEmLastRichCell_);
+        const inner = rptEmActivePreviewInner_();
+        if (inner && lastIssPreviewContext && rptEmLastRichCell_ && inner.contains(rptEmLastRichCell_)) {
+          rptFlushFocusedPreviewEdits_(inner, lastIssPreviewContext);
+        }
+      });
+      btn.addEventListener("touchstart", e => {
+        e.preventDefault();
+        if (rptEmLastRichCell_) rptSaveSelectionFromCell_(rptEmLastRichCell_);
+      }, { passive: false });
       btn.addEventListener("click", () => {
         const k = btn.getAttribute("data-fax-em");
         if (k === "clear") rptEmClear_();
@@ -9877,6 +9888,19 @@ function faxApplyEmphasisByMarkers_(el, kind, selectedText) {
   return true;
 }
 
+function rptEmSyncIssAfterEdit_(el) {
+  if (!el || !document.getElementById("shareSheetModal")?.classList.contains("show")) return;
+  if (el.closest("#issPreviewInner")) {
+    issPullPreviewEditsToContext_();
+    issSyncPreviewEditsToForm_();
+    return;
+  }
+  if (el.closest("#issRows") || el.id === "issFreeTextEd") {
+    issCollectFormToContext_();
+    issRefreshPreview(true);
+  }
+}
+
 function rptEmApply_(kind) {
   const el = rptEmLastRichCell_;
   if (!el) {
@@ -9896,8 +9920,12 @@ function rptEmApply_(kind) {
     showToast("強調できませんでした。欄をタップし、文字を選び直してからもう一度押してください");
     return;
   }
-  const inner = rptEmActivePreviewInner_();
-  rptEmPullActiveContext_(inner);
+  const issOpen = document.getElementById("shareSheetModal")?.classList.contains("show");
+  if (issOpen && (el.closest("#issPreviewInner") || el.closest("#issRows") || el.id === "issFreeTextEd")) {
+    rptEmSyncIssAfterEdit_(el);
+  } else {
+    rptEmPullActiveContext_(rptEmActivePreviewInner_());
+  }
   rptSaveSelectionFromCell_(el);
   showToast(selected ? "選択した文字に強調を付けました" : "欄全体に強調を付けました");
 }
@@ -9908,11 +9936,15 @@ function rptEmClear_() {
     showToast("強調したい欄をタップしてください");
     return;
   }
-  let stored = faxHtmlToMarkers_(el.innerHTML);
+  let stored = issRichFieldToMarkers_(el);
   stored = stored.replace(/《赤》|《\/赤》|《黄》|《\/黄》|【黒枠】|【\/黒枠】|【枠】|【\/枠】/g, "");
   el.innerHTML = faxMarkersToHtml_(stored);
-  const inner = rptEmActivePreviewInner_();
-  rptEmPullActiveContext_(inner);
+  const issOpen = document.getElementById("shareSheetModal")?.classList.contains("show");
+  if (issOpen && (el.closest("#issPreviewInner") || el.closest("#issRows") || el.id === "issFreeTextEd")) {
+    rptEmSyncIssAfterEdit_(el);
+  } else {
+    rptEmPullActiveContext_(rptEmActivePreviewInner_());
+  }
   rptEmSavedSelText_ = "";
   rptEmSavedRange_ = null;
   showToast("強調を解除しました");
@@ -18657,11 +18689,20 @@ function issRowPatientIds_() {
   return ids;
 }
 
+function issRichFieldToMarkers_(el) {
+  if (!el) return "";
+  if (el.getAttribute("data-rpt-rich") !== "1") return el.value != null ? String(el.value) : "";
+  const html = el.innerHTML || "";
+  if (/<span[^>]*\bfax-em-/i.test(html) || el.querySelector("div, br, p")) {
+    return rptRichMultilineToMarkers_(el);
+  }
+  return faxHtmlToMarkers_(html);
+}
+
 function getIssRowNotesFromBlock_(block) {
   const el = block && block.querySelector('[data-f="notes"]');
   if (!el) return "";
-  if (el.getAttribute("data-rpt-rich") === "1") return faxHtmlToMarkers_(el.innerHTML);
-  return el.value != null ? String(el.value) : "";
+  return issRichFieldToMarkers_(el);
 }
 
 function setIssRowNotesToBlock_(block, raw) {
@@ -18802,7 +18843,7 @@ function issCollectFormToContext_() {
       const prev = lastIssPreviewContext && lastIssPreviewContext.free_area;
       const fa = issEnsureFreeArea_({ free_area: prev || {} });
       const freeEd = document.getElementById("issFreeTextEd");
-      if (freeEd) fa.text = faxHtmlToMarkers_(freeEd.innerHTML);
+      if (freeEd) fa.text = issRichFieldToMarkers_(freeEd);
       return { text: fa.text, photos: Array.isArray(fa.photos) ? fa.photos.slice() : [] };
     })()
   };
@@ -19529,6 +19570,21 @@ function issSyncPreviewEditsToForm_() {
   }
 }
 
+function issMergeIssFormMetaToContext_() {
+  if (!lastIssPreviewContext) return;
+  lastIssPreviewContext.facility_id = getIssFacilityId_();
+  lastIssPreviewContext.facility_label = getIssFacilityLabel_();
+  lastIssPreviewContext.entry_date = document.getElementById("issEntryDate")?.value || "";
+  lastIssPreviewContext.categories = getSelectedIssCategories_();
+  const staff = [];
+  document.querySelectorAll("#issStaffChecks .iss-staff-wrap").forEach(lab => {
+    const cb = lab.querySelector("input");
+    const sp = lab.querySelector("span");
+    staff.push({ name: sp ? sp.textContent : "", checked: !!(cb && cb.checked) });
+  });
+  lastIssPreviewContext.staff = staff;
+}
+
 function issRefreshPreview(fromFormOnly) {
   const inner = document.getElementById("issPreviewInner");
   if (!inner) return;
@@ -19536,10 +19592,18 @@ function issRefreshPreview(fromFormOnly) {
   const editingPreview = ae && inner.contains(ae) && ae.closest("[data-rpt-path]");
   const editingIssForm = ae && ae.closest("#issRows, #issFooter, #issFreeTextEd, .iss-staff-wrap, #issCatRadios, #issEntryDate");
   if (lastIssPreviewContext) {
-    const shouldPullPreview = !fromFormOnly || editingPreview || !editingIssForm;
-    if (shouldPullPreview) issPullPreviewEditsToContext_();
+    if (editingPreview) {
+      issPullPreviewEditsToContext_();
+      issMergeIssFormMetaToContext_();
+    } else if (!fromFormOnly || !editingIssForm) {
+      issPullPreviewEditsToContext_();
+      issCollectFormToContext_();
+    } else {
+      issCollectFormToContext_();
+    }
+  } else {
+    issCollectFormToContext_();
   }
-  issCollectFormToContext_();
   inner.innerHTML = buildShareSheetPrintHtmlFromContext_(lastIssPreviewContext);
   psInitPhotoCropModal_();
   issBindPhotoManipulators_(inner);
