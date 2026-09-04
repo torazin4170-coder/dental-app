@@ -12,7 +12,19 @@
 | **原因** | ① `.iss-doc` に強調CSSが無く DOM 上は付いているが見えない ② `innerHTML` 変更は `input` を発火せず左→プレビュー同期漏れ ③ `issRefreshPreview` がプレビュー編集中にフォーム内容で上書き ④ 強調バーがフォーム上部にありスクロールで見えなくなる |
 | **修正** | `fbe483e` — iss-doc CSS、rptEmSyncIssAfterEdit_、issMergeIssFormMetaToContext_、sticky バー |
 | **再発条件** | `rptEm*` / `issRefreshPreview` / `issCollectFormToContext_` / AppBody の `.iss-doc` CSS を変更したとき |
-| **必須確認** | ISS 左（内容・メモ）＋中央プレビュー、4強調＋解除、改行跨ぎ1ケース |
+| **必須確認** | ISS 左（内容・メモ）＋中央プレビュー、4強調＋解除、改行跨ぎ1ケース、**印刷プレビューでも黒枠** |
+
+---
+
+## 2026-09 情報共有シート — 印刷で黒枠が消える
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | 編集プレビューでは黒枠が付くが、🖨印刷プレビューでは枠が消える |
+| **原因** | `issPrint` がプレビュー取込後に `issCollectFormToContext_` で左フォームに上書き。印刷HTMLも編集用経路でマーカーが落ちうる |
+| **修正** | `38c6815` — pull＋メタのみ、forPrint は静的強調HTML |
+| **再発条件** | `issPrint` / `buildShareSheetPrintHtmlFromContext_` forPrint 変更時 |
+| **必須確認** | プレビューで黒枠 → 印刷プレビューでも同じ枠 |
 
 ---
 
