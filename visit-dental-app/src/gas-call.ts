@@ -24,9 +24,7 @@ function resolveRpcTimeoutMs(funcName: string): number {
   if (/^save(ReportPreviewDraft|GeneratedDocument)/.test(funcName)) return 120_000
   if (/^loadReportPreviewDraft/.test(funcName)) return 90_000
   if (/^(save|update|add|delete|clear|append|generate)/i.test(funcName)) return 120_000
-  if (/^(getTreatmentsByPatient|getMedicalInfo|getTeethData|getTeethDataHistory|getPhotos|getInitData)/.test(funcName)) {
-    return 90_000
-  }
+  if (/^get/i.test(funcName)) return 120_000
   return 45_000
 }
 
@@ -66,16 +64,23 @@ export function installGasCallFetch(): void {
   window.__RPC_BACKEND__ = backend
 
   window.__gasCallFetch = async (funcName: string, ...args: unknown[]) => {
-    const controller = new AbortController()
     const timeoutMs = resolveRpcTimeoutMs(funcName)
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-    try {
+    const runOnce = async () => {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       try {
         return await gasRpcOnce(rpcPath, funcName, args, controller.signal)
+      } finally {
+        clearTimeout(timeoutId)
+      }
+    }
+    try {
+      try {
+        return await runOnce()
       } catch (first) {
         if (!shouldAutoRetryRpc(funcName)) throw first
         await new Promise(r => setTimeout(r, 2000))
-        return await gasRpcOnce(rpcPath, funcName, args, controller.signal)
+        return await runOnce()
       }
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
@@ -87,7 +92,7 @@ export function installGasCallFetch(): void {
       }
       throw e
     } finally {
-      clearTimeout(timeoutId)
+      /* timeout cleared in runOnce */
     }
   }
 }

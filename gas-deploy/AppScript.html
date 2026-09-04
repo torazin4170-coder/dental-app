@@ -2544,6 +2544,8 @@ function showInitError_(err) {
 /** 起動キャッシュ（前回成功分を先に表示し、待たされ感を減らす） */
 const INIT_CACHE_KEY_ = "vd_init_cache_v1";
 const INIT_CACHE_MAX_AGE_MS_ = 7 * 24 * 60 * 60 * 1000;
+const INIT_SYNC_TIMEOUT_MS_ = 120000;
+let initSyncTimedOut_ = false;
 
 function hideFullLoading_() {
   const ld = document.getElementById("loading");
@@ -2693,11 +2695,13 @@ function init() {
   }
 
   let initSettled = false;
+  initSyncTimedOut_ = false;
   const initTimeoutId = setTimeout(() => {
     if (initSettled) return;
+    initSyncTimedOut_ = true;
     if (paintedFromCache) {
-      setDataSyncBanner_("");
-      showToast("同期がタイムアウトしました。前回のデータを表示中です");
+      setDataSyncBanner_("同期に時間がかかっています…");
+      showToast("同期に時間がかかっています。完了までお待ちください…");
       return;
     }
     showInitError_(new Error(
@@ -2706,7 +2710,7 @@ function init() {
       + "・Vercel の GAS_WEBAPP_URL が GAS ウェブアプリの /exec URL か確認\n"
       + "・GAS のアクセスが「全員」、Main.gs に doPost があるか確認"
     ));
-  }, 45000);
+  }, INIT_SYNC_TIMEOUT_MS_);
 
   fetchInitData_(initYm).then(([facsJson, patientsJson, recsJson, settingsJson]) => {
     initSettled = true;
@@ -2722,6 +2726,7 @@ function init() {
       applyBootData_(facs, patients, recs, settings, { preserveFilters: paintedFromCache, mergeLocalRecords: paintedFromCache });
       writeInitCache_({ ym: initYm, facilities: facs, patients, records: recs, settings: settings || {} });
       setDataSyncBanner_("");
+      if (initSyncTimedOut_) showToast("最新データの同期が完了しました");
       if (typeof refreshAppHealthPanel_ === "function") refreshAppHealthPanel_();
     } catch (e) {
       if (paintedFromCache) {
@@ -2839,27 +2844,14 @@ function verifyTreatmentSaveAfterTimeout_(ctx) {
   }).catch(() => ({ ok: false }));
 }
 
-/** 起動データ取得（新API優先・旧GASでは4分割にフォールバック） */
+/** 起動データ取得（4 API を並列取得＝getInitData より高速） */
 function fetchInitData_(initYm) {
-  return gasCall("getInitData", initYm)
-    .then(json => {
-      const o = JSON.parse(json);
-      return [
-        JSON.stringify(o.facilities || []),
-        JSON.stringify(o.patients || []),
-        JSON.stringify(o.records || []),
-        JSON.stringify(o.settings || {}),
-      ];
-    })
-    .catch(err => {
-      if (!isUnknownRpcError_(err)) throw err;
-      return Promise.all([
-        gasCall("getFacilities"),
-        gasCall("getPatients", null),
-        gasCall("getMonthlyRecords", initYm),
-        gasCall("getSettings").catch(() => null),
-      ]);
-    });
+  return Promise.all([
+    gasCallPatientRead_("getFacilities"),
+    gasCallPatientRead_("getPatients", null),
+    gasCallPatientRead_("getMonthlyRecords", initYm),
+    gasCall("getSettings").catch(() => null),
+  ]);
 }
 
 /** 診療記録＋歯式＋患者メモ（新API優先・旧GASでは従来の3回にフォールバック） */

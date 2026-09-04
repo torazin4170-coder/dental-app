@@ -1087,16 +1087,7 @@ function getInitData(ymOpt) {
     ? patRows.slice(1).map(function (r) { return rowToObj(patHeader, r); })
     : [];
 
-  var trSh = getSheet("treatments");
-  ensureTreatmentTimeColumns_(trSh);
-  var trRows = trSh.getDataRange().getValues();
-  var trHeader = trRows.length ? trRows[0] : [];
-  var records = trRows.length > 1
-    ? trRows.slice(1)
-      .map(function (r) { return rowToObj(trHeader, r); })
-      .filter(function (t) { return visitDateYM_(t.visit_date) === ym; })
-      .map(normalizeTreatmentTimesForClient_)
-    : [];
+  var records = readTreatmentBootRecords_(ym);
 
   var setSh = getSheet("settings");
   var setRows = setSh.getDataRange().getValues();
@@ -1191,24 +1182,45 @@ function visitDateYM_(vd) {
  * 指定月の診療記録を返す
  * @param {string} [ymOpt] "yyyy-MM"（省略時は JST の今月）。ymOpt が "*" または "__all__" のときは全件
  */
-function getMonthlyRecords(ymOpt) {
-  const sh = getSheet("treatments");
+/** 起動・月次一覧用：exam_data を除く軽量行 */
+var TREATMENT_BOOT_COLS_ = [
+  "id", "patient_id", "fac_id", "visit_date", "treatments", "notes",
+  "next_date", "next_content", "doctor", "visit_time_start", "visit_time_end", "notes_tones"
+];
+
+function readTreatmentBootRecords_(ymOpt) {
+  var sh = getSheet("treatments");
   ensureTreatmentTimeColumns_(sh);
-  const rows = sh.getDataRange().getValues();
-  const header = rows[0];
-  const sOpt = ymOpt != null ? String(ymOpt).trim() : "";
-  const wantAll = sOpt === "*" || sOpt === "__all__" || sOpt.toLowerCase() === "all";
-  const now = new Date();
-  const ymDefault = Utilities.formatDate(now, "JST", "yyyy-MM-dd").slice(0, 7);
-  const ym = wantAll
+  var rows = sh.getDataRange().getValues();
+  if (rows.length < 2) return [];
+  var header = rows[0];
+  var colIdx = {};
+  header.forEach(function (h, i) {
+    var k = String(h || "").trim();
+    if (k) colIdx[k] = i;
+  });
+  var sOpt = ymOpt != null ? String(ymOpt).trim() : "";
+  var wantAll = sOpt === "*" || sOpt === "__all__" || sOpt.toLowerCase() === "all";
+  var now = new Date();
+  var ymDefault = Utilities.formatDate(now, "JST", "yyyy-MM-dd").slice(0, 7);
+  var ym = wantAll
     ? null
     : (sOpt && /^\d{4}-\d{2}$/.test(sOpt) ? sOpt : ymDefault);
-  const mapped = rows.slice(1).map(function (r) { return rowToObj(header, r); });
-  const filtered = wantAll
-    ? mapped
-    : mapped.filter(function (t) { return visitDateYM_(t.visit_date) === ym; });
-  const result = filtered.map(normalizeTreatmentTimesForClient_);
-  return JSON.stringify(result);
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    var obj = {};
+    TREATMENT_BOOT_COLS_.forEach(function (k) {
+      if (colIdx[k] != null) obj[k] = r[colIdx[k]];
+    });
+    if (!wantAll && visitDateYM_(obj.visit_date) !== ym) continue;
+    out.push(normalizeTreatmentTimesForClient_(obj));
+  }
+  return out;
+}
+
+function getMonthlyRecords(ymOpt) {
+  return JSON.stringify(readTreatmentBootRecords_(ymOpt));
 }
 
 /** 診療日＋開始時刻の重複判定用キー */
