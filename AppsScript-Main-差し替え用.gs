@@ -2004,10 +2004,12 @@ function deleteFacility(facilityId) {
 
 /** 患者の最新歯式データを返す（JSON文字列）*/
 function getTeethData(patientId) {
+  const pid = String(patientId || "").trim();
+  if (!pid) return "{}";
   const sh = getSheet("teeth_data");
   const rows = sh.getDataRange().getValues();
   for (let i = rows.length - 1; i >= 1; i--) {
-    if (rows[i][0] === patientId) return rows[i][2]; // col: patient_id, date, json
+    if (String(rows[i][0] || "").trim() === pid) return rows[i][2] != null ? String(rows[i][2]) : "{}";
   }
   return "{}";
 }
@@ -2448,11 +2450,12 @@ function getDashboardData() {
 // ─────────────────────────────────────────
 
 function getMedicalInfo(patientId) {
+  const pid = String(patientId || "").trim();
   const sh = getSheet("patient_medical");
   const rows = sh.getDataRange().getValues();
   const header = rows[0];
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === patientId) {
+    if (String(rows[i][0] || "").trim() === pid) {
       const obj = rowToObj(header, rows[i]);
       try { obj.conditions  = JSON.parse(obj.conditions  || "[]"); } catch(e){ obj.conditions  = []; }
       try { obj.medications = JSON.parse(obj.medications || "[]"); } catch(e){ obj.medications = []; }
@@ -2818,12 +2821,17 @@ function repairPhotoSharingForWebDisplay() {
  */
 var INLINE_PHOTO_MAX_BYTES = 2.5 * 1024 * 1024;
 
-function getPhotos(patientId) {
+/**
+ * 患者の写真一覧。既定ではメタデータのみ（Drive の base64 埋め込みは行わない＝高速）。
+ * 第2引数 includeInline が true のときだけ、小さい画像を inline_data_url で返す。
+ */
+function getPhotos(patientId, includeInline) {
   const sh = getSheet("photos");
   const rows = sh.getDataRange().getValues();
   if (rows.length <= 1) return JSON.stringify([]);
   const header = rows[0];
-  const pid = String(patientId);
+  const pid = String(patientId || "").trim();
+  const wantInline = includeInline === true || String(includeInline) === "true";
   const list = rows
     .slice(1)
     .map(function (r) {
@@ -2837,7 +2845,7 @@ function getPhotos(patientId) {
       return o;
     })
     .filter(function (r) {
-      return String(r.patient_id || r.patientId || "") === pid;
+      return String(r.patient_id || r.patientId || "").trim() === pid;
     })
     .reverse(); // 新しい順
 
@@ -2847,6 +2855,7 @@ function getPhotos(patientId) {
     fid = String(fid).trim();
     r.file_url = photoWebAppViewUrl_(fid);
     r.inline_data_url = "";
+    if (!wantInline) return;
     try {
       var file = DriveApp.getFileById(fid);
       var sz = file.getSize();

@@ -24,6 +24,9 @@ function resolveRpcTimeoutMs(funcName: string): number {
   if (/^save(ReportPreviewDraft|GeneratedDocument)/.test(funcName)) return 120_000
   if (/^loadReportPreviewDraft/.test(funcName)) return 90_000
   if (/^(save|update|add|delete|clear|append|generate)/i.test(funcName)) return 120_000
+  if (/^(getTreatmentsByPatient|getMedicalInfo|getTeethData|getTeethDataHistory|getPhotos|getInitData)/.test(funcName)) {
+    return 90_000
+  }
   return 45_000
 }
 

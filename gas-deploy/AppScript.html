@@ -2402,8 +2402,8 @@ function refreshExamHistoryTable_(pid) {
   }
   host.innerHTML = `<div style="text-align:center;padding:12px;color:var(--muted)">読み込み中…</div>`;
   Promise.all([
-    gasCall("getTreatmentsByPatient", pid),
-    gasCall("getTeethDataHistory", pid)
+    gasCallPatientRead_("getTreatmentsByPatient", pid),
+    gasCallPatientRead_("getTeethDataHistory", pid)
   ]).then(([recsJson, teethJson]) => {
     const records = JSON.parse(recsJson || "[]");
     const teethHistory = JSON.parse(teethJson || "[]");
@@ -2807,6 +2807,14 @@ function isRpcTimeoutError_(err) {
   return /タイムアウト/.test(msg) || !!(err && err.name === "AbortError");
 }
 
+/** 患者データ読み込み：タイムアウト時は1回だけ再試行 */
+function gasCallPatientRead_(funcName, ...args) {
+  return gasCall(funcName, ...args).catch(err => {
+    if (!isRpcTimeoutError_(err)) throw err;
+    return new Promise(r => setTimeout(r, 1500)).then(() => gasCall(funcName, ...args));
+  });
+}
+
 function treatmentVisitSlotKeyClient_(visitDate, visitTimeStart) {
   return normalizeVisitDateKey(visitDate) + "\t" + (visitTimeStart != null ? String(visitTimeStart) : "");
 }
@@ -2817,7 +2825,7 @@ function verifyTreatmentSaveAfterTimeout_(ctx) {
   const data = ctx.data;
   const visitDateVal = ctx.visitDateVal;
   const editingId = ctx.editingId;
-  return gasCall("getTreatmentsByPatient", pid).then(json => {
+  return gasCallPatientRead_("getTreatmentsByPatient", pid).then(json => {
     const records = JSON.parse(json);
     if (editingId) {
       const hit = records.find(r => String(r.id) === String(editingId));
@@ -5345,11 +5353,11 @@ function handleTreatmentSaveError_(e, label, recoveryCtx) {
   const msg = formatUserFacingRpcError_(e);
   if (msg.indexOf("同じ診療日") !== -1) {
     showRecordDuplicateWarn_(msg);
-    return;
+    return Promise.resolve();
   }
   if (recoveryCtx && isRpcTimeoutError_(e)) {
     showToast("保存結果を確認中…");
-    verifyTreatmentSaveAfterTimeout_(recoveryCtx).then(hit => {
+    return verifyTreatmentSaveAfterTimeout_(recoveryCtx).then(hit => {
       if (hit && hit.ok) {
         if (hit.mode === "update") {
           applyTreatmentUpdateSuccess_(recoveryCtx.data, recoveryCtx.pid, recoveryCtx.visitDateVal, hit.id);
@@ -5369,9 +5377,9 @@ function handleTreatmentSaveError_(e, label, recoveryCtx) {
         showToast((label || "保存") + "エラー: " + msg);
       }
     });
-    return;
   }
   showToast((label || "保存") + "エラー: " + msg);
+  return Promise.resolve();
 }
 
 /** 履歴カード等の診療日表示 */
@@ -6514,7 +6522,7 @@ function renderTeethSummary(pid) {
   ensureTeethChartBlockListener();
   const gen = ++teethLoadGen_;
   const reqPid = String(pid || "").trim();
-  gasCall("getTeethData", pid).then(json => {
+  gasCallPatientRead_("getTeethData", pid).then(json => {
     if (gen !== teethLoadGen_) return;
     if (reqPid && selectedPatient && String(selectedPatient.id) !== reqPid) return;
     try {
@@ -7931,11 +7939,16 @@ function toggleAcc(id) {
   }
 }
 
+/** 医療情報読み込みの世代番号（患者切替時の古い応答を捨てる） */
+let medLoadGen_ = 0;
+let medicalSaveTimer_ = null;
+
 // ── 医療情報の読み込み ──
 /** 旧UIの認知症記号（ローマ数字）→ 新フォーム（I, IIa…） */
 const NINCHI_LEGACY_MAP = { "Ⅰ": "I", "Ⅱa": "IIa", "Ⅱb": "IIb", "Ⅲa": "IIIa", "Ⅲb": "IIIb", "Ⅳ": "IV" };
 
 function loadMedicalInfo(pid) {
+  const gen = ++medLoadGen_;
   customDiseases = [];
   customMeds = [];
   if (!pid || String(pid).trim() === "") {
@@ -7945,7 +7958,8 @@ function loadMedicalInfo(pid) {
     };
     applyMedicalToUI();
     document.getElementById("riskAlerts").innerHTML = "";
-  } else gasCall("getMedicalInfo", pid).then(json => {
+  } else gasCallPatientRead_("getMedicalInfo", pid).then(json => {
+    if (gen !== medLoadGen_) return;
     const data = JSON.parse(json);
     let dem = data.dementia_level || "";
     if (dem && NINCHI_LEGACY_MAP[dem]) dem = NINCHI_LEGACY_MAP[dem];
@@ -7962,11 +7976,13 @@ function loadMedicalInfo(pid) {
     }
     applyMedicalToUI();
   }).catch(e => {
+    if (gen !== medLoadGen_) return;
     patientMedical = { conditions:[], medications:[], allergies:[], careLevel:"", independence:"", dementiaLevel:"" };
     applyMedicalToUI();
     showToast("医療情報の読み込みに失敗: " + (e && e.message ? e.message : String(e)));
   });
   gasCall("getCustomMasterItems").then(json => {
+    if (gen !== medLoadGen_) return;
     const d = JSON.parse(json);
     customDiseases = normalizeCustomDiseasesEntries(d.diseases || []);
     customMeds = normalizeCustomMedsEntries(d.medications || []);
@@ -8018,6 +8034,13 @@ function updateAccBadge(id, count, text) {
 // ── 医療情報の保存 ──
 function saveMedicalInfo(opts) {
   opts = opts || {};
+  if (medicalSaveTimer_) clearTimeout(medicalSaveTimer_);
+  const delay = opts.immediate ? 0 : 400;
+  medicalSaveTimer_ = setTimeout(() => saveMedicalInfoNow_(opts), delay);
+}
+
+function saveMedicalInfoNow_(opts) {
+  medicalSaveTimer_ = null;
   flushMedOnsetFromDom_();
   if (!selectedPatient || !selectedPatient.id) return;
   const data = {
@@ -8576,7 +8599,7 @@ function loadPhotos(patientId) {
   }
   const seq = (loadPhotosSeqByPid_[pid] || 0) + 1;
   loadPhotosSeqByPid_[pid] = seq;
-  gasCall("getPhotos", pid).then(json => {
+  gasCallPatientRead_("getPhotos", pid).then(json => {
     if (loadPhotosSeqByPid_[pid] !== seq) return; // 古い応答は捨てる
     const photos = JSON.parse(json);
     const inflight = localPhotos.filter(l =>
@@ -8611,9 +8634,10 @@ function loadPhotos(patientId) {
     });
     dedupeLocalPhotosById_();
     renderPhotoGrid();
-  }).catch(() => {
+  }).catch(e => {
     if (loadPhotosSeqByPid_[pid] !== seq) return;
     renderPhotoGrid();
+    showToast("写真の読み込みに失敗: " + formatUserFacingRpcError_(e));
   });
 }
 
