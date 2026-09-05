@@ -119,4 +119,29 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('rptRichMultilineToMarkers_ preserves blank lines for print', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        rptRichMultilineToMarkers_?: (el: HTMLElement) => string
+        faxMarkersToHtml_?: (raw: string) => string
+      }
+      if (typeof w.rptRichMultilineToMarkers_ !== 'function' || typeof w.faxMarkersToHtml_ !== 'function') return false
+      const div = document.createElement('div')
+      div.innerHTML = '一行目<div><br></div><span class="fax-em-box-black">A<br>B</span>'
+      const markers = w.rptRichMultilineToMarkers_(div)
+      const html = w.faxMarkersToHtml_(markers)
+      const brCount = (html.match(/<br/gi) || []).length
+      return markers.includes('\n\n') && html.includes('fax-em-box-black') && brCount >= 2
+    })
+    expect(ok).toBe(true)
+  })
 })

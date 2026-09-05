@@ -24,7 +24,19 @@
 | **原因** | `issPrint` がプレビュー取込後に `issCollectFormToContext_` で左フォームに上書き。印刷HTMLも編集用経路でマーカーが落ちうる |
 | **修正** | `38c6815` — pull＋メタのみ、forPrint は静的強調HTML |
 | **再発条件** | `issPrint` / `buildShareSheetPrintHtmlFromContext_` forPrint 変更時 |
-| **必須確認** | プレビューで黒枠 → 印刷プレビューでも同じ枠 |
+| **必須確認** | プレビューで黒枠 → 印刷プレビューでも同じ枠。**空行（段落間）も一致** |
+
+---
+
+## 2026-09 情報共有シート — 印刷で改行・空行が消える
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | 編集プレビューでは段落間の空行があるが、印刷では詰まる |
+| **原因** | ① `rptRichMultilineToMarkers_` が連続改行を1つに潰す ② 印刷HTMLをプレビューDOMと別経路で再生成 |
+| **修正** | 連続改行を保持、印刷はプレビューDOMをクローンして WYSIWYG 出力（`issHtmlForPrint_`） |
+| **再発条件** | `rptRichMultilineToMarkers_` / `issPrint` / `issHtmlForPrint_` 変更時 |
+| **必須確認** | 空行1行＋黒枠リストの印刷一致 |
 
 ---
 

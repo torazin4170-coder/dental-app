@@ -9462,8 +9462,7 @@ function rptRichMultilineToMarkers_(el) {
     out.push(String(t).replace(/\u00a0/g, " "));
   };
   const pushNl = () => {
-    if (!out.length) return;
-    if (out[out.length - 1] !== "\n") out.push("\n");
+    out.push("\n");
   };
   const walkEm = (node, open, close) => {
     out.push(open);
@@ -9499,7 +9498,8 @@ function rptRichMultilineToMarkers_(el) {
   }
   walk(el);
   let s = out.join("");
-  s = s.replace(/\n{3,}$/, "\n\n");
+  s = s.replace(/^\n+/, "");
+  s = s.replace(/\n{3,}/g, "\n\n");
   return s;
 }
 
@@ -19766,10 +19766,27 @@ function closeShareSheetModal() {
   lastIssPreviewContext = null;
 }
 
+function issHtmlForPrint_() {
+  const inner = document.getElementById("issPreviewInner");
+  if (inner && inner.querySelector(".iss-doc")) {
+    const clone = inner.cloneNode(true);
+    clone.querySelectorAll(".iss-toolbar-row").forEach(el => el.remove());
+    clone.querySelectorAll(".iss-footer-toolbar, .iss-row-toolbar").forEach(el => el.remove());
+    clone.querySelectorAll(".iss-photo-handles, .iss-photo-actions, .iss-photo-del").forEach(el => el.remove());
+    clone.querySelectorAll(".iss-photos-empty").forEach(el => el.remove());
+    clone.querySelectorAll(".iss-photos").forEach(el => el.classList.add("iss-photos--print"));
+    clone.querySelectorAll(".iss-photo-widget").forEach(w => {
+      w.classList.remove("iss-photo-widget--active", "iss-photo-widget--manipulating");
+    });
+    return rptPlainHtmlForFax_(clone.innerHTML);
+  }
+  return rptPlainHtmlForFax_(buildShareSheetPrintHtmlFromContext_(lastIssPreviewContext, { forPrint: true }));
+}
+
 function issPrint() {
   issPullPreviewEditsToContext_();
   issMergeIssFormMetaToContext_();
-  const innerHtml = rptPlainHtmlForFax_(buildShareSheetPrintHtmlFromContext_(lastIssPreviewContext, { forPrint: true }));
+  const innerHtml = issHtmlForPrint_();
   const fac = lastIssPreviewContext && lastIssPreviewContext.facility_label ? lastIssPreviewContext.facility_label : "";
   const title = fac ? `情報共有シート_${fac}` : "情報共有シート";
   const printLayoutJs = `(function(){document.querySelectorAll(".iss-photos").forEach(function(el){var maxB=parseFloat(el.style.minHeight)||72;el.querySelectorAll(".iss-photo-widget").forEach(function(w){var top=parseFloat(w.style.top)||0;maxB=Math.max(maxB,top+(w.offsetHeight||80)+8);});el.style.minHeight=Math.ceil(maxB)+"px";el.style.height="";});})();`;
@@ -19791,6 +19808,7 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .iss-doc .iss-table th { background: #e2e8f0; font-size: 9pt; font-weight: 800; }
 .iss-doc .iss-td-room { width: 56px; }
 .iss-doc .iss-td-name { width: 22%; }
+.iss-doc .iss-notes-rich, .iss-doc .iss-footer-rich, .iss-doc .iss-free-text-rich { white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
 .iss-doc .iss-td-notes { font-size: 9.5pt; line-height: 1.55; }
 .iss-doc .iss-td-footer { min-height: 72px; background: #fafafa; font-size: 9.5pt; line-height: 1.6; white-space: pre-wrap; }
 .iss-doc .iss-free-block { margin-top: 14px; padding-top: 10px; border-top: 2px solid #cbd5e1; page-break-inside: avoid; }
