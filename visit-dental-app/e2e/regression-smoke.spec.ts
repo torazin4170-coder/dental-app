@@ -144,4 +144,26 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('WYSIWYG print helpers exist for all rich preview reports', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const fns = await page.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>
+      return [
+        'rptPreviewHtmlForPrint_',
+        'faxDailyHtmlForPrint_',
+        'svListHtmlForPrint_',
+        'issHtmlForPrint_',
+        'personalSheetHtmlForPrint_',
+      ].map(n => typeof w[n] === 'function')
+    })
+    expect(fns.every(Boolean)).toBe(true)
+  })
 })

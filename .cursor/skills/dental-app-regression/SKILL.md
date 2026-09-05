@@ -8,8 +8,8 @@ description: 訪問歯科カルテ（gas-deploy）の push 前・大変更後の
 ## いつ使うか
 
 - `gas-deploy/` または `AppsScript-Main-差し替え用.gs` を変更した **push 前**
-- 共通関数（`rptEm*` / `issRefreshPreview` / `gasCall*` 等）を触った後
-- ユーザーが「チェックして」「回帰確認」と依頼したとき
+- 共通関数（`rptEm*` / `issRefreshPreview` / `gasCall*` / `*Print*` / `rptPreviewHtmlForPrint_*` 等）を触った後
+- **ユーザーが言わなくても** 帳票・印刷・強調の変更後は必ず実行
 - `dental-app-adjustments` スキルで commit する直前（**必須**）
 
 ## push 前フロー（必須）
@@ -22,8 +22,9 @@ description: 訪問歯科カルテ（gas-deploy）の push 前・大変更後の
    失敗したら **push しない**。直してから再実行。
 3. **smoke 対象決定** — コマンド出力と [references/smoke-matrix.md](references/smoke-matrix.md) の「変更種別 → 必須行」
 4. **動作確認** — 該当行を ✅/❌/⏭ で報告（「問題なし」のみは **禁止**）
-5. **E2E（任意・大変更時）** — `cd visit-dental-app && npm run regression:e2e`
-6. ユーザー向け — 大変更なら [references/user-smoke-5min.md](references/user-smoke-5min.md) を提示
+5. **印刷一致（必須）** — [references/print-parity-audit.md](references/print-parity-audit.md) のリッチプレビュー4帳票を確認。ユーザー指摘を **待たない**
+6. **E2E（必須）** — `cd visit-dental-app && npm run regression:e2e`
+7. ユーザー向け — 大変更なら [references/user-smoke-5min.md](references/user-smoke-5min.md) を提示
 
 ## 二面テスト（ISS 等）
 
@@ -47,6 +48,7 @@ description: 訪問歯科カルテ（gas-deploy）の push 前・大変更後の
 ## 参照
 
 - 変更種別マトリクス: [references/smoke-matrix.md](references/smoke-matrix.md)
+- 印刷一致監査: [references/print-parity-audit.md](references/print-parity-audit.md)
 - 過去の事故: [references/incidents.md](references/incidents.md)
 - ユーザー5分: [references/user-smoke-5min.md](references/user-smoke-5min.md)
 - デプロイ: `.cursor/skills/dental-app-adjustments/SKILL.md`

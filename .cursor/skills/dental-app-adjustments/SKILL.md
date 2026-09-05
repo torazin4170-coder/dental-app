@@ -28,11 +28,12 @@ UI 変更を入れたら、ユーザーが「コミットして」と言わな�
    ```bash
    node scripts/check-regression-guards.mjs --diff
    ```
-   失敗時は push しない。smoke-matrix の該当行を ✅/❌/⏭ で報告。
+   失敗時は push しない。smoke-matrix の該当行と **print-parity-audit.md 全4帳票** を ✅/❌/⏭ で報告。
 2. `gas-deploy/`（と e2e 変更時は `visit-dental-app/`）のみをステージ
 3. 日本語で簡潔な commit message（why 中心）
 4. `git push github main`
-5. ユーザーに **コミット hash**、「1〜3分後に Ctrl+Shift+R」、大変更時は [user-smoke-5min.md](dental-app-regression/references/user-smoke-5min.md) を伝える
+5. **`npm run regression:e2e`（visit-dental-app）を push 前に実行**
+6. ユーザーに **コミット hash**、「1〜3分後に Ctrl+Shift+R」、大変更時は [user-smoke-5min.md](dental-app-regression/references/user-smoke-5min.md) を伝える
 
 ## 注意
 

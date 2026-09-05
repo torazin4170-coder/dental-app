@@ -144,6 +144,91 @@ export const SMOKE_TRIGGER_RULES = [
   },
 ]
 
+/** リッチプレビュー帳票：印刷はプレビュー DOM クローン（WYSIWYG）必須 */
+export const PRINT_WYSIWYG_RULES = [
+  {
+    id: 'fax-daily',
+    label: 'FAX日報',
+    printFn: 'printFaxDailyReport',
+    htmlFn: 'faxDailyHtmlForPrint_',
+    previewInner: 'faxDailyPreviewInner',
+    forbidDirectRebuild: 'buildFaxDailyBatchHtml_({ forPrint: true })',
+  },
+  {
+    id: 'sv-list',
+    label: 'SVリスト',
+    printFn: 'printSupervisorListReport',
+    htmlFn: 'svListHtmlForPrint_',
+    previewInner: 'svListPreviewInner',
+    forbidDirectRebuild: 'buildSupervisorListDocumentHtml_({ forPrint: true })',
+  },
+  {
+    id: 'iss',
+    label: '情報共有シート',
+    printFn: 'issPrint',
+    htmlFn: 'issHtmlForPrint_',
+    previewInner: 'issPreviewInner',
+    forbidDirectRebuild: null,
+  },
+  {
+    id: 'personal-sheet',
+    label: '施設月次報告書',
+    printFn: 'printPersonalSheetReport',
+    htmlFn: 'personalSheetHtmlForPrint_',
+    previewInner: 'personalSheetPreviewInner',
+    mustUseHelper: 'rptPreviewHtmlForPrint_',
+  },
+]
+
+export function extractFunctionSource_(src, name) {
+  const token = `function ${name}`
+  const start = src.indexOf(token)
+  if (start < 0) return ''
+  let depth = 0
+  let i = src.indexOf('{', start)
+  if (i < 0) return ''
+  for (; i < src.length; i++) {
+    if (src[i] === '{') depth++
+    else if (src[i] === '}') {
+      depth--
+      if (depth === 0) return src.slice(start, i + 1)
+    }
+  }
+  return ''
+}
+
+export function runPrintParityGuards(script) {
+  const errors = []
+  if (!script) return errors
+  if (!script.includes('function rptPreviewHtmlForPrint_')) {
+    errors.push('共通 WYSIWYG 印刷ヘルパー rptPreviewHtmlForPrint_ がありません')
+  }
+  for (const rule of PRINT_WYSIWYG_RULES) {
+    if (!script.includes(`function ${rule.htmlFn}`)) {
+      errors.push(`${rule.label}: ${rule.htmlFn} がありません`)
+      continue
+    }
+    const printSrc = extractFunctionSource_(script, rule.printFn)
+    if (!printSrc) {
+      errors.push(`${rule.label}: ${rule.printFn} が見つかりません`)
+      continue
+    }
+    if (!printSrc.includes(`${rule.htmlFn}(`)) {
+      errors.push(`${rule.label}: ${rule.printFn} が ${rule.htmlFn} を呼んでいません`)
+    }
+    if (rule.forbidDirectRebuild && printSrc.includes(rule.forbidDirectRebuild)) {
+      errors.push(`${rule.label}: ${rule.printFn} がプレビュー再生成を直接呼んでいます`)
+    }
+    if (rule.mustUseHelper) {
+      const htmlSrc = extractFunctionSource_(script, rule.htmlFn)
+      if (htmlSrc && !htmlSrc.includes(rule.mustUseHelper)) {
+        errors.push(`${rule.label}: ${rule.htmlFn} が ${rule.mustUseHelper} を使っていません`)
+      }
+    }
+  }
+  return errors
+}
+
 export function readText(root, relPath) {
   const p = path.join(root, relPath)
   if (!fs.existsSync(p)) return ''
@@ -195,6 +280,7 @@ export function runStaticGuards(root) {
     'function rptBindEmphasisBarButtons_',
     'function issRefreshPreview',
     'function rptEmSyncIssAfterEdit_',
+    'function rptPreviewHtmlForPrint_',
   ]
   for (const sig of requiredFns) {
     if (!script.includes(sig)) {
@@ -205,6 +291,9 @@ export function runStaticGuards(root) {
   if (!script.includes('container.id === "issPreviewInner"')) {
     warnings.push('issPreviewInner が rptIsRichPreviewContainer_ に含まれているか要確認')
   }
+
+  const printErrors = runPrintParityGuards(script)
+  errors.push(...printErrors)
 
   return { ok: errors.length === 0, errors, warnings }
 }

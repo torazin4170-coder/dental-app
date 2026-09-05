@@ -10054,6 +10054,77 @@ function rptPlainHtml_(html) {
   return rptPlainizePreviewHtml_(html);
 }
 
+/** プレビュー DOM から印刷用 HTML（WYSIWYG）。強調・改行をプレビューと一致させる */
+const RPT_PRINT_STRIP_SELECTORS_ = [
+  ".fax-pat-manage",
+  ".fax-row-exclude-cell",
+  ".fax-row-exclude-btn",
+  ".fax-loading-wrap",
+  ".iss-toolbar-row",
+  ".iss-footer-toolbar",
+  ".iss-row-toolbar",
+  ".iss-photo-handles",
+  ".iss-photo-actions",
+  ".iss-photo-del",
+  ".iss-photos-empty",
+  ".ps-toolbar-row",
+  ".ps-row-toolbar",
+  ".ps-grid-hint",
+  ".ps-photo-handles",
+  ".ps-photo-actions",
+  ".ps-photo-del",
+  ".ps-photo-crop",
+  ".ps-photos-caption",
+];
+
+function rptStripPreviewChromeForPrint_(root, extraSelectors) {
+  if (!root) return;
+  const sels = RPT_PRINT_STRIP_SELECTORS_.concat(extraSelectors || []);
+  sels.forEach(sel => root.querySelectorAll(sel).forEach(el => el.remove()));
+  root.querySelectorAll(".iss-photos").forEach(el => el.classList.add("iss-photos--print"));
+  root.querySelectorAll(".ps-photos").forEach(el => el.classList.add("ps-photos--print"));
+  root.querySelectorAll(".iss-photo-widget, .ps-photo-widget").forEach(w => {
+    w.classList.remove(
+      "iss-photo-widget--active", "iss-photo-widget--manipulating",
+      "ps-photo-widget--active", "ps-photo-widget--manipulating"
+    );
+  });
+}
+
+function rptPreviewHtmlForPrint_(innerEl, opts) {
+  opts = opts || {};
+  if (!innerEl) return "";
+  const clone = innerEl.cloneNode(true);
+  rptStripPreviewChromeForPrint_(clone, opts.extraStrip);
+  if (opts.pageBreakSelector) {
+    const pages = [...clone.querySelectorAll(opts.pageBreakSelector)];
+    pages.forEach((p, i) => {
+      if (i < pages.length - 1) p.classList.add(opts.pageBreakClass || "fax-page-wrap--print-break");
+    });
+  }
+  const plainFn = opts.plainFn === "plain" ? rptPlainHtml_ : rptPlainHtmlForFax_;
+  return plainFn(clone.innerHTML);
+}
+
+function faxDailyHtmlForPrint_() {
+  const inner = document.getElementById("faxDailyPreviewInner");
+  if (inner && inner.querySelector(".fax-doc")) {
+    return rptPreviewHtmlForPrint_(inner, {
+      pageBreakSelector: ".fax-page-wrap",
+      pageBreakClass: "fax-page-wrap--print-break",
+    });
+  }
+  return rptPlainHtmlForFax_(buildFaxDailyBatchHtml_({ forPrint: true }));
+}
+
+function svListHtmlForPrint_() {
+  const inner = document.getElementById("svListPreviewInner");
+  if (inner && inner.querySelector(".sv-doc")) {
+    return rptPreviewHtmlForPrint_(inner);
+  }
+  return rptPlainHtmlForFax_(buildSupervisorListDocumentHtml_({ forPrint: true }));
+}
+
 /** 印刷ウィンドウ：DOM 反映後すぐ print()（画像 decode 完了は待たない・全帳票共通） */
 function rptTriggerPrintWhenReady_(w, beforePrint) {
   if (!w) return;
@@ -14612,7 +14683,7 @@ function clearPersonalSheetPreviewDraft_() {
 function personalSheetHtmlForPrint_() {
   const host = document.getElementById("personalSheetPreviewInner");
   if (host && host.querySelector(".ps-grid-doc")) {
-    return rptPlainHtml_(host.innerHTML);
+    return rptPreviewHtmlForPrint_(host, { plainFn: "plain" });
   }
   const ctx = lastPersonalSheetContext;
   if (!ctx) return "";
@@ -15739,7 +15810,7 @@ function printFaxDailyReport() {
       gasCall("appendFaxStyleMemory", ctx.fac_id, ctx.visit_date_ymd, comment).catch(() => {});
     }
   });
-  const innerHtml = rptPlainHtmlForFax_(buildFaxDailyBatchHtml_({ forPrint: true }));
+  const innerHtml = faxDailyHtmlForPrint_();
   const title = `施設日報_${lastFaxDailyBatch_.visit_date_ymd}_全施設`.replace(/\s+/g, "");
   const doc = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${escHtml(title)}</title>
 <style>
@@ -18185,7 +18256,7 @@ function printSupervisorListReport() {
   if (prev) rptPullEdits_(prev, lastSupervisorListContext);
   svListSyncRowsAllFromVisible_(lastSupervisorListContext);
   recomputeSupervisorListSummary_(lastSupervisorListContext);
-  const innerHtml = rptPlainHtmlForFax_(buildSupervisorListDocumentHtml_({ forPrint: true }));
+  const innerHtml = svListHtmlForPrint_();
   const title = `全施設診療リスト_${lastSupervisorListContext.visit_date}`.replace(/\s+/g, "");
   const doc = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${escHtml(title)}</title>
 <style>
@@ -19769,16 +19840,7 @@ function closeShareSheetModal() {
 function issHtmlForPrint_() {
   const inner = document.getElementById("issPreviewInner");
   if (inner && inner.querySelector(".iss-doc")) {
-    const clone = inner.cloneNode(true);
-    clone.querySelectorAll(".iss-toolbar-row").forEach(el => el.remove());
-    clone.querySelectorAll(".iss-footer-toolbar, .iss-row-toolbar").forEach(el => el.remove());
-    clone.querySelectorAll(".iss-photo-handles, .iss-photo-actions, .iss-photo-del").forEach(el => el.remove());
-    clone.querySelectorAll(".iss-photos-empty").forEach(el => el.remove());
-    clone.querySelectorAll(".iss-photos").forEach(el => el.classList.add("iss-photos--print"));
-    clone.querySelectorAll(".iss-photo-widget").forEach(w => {
-      w.classList.remove("iss-photo-widget--active", "iss-photo-widget--manipulating");
-    });
-    return rptPlainHtmlForFax_(clone.innerHTML);
+    return rptPreviewHtmlForPrint_(inner);
   }
   return rptPlainHtmlForFax_(buildShareSheetPrintHtmlFromContext_(lastIssPreviewContext, { forPrint: true }));
 }
