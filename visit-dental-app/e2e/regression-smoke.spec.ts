@@ -79,6 +79,22 @@ test.describe('regression smoke — DOM shell', () => {
     }
   })
 
+  test('report modals have mobile scroll shell (scroll body + fixed foot)', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    for (const modalId of ['faxDailyModal', 'svListModal', 'personalSheetModal']) {
+      const modal = page.locator(`#${modalId}`)
+      await expect(modal.locator('.fax-daily-modal-scroll-body')).toHaveCount(1)
+      await expect(modal.locator('.fax-daily-modal-foot')).toHaveCount(1)
+    }
+  })
+
   test('rptEmApply_ is callable after rich cell focus (ISS sidebar)', async ({ page }) => {
     await page.goto('/')
     await page.waitForFunction(

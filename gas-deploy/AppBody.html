@@ -458,23 +458,49 @@
       .fax-daily-modal-sheet {
         max-width: 100vw;
         width: 100%;
-        max-height: 100dvh;
-        height: 100dvh;
+        max-height: 100svh;
+        height: 100svh;
         margin: 0;
         border-radius: 0;
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        padding-bottom: 0;
+      }
+      .fax-daily-modal-sheet > .modal-handle { flex-shrink: 0; }
+      .fax-daily-modal-scroll-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
         -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        padding-right: 2px;
+      }
+      .fax-daily-modal-foot {
+        flex: 0 0 auto;
+        flex-shrink: 0;
+        background: #fff;
+        border-top: 1px solid var(--border);
+        padding-top: 10px;
         padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+        box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.06);
+        position: relative;
+        z-index: 2;
+      }
+      .fax-daily-modal-foot .modal-actions.report-preview-modal-footer { margin-top: 10px; }
+      .fax-daily-modal-foot .btn,
+      .fax-daily-modal-foot .btn-cancel,
+      .fax-daily-modal-foot .btn-ok { touch-action: manipulation; }
+      .fax-daily-modal-scroll-body .report-preview-scroll {
+        flex: none;
+        min-height: min(36vh, 280px);
+        max-height: none;
+        overflow: visible;
       }
       .fax-daily-modal-sheet .modal-actions.report-preview-modal-footer,
       .fax-daily-modal-sheet > .btn-cancel { flex-shrink: 0; }
-      .fax-daily-modal-sheet .report-preview-scroll {
-        flex: 1 1 auto;
-        min-height: min(36vh, 280px);
-        max-height: none;
-      }
       .fax-daily-modal-sheet .report-preview-split {
         flex: 1 1 auto;
         min-height: 0;
@@ -1496,45 +1522,49 @@
 <div class="modal-overlay" id="faxDailyModal">
   <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="faxDailyModalTitle">
     <div class="modal-handle"></div>
-    <div class="modal-title" id="faxDailyModalTitle">施設日報（FAX用）</div>
-    <div id="faxDailyModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
-    <p class="rpt-preview-hint">プレビュー内をタップして編集できます。<strong>医院名は施設ごとに別々</strong>に設定できます（下の施設チップを選んでからドロップダウンで変更するか、各ページ右下を直接編集）。表の「治療内容」「次回予定」や注記下の欄では赤字・黄マーカー・枠が使えます。患者行は<strong>右端の×</strong>で表から外せます。</p>
-    <div class="rpt-clinic-bar" style="flex-wrap:wrap">
-      <label for="faxDailyClinicSelect">医院名（選択中の施設）</label>
-      <select id="faxDailyClinicSelect" onchange="onRptClinicSelectChange_('faxDaily')"></select>
-      <input type="text" id="faxDailyClinicFree" placeholder="候補以外も直接入力可" autocomplete="off"
-        style="flex:1;min-width:160px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit"
-        oninput="onFaxDailyClinicFreeInput_()">
+    <div class="fax-daily-modal-scroll-body">
+      <div class="modal-title" id="faxDailyModalTitle">施設日報（FAX用）</div>
+      <div id="faxDailyModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+      <p class="rpt-preview-hint">プレビュー内をタップして編集できます。<strong>医院名は施設ごとに別々</strong>に設定できます（下の施設チップを選んでからドロップダウンで変更するか、各ページ右下を直接編集）。表の「治療内容」「次回予定」や注記下の欄では赤字・黄マーカー・枠が使えます。患者行は<strong>右端の×</strong>で表から外せます。</p>
+      <div class="rpt-clinic-bar" style="flex-wrap:wrap">
+        <label for="faxDailyClinicSelect">医院名（選択中の施設）</label>
+        <select id="faxDailyClinicSelect" onchange="onRptClinicSelectChange_('faxDaily')"></select>
+        <input type="text" id="faxDailyClinicFree" placeholder="候補以外も直接入力可" autocomplete="off"
+          style="flex:1;min-width:160px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:13px;font-family:inherit"
+          oninput="onFaxDailyClinicFreeInput_()">
+      </div>
+      <div id="faxDailyFacManage" class="fax-fac-manage">
+        <div style="font-size:12px;font-weight:800;color:var(--muted)">出力に含める施設（1施設1ページ・チップをタップで医院名の編集対象を切替）</div>
+        <div id="faxDailyFacChips" class="fax-fac-chips"></div>
+        <select id="faxDailyFacAdd" class="fax-fac-add-sel" onchange="faxDailyAddFacility_()">
+          <option value="">＋ 施設を追加…</option>
+        </select>
+      </div>
+      <div id="faxEmphasisBar" class="fax-em-bar" aria-hidden="true">
+        <span class="fax-em-bar-label">①表の欄または注記の下の欄をタップ → ②文字を選ぶ（指を離す）→ ③赤字などのボタン</span>
+        <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
+        <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
+        <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">赤枠</button>
+        <button type="button" class="fax-em-btn fax-em-btn-box-black" data-fax-em="boxBlack">黒枠</button>
+        <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
+      </div>
+      <div id="faxDailyPreviewScroll" class="report-preview-scroll">
+        <div id="faxDailyPreviewInner" class="fax-doc"></div>
+      </div>
     </div>
-    <div id="faxDailyFacManage" class="fax-fac-manage">
-      <div style="font-size:12px;font-weight:800;color:var(--muted)">出力に含める施設（1施設1ページ・チップをタップで医院名の編集対象を切替）</div>
-      <div id="faxDailyFacChips" class="fax-fac-chips"></div>
-      <select id="faxDailyFacAdd" class="fax-fac-add-sel" onchange="faxDailyAddFacility_()">
-        <option value="">＋ 施設を追加…</option>
-      </select>
-    </div>
-    <div id="faxEmphasisBar" class="fax-em-bar" aria-hidden="true">
-      <span class="fax-em-bar-label">①表の欄または注記の下の欄をタップ → ②文字を選ぶ（指を離す）→ ③赤字などのボタン</span>
-      <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
-      <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
-      <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">赤枠</button>
-      <button type="button" class="fax-em-btn fax-em-btn-box-black" data-fax-em="boxBlack">黒枠</button>
-      <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
-    </div>
-    <div id="faxDailyPreviewScroll" class="report-preview-scroll">
-      <div id="faxDailyPreviewInner" class="fax-doc"></div>
-    </div>
-    <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45">印刷ダイアログで<strong>送信先に「PDFに保存」</strong>を選ぶとPDF化できます。印刷時に<strong>確定保存</strong>され、端末内の下書きは消去されます。</p>
-    <p id="faxDailyDraftStatus" style="display:none;font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45"></p>
-    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
-      <button type="button" class="btn btn-secondary" id="faxDailyDraftBtn" onclick="insertFaxDailyLocalDraft_()">📝 施設コメント簡易下書き</button>
-      <button type="button" class="btn btn-secondary" onclick="saveFaxDailyPreviewDraft_()">💾 下書き保存</button>
-      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('faxDaily','overwrite')">📁 確定保存</button>
-      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('faxDaily','new')">📁 別名</button>
-      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
-      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearFaxDailyPreviewDraft_()">🗑 下書き消去</button>
-      <button type="button" class="btn-cancel" onclick="closeFaxDailyModal()">閉じる</button>
-      <button type="button" class="btn-ok" onclick="printFaxDailyReport()">🖨 印刷 / PDFに保存</button>
+    <div class="fax-daily-modal-foot">
+      <p style="font-size:11px;color:var(--muted);margin:0;line-height:1.45">印刷ダイアログで<strong>送信先に「PDFに保存」</strong>を選ぶとPDF化できます。印刷時に<strong>確定保存</strong>され、端末内の下書きは消去されます。</p>
+      <p id="faxDailyDraftStatus" style="display:none;font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45"></p>
+      <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+        <button type="button" class="btn btn-secondary" id="faxDailyDraftBtn" onclick="insertFaxDailyLocalDraft_()">📝 施設コメント簡易下書き</button>
+        <button type="button" class="btn btn-secondary" onclick="saveFaxDailyPreviewDraft_()">💾 下書き保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('faxDaily','overwrite')">📁 確定保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('faxDaily','new')">📁 別名</button>
+        <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+        <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearFaxDailyPreviewDraft_()">🗑 下書き消去</button>
+        <button type="button" class="btn-cancel" onclick="closeFaxDailyModal()">閉じる</button>
+        <button type="button" class="btn-ok" onclick="printFaxDailyReport()">🖨 印刷 / PDFに保存</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1786,28 +1816,32 @@
 <div class="modal-overlay" id="svListModal">
   <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="svListModalTitle">
     <div class="modal-handle"></div>
-    <div class="modal-title" id="svListModalTitle">上司向け・全施設リスト</div>
-    <div id="svListModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
-    <p class="rpt-preview-hint">プレビュー内の<strong>患者名・治療内容・最下部のメモ</strong>などをタップして直せます。不要な患者行は右の<strong>×</strong>で表から外し、上のプルダウンから戻せます。<strong>本日の治療・メモ</strong>欄では、診療記録の<strong>初診・入院中・退所・ご逝去</strong>および<strong>無料検診</strong>が自動で<strong style="color:#dc2626">赤字</strong>になります（手動の赤字・黄マーカー・枠も使えます）。<strong>ご逝去・入院中・退所/退去</strong>は合計人数に含めません。</p>
-    <div id="svListEmphasisBar" class="fax-em-bar" aria-hidden="true">
-      <span class="fax-em-bar-label">①欄をタップ → ②文字を選ぶ（指を離す）→ ③赤字などのボタン</span>
-      <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
-      <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
-      <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">赤枠</button>
-      <button type="button" class="fax-em-btn fax-em-btn-box-black" data-fax-em="boxBlack">黒枠</button>
-      <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
+    <div class="fax-daily-modal-scroll-body">
+      <div class="modal-title" id="svListModalTitle">上司向け・全施設リスト</div>
+      <div id="svListModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+      <p class="rpt-preview-hint">プレビュー内の<strong>患者名・治療内容・最下部のメモ</strong>などをタップして直せます。不要な患者行は右の<strong>×</strong>で表から外し、上のプルダウンから戻せます。<strong>本日の治療・メモ</strong>欄では、診療記録の<strong>初診・入院中・退所・ご逝去</strong>および<strong>無料検診</strong>が自動で<strong style="color:#dc2626">赤字</strong>になります（手動の赤字・黄マーカー・枠も使えます）。<strong>ご逝去・入院中・退所/退去</strong>は合計人数に含めません。</p>
+      <div id="svListEmphasisBar" class="fax-em-bar" aria-hidden="true">
+        <span class="fax-em-bar-label">①欄をタップ → ②文字を選ぶ（指を離す）→ ③赤字などのボタン</span>
+        <button type="button" class="fax-em-btn fax-em-btn-red" data-fax-em="red">赤字</button>
+        <button type="button" class="fax-em-btn fax-em-btn-hl" data-fax-em="hl">黄マーカー</button>
+        <button type="button" class="fax-em-btn fax-em-btn-box" data-fax-em="box">赤枠</button>
+        <button type="button" class="fax-em-btn fax-em-btn-box-black" data-fax-em="boxBlack">黒枠</button>
+        <button type="button" class="fax-em-btn fax-em-btn-clear" data-fax-em="clear">強調を解除</button>
+      </div>
+      <div id="svListPreviewScroll" class="report-preview-scroll">
+        <div id="svListPreviewInner" class="sv-doc"></div>
+      </div>
     </div>
-    <div id="svListPreviewScroll" class="report-preview-scroll">
-      <div id="svListPreviewInner" class="sv-doc"></div>
-    </div>
-    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
-      <button type="button" class="btn btn-secondary" onclick="saveSvListPreviewDraft_()">💾 下書き保存</button>
-      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('svList','overwrite')">📁 確定保存</button>
-      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('svList','new')">📁 別名</button>
-      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
-      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearSvListPreviewDraft_()">🗑 下書き消去</button>
-      <button type="button" class="btn-cancel" onclick="closeSvListModal()">閉じる</button>
-      <button type="button" class="btn-ok" onclick="printSupervisorListReport()">🖨 印刷 / PDFに保存</button>
+    <div class="fax-daily-modal-foot">
+      <div class="modal-actions report-preview-modal-footer" style="margin-top:0">
+        <button type="button" class="btn btn-secondary" onclick="saveSvListPreviewDraft_()">💾 下書き保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('svList','overwrite')">📁 確定保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('svList','new')">📁 別名</button>
+        <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+        <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearSvListPreviewDraft_()">🗑 下書き消去</button>
+        <button type="button" class="btn-cancel" onclick="closeSvListModal()">閉じる</button>
+        <button type="button" class="btn-ok" onclick="printSupervisorListReport()">🖨 印刷 / PDFに保存</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1968,7 +2002,8 @@
 <div class="modal-overlay" id="personalSheetModal">
   <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="personalSheetModalTitle">
     <div class="modal-handle"></div>
-    <div class="modal-title" id="personalSheetModalTitle">施設月次報告書</div>
+    <div class="fax-daily-modal-scroll-body">
+      <div class="modal-title" id="personalSheetModalTitle">施設月次報告書</div>
     <div id="personalSheetModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
     <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・対象年月</strong>（④と共通）から、その月に診療のあった全患者を<strong>居室順</strong>で一覧表にします。模範PDF（部屋番号／氏名／治療内容）に沿ったレイアウトです。外側をタップしても閉じません。</p>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
@@ -1994,7 +2029,9 @@
       <div id="personalSheetPreviewInner"></div>
     </div>
     <p style="font-size:11px;color:var(--muted);margin-top:0;line-height:1.45">※治療内容は「日付 時刻  処置内容」の1行形式です。写真は<strong>📷を押すたびに追加</strong>（1回で複数枚選択も可）。位置・サイズ・角度は下書きに保存され、印刷にも反映されます（1枚4MBまで）。</p>
-    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+    </div>
+    <div class="fax-daily-modal-foot">
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:0">
       <button type="button" class="btn btn-secondary" onclick="savePersonalSheetPreviewDraft_()">💾 下書き保存</button>
       <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('personalSheet','overwrite')">📁 確定保存</button>
       <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('personalSheet','new')">📁 別名</button>
@@ -2002,6 +2039,7 @@
       <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearPersonalSheetPreviewDraft_()">🗑 下書き消去</button>
       <button type="button" class="btn-cancel" onclick="closePersonalSheetModal()">閉じる</button>
       <button type="button" class="btn-ok" onclick="printPersonalSheetReport()">🖨 印刷 / PDFに保存</button>
+    </div>
     </div>
   </div>
 </div>

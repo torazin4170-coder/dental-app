@@ -292,6 +292,13 @@ export function runStaticGuards(root) {
     warnings.push('issPreviewInner が rptIsRichPreviewContainer_ に含まれているか要確認')
   }
 
+  if (!body.includes('fax-daily-modal-scroll-body')) {
+    errors.push('帳票モーダルに fax-daily-modal-scroll-body（スマホスクロール用）がありません')
+  }
+  if (!body.includes('fax-daily-modal-foot')) {
+    errors.push('帳票モーダルに fax-daily-modal-foot（固定フッター）がありません')
+  }
+
   const printErrors = runPrintParityGuards(script)
   errors.push(...printErrors)
 
