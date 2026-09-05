@@ -9808,6 +9808,18 @@ function rptEditRichSvMemo_(path, text, opts) {
   return `<${tag} class="rpt-edit rpt-edit-rich fax-cell-rich${block}${ml}${extra}" contenteditable="true" data-rpt-path="${escAttr(path)}" data-rpt-rich="1" spellcheck="false">${html}</${tag}>`;
 }
 
+function rptRichPrintHtml_(raw, cls, tag) {
+  tag = tag || "div";
+  const clsAttr = cls ? `${cls} rpt-print-preserve-ws` : "rpt-print-preserve-ws";
+  return `<${tag} class="${clsAttr}">${faxMarkersToHtml_(raw != null ? String(raw) : "")}</${tag}>`;
+}
+
+function rptRichPrintHtmlFromHtml_(html, cls, tag) {
+  tag = tag || "div";
+  const clsAttr = cls ? `${cls} rpt-print-preserve-ws` : "rpt-print-preserve-ws";
+  return `<${tag} class="${clsAttr}">${html != null ? String(html) : ""}</${tag}>`;
+}
+
 /** 表示用：マーカー付きテキスト → HTML */
 function faxMarkersToHtml_(raw) {
   let t = escHtml(String(raw != null ? raw : ""));
@@ -11916,8 +11928,10 @@ function buildFaxDailyDocumentHtml_(opts) {
     c.rows.forEach((r, i) => {
       const nextCell = r.next_visit != null && String(r.next_visit) !== "" ? r.next_visit : formatNextVisitCell_(r);
       const rk = faxDailyRowKey_(r);
-      h += `<tr><td>${rptEdit_(`rows.${i}.room`, r.room || "")}</td><td>${rptEdit_(`rows.${i}.name`, r.name || "")}</td>`;
-      h += `<td>${rptEditRich_(`rows.${i}.treatments`, formatTreatmentTextForReport_(r.treatments) || "—")}</td><td>${rptEditRich_(`rows.${i}.next_visit`, nextCell)}</td>`;
+      h += `<tr><td>${opts.forPrint ? escHtml(r.room || "") : rptEdit_(`rows.${i}.room`, r.room || "")}</td><td>${opts.forPrint ? escHtml(r.name || "") : rptEdit_(`rows.${i}.name`, r.name || "")}</td>`;
+      const treatTxt = formatTreatmentTextForReport_(r.treatments) || "—";
+      h += `<td>${opts.forPrint ? rptRichPrintHtml_(treatTxt, "fax-cell-rich") : rptEditRich_(`rows.${i}.treatments`, treatTxt)}</td>`;
+      h += `<td>${opts.forPrint ? rptRichPrintHtml_(nextCell, "fax-cell-rich") : rptEditRich_(`rows.${i}.next_visit`, nextCell)}</td>`;
       if (showExcludeCol) {
         h += `<td class="fax-row-exclude-cell"><button type="button" class="fax-row-exclude-btn" title="この患者を表から外す" onclick="faxDailyExcludePatient_('${escAttr(String(c.fac_id))}','${escAttr(rk)}')">×</button></td>`;
       }
@@ -11929,12 +11943,14 @@ function buildFaxDailyDocumentHtml_(opts) {
   const showFooter = opts.forPrint ? comment.length > 0 : true;
   if (showFooter) {
     h += `<div class="fax-footer-comment-block">`;
-    h += rptEditRich_("facility_comment", comment, {
-      block: true,
-      tag: "div",
-      cls: "fax-footer-comment-body",
-      multiline: true
-    });
+    h += opts.forPrint
+      ? rptRichPrintHtml_(comment, "fax-footer-comment-body")
+      : rptEditRich_("facility_comment", comment, {
+        block: true,
+        tag: "div",
+        cls: "fax-footer-comment-body",
+        multiline: true
+      });
     h += `</div>`;
   }
   h += `</div>`;
@@ -15745,8 +15761,8 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .fax-doc .fax-footer-comment-body { min-height: 3em; line-height: 1.75; font-size: 11pt; padding: 6px 8px; border: 1px solid #333; white-space: pre-wrap; }
 .fax-em-red { color: #dc2626; font-weight: 800; }
 .fax-em-hl { background: #fef08a; padding: 1px 3px; }
-.fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
-.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; }
+.fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 ${getRptPrintWhitespaceCss_()}
 </style></head><body>${innerHtml}</body></html>`;
   const w = window.open("", "_blank");
@@ -18026,14 +18042,15 @@ function buildSupervisorListDocumentHtml_(opts) {
   recomputeSupervisorListSummary_(c);
   const free = (c.free_comment != null ? String(c.free_comment) : "").trim();
   const showExcludeCol = !opts.forPrint;
+  const forPrint = !!opts.forPrint;
   let h = `<div class="sv-doc">`;
   h += `<div class="sv-title">訪問歯科診療報告書</div>`;
-  h += `<div class="sv-date-line">${rptEdit_("visit_date_label", formatVisitDateLongJpNoWeek_(c.visit_date))}</div>`;
+  h += `<div class="sv-date-line">${forPrint ? escHtml(formatVisitDateLongJpNoWeek_(c.visit_date)) : rptEdit_("visit_date_label", formatVisitDateLongJpNoWeek_(c.visit_date))}</div>`;
   if (!c.groups || !c.groups.length) {
     h += `<p style="text-align:center;padding:20px;color:#64748b">この日付の診療記録がありません。</p>`;
   } else {
     c.groups.forEach((g, gi) => {
-      h += `<div class="sv-fac-head">${rptEdit_(`groups.${gi}.facility_short`, g.facility_short)}（${rptEdit_(`groups.${gi}.facility_name`, g.facility_name)}）</div>`;
+      h += `<div class="sv-fac-head">${forPrint ? escHtml(`${g.facility_short || ""}（${g.facility_name || ""}）`) : `${rptEdit_(`groups.${gi}.facility_short`, g.facility_short)}（${rptEdit_(`groups.${gi}.facility_name`, g.facility_name)}）`}</div>`;
       if (showExcludeCol) {
         const exKeys = new Set((g.excluded_row_keys || []).map(String));
         const excludedRows = (g.rows_all || []).filter(r => exKeys.has(svListRowKey_(r)));
@@ -18062,20 +18079,24 @@ function buildSupervisorListDocumentHtml_(opts) {
           const treatRaw = formatTreatmentTextForReport_(r.treatments) || "—";
           const note = (r.notes != null ? String(r.notes) : "").trim();
           const cov = ((r.coverage_type != null && String(r.coverage_type).trim()) || "—");
-          let treatMemo = rptEditRichSvMemo_(`groups.${gi}.rows.${ri}.treatments`, treatRaw);
+          let treatMemo = forPrint
+            ? rptRichPrintHtmlFromHtml_(formatSvTreatMemoDisplayHtml_(treatRaw), "fax-cell-rich")
+            : rptEditRichSvMemo_(`groups.${gi}.rows.${ri}.treatments`, treatRaw);
           if (note.length > 0) {
-            treatMemo += `<div class="sv-row-notes">${rptEditRichSvMemo_(`groups.${gi}.rows.${ri}.notes`, note, {
-              block: true,
-              tag: "div",
-              cls: "sv-notes-body",
-              multiline: true
-            })}</div>`;
+            treatMemo += forPrint
+              ? `<div class="sv-row-notes">${rptRichPrintHtmlFromHtml_(formatSvTreatMemoDisplayHtml_(note), "sv-notes-body")}</div>`
+              : `<div class="sv-row-notes">${rptEditRichSvMemo_(`groups.${gi}.rows.${ri}.notes`, note, {
+                block: true,
+                tag: "div",
+                cls: "sv-notes-body",
+                multiline: true
+              })}</div>`;
           }
           const rk = svListRowKey_(r);
           h += `<tr data-sv-row-key="${escAttr(rk)}">`;
-          h += `<td>${rptEdit_(`groups.${gi}.rows.${ri}.room`, r.room || "")}</td>`;
-          h += `<td>${rptEdit_(`groups.${gi}.rows.${ri}.name`, r.name || "")}</td>`;
-          h += `<td>${rptEdit_(`groups.${gi}.rows.${ri}.coverage_type`, cov)}</td>`;
+          h += `<td>${forPrint ? escHtml(r.room || "") : rptEdit_(`groups.${gi}.rows.${ri}.room`, r.room || "")}</td>`;
+          h += `<td>${forPrint ? escHtml(r.name || "") : rptEdit_(`groups.${gi}.rows.${ri}.name`, r.name || "")}</td>`;
+          h += `<td>${forPrint ? escHtml(cov) : rptEdit_(`groups.${gi}.rows.${ri}.coverage_type`, cov)}</td>`;
           h += `<td class="sv-td-treat-memo">${treatMemo}</td>`;
           if (showExcludeCol) {
             h += `<td class="fax-row-exclude-cell"><button type="button" class="fax-row-exclude-btn" title="この患者を表から外す" onclick="svListExcludeRow_(${gi},'${escAttr(rk)}')">×</button></td>`;
@@ -18092,12 +18113,14 @@ function buildSupervisorListDocumentHtml_(opts) {
   const showFree = opts.forPrint ? free.length > 0 : true;
   if (showFree) {
     h += `<div class="sv-free-block">`;
-    h += rptEditRich_("free_comment", free, {
-      block: true,
-      tag: "div",
-      cls: "sv-free-body",
-      multiline: true
-    });
+    h += forPrint
+      ? rptRichPrintHtml_(free, "sv-free-body")
+      : rptEditRich_("free_comment", free, {
+        block: true,
+        tag: "div",
+        cls: "sv-free-body",
+        multiline: true
+      });
     h += `</div>`;
   }
   h += `</div>`;
@@ -18184,8 +18207,8 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .sv-doc .sv-free-body { min-height: 3em; line-height: 1.75; font-size: 10.5pt; padding: 6px 8px; border-top: 1px solid #94a3b8; padding-top: 10px; white-space: pre-wrap; }
 .fax-em-red { color: #dc2626; font-weight: 800; }
 .fax-em-hl { background: #fef08a; padding: 1px 3px; }
-.fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
-.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; }
+.fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 ${getRptPrintWhitespaceCss_()}
 </style></head><body>${innerHtml}</body></html>`;
   const w = window.open("", "_blank");
@@ -19419,7 +19442,7 @@ function formatIssNotesDisplayHtml_(raw) {
 }
 
 function issRichStaticHtml_(raw, cls) {
-  return `<div class="${cls} rpt-print-preserve-ws">${formatIssNotesDisplayHtml_(raw)}</div>`;
+  return rptRichPrintHtmlFromHtml_(formatIssNotesDisplayHtml_(raw), cls);
 }
 
 function buildShareSheetPrintHtmlFromContext_(ctx, opts) {

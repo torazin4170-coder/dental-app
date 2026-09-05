@@ -508,39 +508,44 @@
       #shareSheetModal .report-preview-split { min-height: 0; flex: 1 1 auto; overflow: hidden; gap: 8px; }
       #shareSheetModal .iss-modal-head-row {
         display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        align-items: center;
-        gap: 8px 12px;
-        margin-bottom: 8px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        margin-bottom: 10px;
         flex-shrink: 0;
       }
-      #shareSheetModal .iss-modal-head-text { flex: 1 1 200px; min-width: 0; }
+      #shareSheetModal .iss-modal-head-text { flex: 0 0 auto; width: 100%; min-width: 0; }
       #shareSheetModal .iss-modal-head-text .modal-title { margin-bottom: 4px; font-size: 17px; }
       #shareSheetModal .iss-modal-head-text #issFacLabel { margin: 0 !important; }
       #shareSheetModal .iss-modal-toolbar {
         display: flex;
         flex-wrap: wrap;
-        justify-content: flex-end;
+        justify-content: center;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
+        width: 100%;
         margin: 0;
-        padding: 0;
-        border: none;
+        padding: 10px 8px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #f8fafc;
         box-shadow: none;
         flex: 0 0 auto;
       }
       #shareSheetModal .iss-modal-toolbar .btn,
       #shareSheetModal .iss-modal-toolbar .btn-cancel,
       #shareSheetModal .iss-modal-toolbar .btn-ok {
-        flex: 0 0 auto;
+        flex: 0 1 auto;
         width: auto;
         min-width: 0;
-        padding: 7px 11px;
+        padding: 8px 12px;
         font-size: 12px;
         font-weight: 700;
         border-radius: 8px;
         white-space: nowrap;
+      }
+      #shareSheetModal .iss-modal-toolbar .btn-ok {
+        padding: 8px 16px;
       }
       #shareSheetModal .report-preview-form-pane {
         flex: 0 1 auto;
