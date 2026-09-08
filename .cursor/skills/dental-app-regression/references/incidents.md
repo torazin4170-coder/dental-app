@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-09 ⑤患者PPSスクロール不能・FAX医院名・ISS行削除ずれ
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | ⑤で印刷ボタンが見えない／FAX医院名が変わらない／印刷に「外す」列／ISS削除で別患者が消える |
+| **原因** | ⑤に scroll-body 未適用。FAXは clinic 変更後に preview pull で旧名上書き。印刷は th「外す」未除去。ISSは削除後に preview→form をインデックス同期 |
+| **修正** | ⑤スクロール殻、FAX skipPull、fax-col-exclude 除去、ISS fromFormOnly／写真は patient_id 照合 |
+| **再発条件** | 帳票モーダルHTML・`refreshFaxDailyPreview`・`issRefreshPreview`／`issPullPreviewEditsToContext_` 変更時 |
+| **必須確認** | ⑤スクロール＋印刷ボタン、FAX医院名変更がプレビュー反映、印刷に外す列なし、ISS行削除が押した患者のみ |
+
+---
+
 ## 2026-09 写真完全非表示・歯式遅い
 
 | 項目 | 内容 |

@@ -1970,30 +1970,34 @@
 <div class="modal-overlay" id="patientPpsModal">
   <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="patientPpsModalTitle">
     <div class="modal-handle"></div>
-    <div class="modal-title" id="patientPpsModalTitle">患者パーソナルシート</div>
-    <div id="patientPpsModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
-    <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・患者（⑤）・対象年月</strong>から、患者データ・診療記録を反映した「歯科治療・管理計画書」をプレビューします。外側をタップしても閉じません。</p>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="reloadPatientPpsFromServer_()">🔄 診療記録から再読み込み</button>
+    <div class="fax-daily-modal-scroll-body">
+      <div class="modal-title" id="patientPpsModalTitle">患者パーソナルシート</div>
+      <div id="patientPpsModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・患者（⑤）・対象年月</strong>から、患者データ・診療記録を反映した「歯科治療・管理計画書」をプレビューします。外側をタップしても閉じません。</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="reloadPatientPpsFromServer_()">🔄 診療記録から再読み込み</button>
+      </div>
+      <div style="margin-bottom:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px">治療計画・管理計画（報告書カテゴリ・④と連動）</div>
+        <div id="patientPpsCatPillsHost" class="notes-tone-pills-wrap" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+        <label for="patientPpsPlanComment" style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">コメント（自由記述・プレビューと同期）</label>
+        <textarea id="patientPpsPlanComment" rows="3" placeholder="対象月の処置・次回予定の要約が入ります。追記・修正できます。" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;line-height:1.55;font-family:inherit;resize:vertical" oninput="onPatientPpsPlanInput_()"></textarea>
+        <p style="font-size:10px;color:var(--muted);margin:6px 0 0;line-height:1.45">カテゴリを選ぶとプレビューの治療計画欄に反映されます。プレビュー内でも直接編集できます。</p>
+      </div>
+      <div id="patientPpsPreviewScroll" class="report-preview-scroll" style="margin-bottom:12px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px;overflow-x:auto">
+        <div id="patientPpsPreviewInner"></div>
+      </div>
     </div>
-    <div style="margin-bottom:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc">
-      <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px">治療計画・管理計画（報告書カテゴリ・④と連動）</div>
-      <div id="patientPpsCatPillsHost" class="notes-tone-pills-wrap" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
-      <label for="patientPpsPlanComment" style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">コメント（自由記述・プレビューと同期）</label>
-      <textarea id="patientPpsPlanComment" rows="3" placeholder="対象月の処置・次回予定の要約が入ります。追記・修正できます。" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;line-height:1.55;font-family:inherit;resize:vertical" oninput="onPatientPpsPlanInput_()"></textarea>
-      <p style="font-size:10px;color:var(--muted);margin:6px 0 0;line-height:1.45">カテゴリを選ぶとプレビューの治療計画欄に反映されます。プレビュー内でも直接編集できます。</p>
-    </div>
-    <div id="patientPpsPreviewScroll" class="report-preview-scroll" style="margin-bottom:12px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px;overflow-x:auto">
-      <div id="patientPpsPreviewInner"></div>
-    </div>
-    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
-      <button type="button" class="btn btn-secondary" onclick="savePatientPpsPreviewDraft_()">💾 下書き保存</button>
-      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('patientPps','overwrite')">📁 確定保存</button>
-      <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('patientPps','new')">📁 別名</button>
-      <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
-      <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearPatientPpsPreviewDraft_()">🗑 下書き消去</button>
-      <button type="button" class="btn-cancel" onclick="closePatientPpsModal()">閉じる</button>
-      <button type="button" class="btn-ok" onclick="printPatientPpsReport()">🖨 印刷 / PDFに保存</button>
+    <div class="fax-daily-modal-foot">
+      <div class="modal-actions report-preview-modal-footer" style="margin-top:0">
+        <button type="button" class="btn btn-secondary" onclick="savePatientPpsPreviewDraft_()">💾 下書き保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('patientPps','overwrite')">📁 確定保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('patientPps','new')">📁 別名</button>
+        <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+        <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearPatientPpsPreviewDraft_()">🗑 下書き消去</button>
+        <button type="button" class="btn-cancel" onclick="closePatientPpsModal()">閉じる</button>
+        <button type="button" class="btn-ok" onclick="printPatientPpsReport()">🖨 印刷 / PDFに保存</button>
+      </div>
     </div>
   </div>
 </div>

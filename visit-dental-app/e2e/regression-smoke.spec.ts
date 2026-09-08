@@ -88,7 +88,7 @@ test.describe('regression smoke — DOM shell', () => {
       },
       { timeout: 45_000 },
     )
-    for (const modalId of ['faxDailyModal', 'svListModal', 'personalSheetModal']) {
+    for (const modalId of ['faxDailyModal', 'svListModal', 'personalSheetModal', 'patientPpsModal']) {
       const modal = page.locator(`#${modalId}`)
       await expect(modal.locator('.fax-daily-modal-scroll-body')).toHaveCount(1)
       await expect(modal.locator('.fax-daily-modal-foot')).toHaveCount(1)

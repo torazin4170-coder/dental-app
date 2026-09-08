@@ -10124,6 +10124,7 @@ function rptPlainHtml_(html) {
 /** プレビュー DOM から印刷用 HTML（WYSIWYG）。強調・改行をプレビューと一致させる */
 const RPT_PRINT_STRIP_SELECTORS_ = [
   ".fax-pat-manage",
+  ".fax-col-exclude",
   ".fax-row-exclude-cell",
   ".fax-row-exclude-btn",
   ".fax-loading-wrap",
@@ -11214,7 +11215,8 @@ function onFaxDailyClinicFreeInput_() {
   if (!lastFaxDailyBatch_) return;
   const free = document.getElementById("faxDailyClinicFree");
   rptApplyFaxDailyClinicName_(lastFaxDailyBatch_, free ? free.value : "", faxDailyGetSelectedFacId_(lastFaxDailyBatch_));
-  refreshFaxDailyPreview();
+  // プレビューDOMの旧医院名で上書きされないよう pull をスキップ
+  refreshFaxDailyPreview({ skipPull: true });
 }
 
 function onRptClinicSelectChange_(kind) {
@@ -11224,7 +11226,7 @@ function onRptClinicSelectChange_(kind) {
     rptApplyFaxDailyClinicName_(lastFaxDailyBatch_, sel.value, faxDailyGetSelectedFacId_(lastFaxDailyBatch_));
     const free = document.getElementById("faxDailyClinicFree");
     if (free) free.value = sel.value;
-    refreshFaxDailyPreview();
+    refreshFaxDailyPreview({ skipPull: true });
     return;
   }
   if (kind === "monthCare") {
@@ -12057,7 +12059,7 @@ function buildFaxDailyDocumentHtml_(opts) {
   const showExcludeCol = !opts.forPrint && c.fac_id;
   h += `<table class="fax-table"><thead><tr>`;
   h += `<th style="width:11%">部屋番号</th><th style="width:22%">お名前</th><th style="width:${showExcludeCol ? "30" : "33"}%">本日の治療内容等</th><th style="width:${showExcludeCol ? "31" : "34"}%">次回の治療予定</th>`;
-  if (showExcludeCol) h += `<th style="width:6%">外す</th>`;
+  if (showExcludeCol) h += `<th class="fax-col-exclude" style="width:6%">外す</th>`;
   h += `</tr></thead><tbody>`;
   const emptyColspan = showExcludeCol ? 5 : 4;
   if (!c.rows.length) {
@@ -12071,7 +12073,7 @@ function buildFaxDailyDocumentHtml_(opts) {
       h += `<td>${opts.forPrint ? rptRichPrintHtml_(treatTxt, "fax-cell-rich") : rptEditRich_(`rows.${i}.treatments`, treatTxt)}</td>`;
       h += `<td>${opts.forPrint ? rptRichPrintHtml_(nextCell, "fax-cell-rich") : rptEditRich_(`rows.${i}.next_visit`, nextCell)}</td>`;
       if (showExcludeCol) {
-        h += `<td class="fax-row-exclude-cell"><button type="button" class="fax-row-exclude-btn" title="この患者を表から外す" onclick="faxDailyExcludePatient_('${escAttr(String(c.fac_id))}','${escAttr(rk)}')">×</button></td>`;
+        h += `<td class="fax-row-exclude-cell fax-col-exclude"><button type="button" class="fax-row-exclude-btn" title="この患者を表から外す" onclick="faxDailyExcludePatient_('${escAttr(String(c.fac_id))}','${escAttr(rk)}')">×</button></td>`;
       }
       h += `</tr>`;
     });
@@ -18207,7 +18209,7 @@ function buildSupervisorListDocumentHtml_(opts) {
       h += `<table class="sv-table"><thead><tr>`;
       h += `<th class="sv-room">部屋</th><th style="width:24%">患者氏名</th><th style="width:14%">区分</th>`;
       h += `<th style="width:${showExcludeCol ? "34" : "40"}%">本日の治療・メモ</th>`;
-      if (showExcludeCol) h += `<th style="width:6%">外す</th>`;
+      if (showExcludeCol) h += `<th class="fax-col-exclude" style="width:6%">外す</th>`;
       h += `</tr></thead><tbody>`;
       const emptyColspan = showExcludeCol ? 5 : 4;
       if (!(g.rows || []).length) {
@@ -18237,7 +18239,7 @@ function buildSupervisorListDocumentHtml_(opts) {
           h += `<td>${forPrint ? escHtml(cov) : rptEdit_(`groups.${gi}.rows.${ri}.coverage_type`, cov)}</td>`;
           h += `<td class="sv-td-treat-memo">${treatMemo}</td>`;
           if (showExcludeCol) {
-            h += `<td class="fax-row-exclude-cell"><button type="button" class="fax-row-exclude-btn" title="この患者を表から外す" onclick="svListExcludeRow_(${gi},'${escAttr(rk)}')">×</button></td>`;
+            h += `<td class="fax-row-exclude-cell fax-col-exclude"><button type="button" class="fax-row-exclude-btn" title="この患者を表から外す" onclick="svListExcludeRow_(${gi},'${escAttr(rk)}')">×</button></td>`;
           }
           h += `</tr>`;
         });
@@ -18951,10 +18953,26 @@ function issAddRow(room, name, notes, patientId) {
   wrap.querySelector('[data-f="room"]').value = room || "";
   wrap.querySelector('[data-f="name"]').value = name || "";
   setIssRowNotesToBlock_(wrap, notes || "");
-  wrap.querySelector(`[data-iss-del="${id}"]`).onclick = () => {
+  wrap.querySelector(`[data-iss-del="${id}"]`).onclick = e => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // プレビュー→フォーム同期で別行が上書きされないよう、フォームだけ確定してから再描画
     wrap.remove();
     issRenderFacPatientPicker_();
-    issRefreshPreview(true);
+    issCollectFormToContext_();
+    const inner = document.getElementById("issPreviewInner");
+    if (inner && lastIssPreviewContext) {
+      inner.innerHTML = buildShareSheetPrintHtmlFromContext_(lastIssPreviewContext);
+      psInitPhotoCropModal_();
+      issBindPhotoManipulators_(inner);
+      issBindRowToolbarActions_(inner);
+      issBindPhotoImageLoads_(inner);
+      issLayoutAllPhotos_(inner);
+      rptBindPreviewEdits_(inner, lastIssPreviewContext, issSyncPreviewEditsToForm_);
+      issBindPreviewInputSync_(inner);
+    }
   };
   wrap.querySelectorAll(".iss-inp").forEach(inp => inp.addEventListener("input", () => debounceIssPreview(true)));
   const notesEd = wrap.querySelector('[data-f="notes"]');
@@ -18971,13 +18989,36 @@ function issAddEmptyRow() {
 }
 
 function issCollectFormToContext_() {
+  const prevRows = (lastIssPreviewContext && lastIssPreviewContext.rows) || [];
+  const usedPrev = new Set();
   const rows = [];
-  document.querySelectorAll("#issRows .iss-row-block").forEach((block, i) => {
-    const prevRow = lastIssPreviewContext && lastIssPreviewContext.rows && lastIssPreviewContext.rows[i];
+  document.querySelectorAll("#issRows .iss-row-block").forEach(block => {
+    const pid = block.dataset.patientId || "";
+    const room = block.querySelector('[data-f="room"]')?.value || "";
+    const name = block.querySelector('[data-f="name"]')?.value || "";
+    let prevRow = null;
+    if (pid) {
+      const idx = prevRows.findIndex((r, i) => !usedPrev.has(i) && String(r.patient_id || "") === String(pid));
+      if (idx >= 0) {
+        prevRow = prevRows[idx];
+        usedPrev.add(idx);
+      }
+    }
+    if (!prevRow) {
+      const idx = prevRows.findIndex((r, i) =>
+        !usedPrev.has(i) &&
+        String(r.room || "") === String(room) &&
+        String(r.name || "") === String(name)
+      );
+      if (idx >= 0) {
+        prevRow = prevRows[idx];
+        usedPrev.add(idx);
+      }
+    }
     rows.push({
-      patient_id: block.dataset.patientId || "",
-      room: block.querySelector('[data-f="room"]')?.value || "",
-      name: block.querySelector('[data-f="name"]')?.value || "",
+      patient_id: pid,
+      room,
+      name,
       notes: getIssRowNotesFromBlock_(block),
       photos: prevRow && Array.isArray(prevRow.photos) ? prevRow.photos.slice() : []
     });
@@ -19674,13 +19715,15 @@ function issApplyPreviewEntryLineToContext_() {
   }
 }
 
-function issPullPreviewEditsToContext_() {
+function issPullPreviewEditsToContext_(opts) {
+  opts = opts || {};
   const inner = document.getElementById("issPreviewInner");
   if (!inner || !lastIssPreviewContext) return;
   rptPullEdits_(inner, lastIssPreviewContext);
   issPullAllPhotosFromPreview_();
   issApplyPreviewEntryLineToContext_();
-  issSyncPreviewEditsToForm_();
+  // 行削除直後などに呼ぶと、プレビューの旧インデックスでフォームを上書きしてしまう
+  if (!opts.skipFormSync) issSyncPreviewEditsToForm_();
 }
 
 function issSyncPreviewCellToContext_(el) {
@@ -19763,15 +19806,16 @@ function issRefreshPreview(fromFormOnly) {
   if (!inner) return;
   const ae = document.activeElement;
   const editingPreview = ae && inner.contains(ae) && ae.closest("[data-rpt-path]");
-  const editingIssForm = ae && ae.closest("#issRows, #issFooter, #issFreeTextEd, .iss-staff-wrap, #issCatRadios, #issEntryDate");
   if (lastIssPreviewContext) {
-    if (editingPreview) {
-      issPullPreviewEditsToContext_();
+    if (editingPreview && !fromFormOnly) {
+      // プレビュー編集中: プレビュー→コンテキスト（フォームへは上書きしない）
+      issPullPreviewEditsToContext_({ skipFormSync: true });
       issMergeIssFormMetaToContext_();
-    } else if (!fromFormOnly || !editingIssForm) {
-      issPullPreviewEditsToContext_();
+    } else if (fromFormOnly) {
+      // 左フォームが正: プレビュー→フォーム同期で行がすり替わるのを防ぐ
       issCollectFormToContext_();
     } else {
+      issPullPreviewEditsToContext_({ skipFormSync: true });
       issCollectFormToContext_();
     }
   } else {
