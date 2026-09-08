@@ -472,9 +472,9 @@ function getManifestScope_(base) {
 }
 
 /**
- * Drive 画像をウェブアプリ経由で返す（<img> 用）。
- * Drive の直リンクはログイン・ウイルススキャン等で表示されないことがあるため、
- * デプロイ「実行ユーザー」の Drive 権限で Blob を返す。
+ * Drive 画像リンク用（古い ?driveimg= URL 互換）。
+ * ContentService にバイナリ用 API は無いため、共有を揃えたうえで Drive 直URLへ誘導する。
+ * クライアントの <img> は Drive 直URLを使う（ここは直開き・デバッグ用）。
  * 例: …/exec?driveimg=ファイルID
  */
 function driveImageResponse_(fileId, debug) {
@@ -484,12 +484,26 @@ function driveImageResponse_(fileId, debug) {
   }
   try {
     var file = DriveApp.getFileById(id);
-    var blob = file.getBlob();
-    var mt = blob.getContentType();
-    if (!mt || mt.indexOf("image/") !== 0) {
-      mt = "image/jpeg";
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (shareErr) {
+      /* 既に共有済み／権限不足は無視 */
     }
-    return ContentService.createBlobOutput(blob).setMimeType(mt);
+    var driveView = "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(id);
+    var thumb = "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w1600";
+    if (debug) {
+      return ContentService.createTextOutput(
+        "driveimg ok\nid=" + id + "\nuc=" + driveView + "\nthumb=" + thumb
+      ).setMimeType(ContentService.MimeType.PLAIN_TEXT);
+    }
+    var html =
+      "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
+      "<meta http-equiv=\"refresh\" content=\"0;url=" + driveView + "\">" +
+      "<title>photo</title></head><body style=\"margin:0;background:#111;text-align:center\">" +
+      "<img src=\"" + thumb + "\" alt=\"photo\" style=\"max-width:100%;height:auto\">" +
+      "<p style=\"color:#94a3b8;font:12px sans-serif\"><a style=\"color:#93c5fd\" href=\"" +
+      driveView + "\">原寸を開く</a></p></body></html>";
+    return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (err) {
     var msg = String(err && err.message ? err.message : err);
     Logger.log("driveImageResponse_ id=" + id + " :: " + msg);
@@ -1087,16 +1101,7 @@ function getInitData(ymOpt) {
     ? patRows.slice(1).map(function (r) { return rowToObj(patHeader, r); })
     : [];
 
-  var trSh = getSheet("treatments");
-  ensureTreatmentTimeColumns_(trSh);
-  var trRows = trSh.getDataRange().getValues();
-  var trHeader = trRows.length ? trRows[0] : [];
-  var records = trRows.length > 1
-    ? trRows.slice(1)
-      .map(function (r) { return rowToObj(trHeader, r); })
-      .filter(function (t) { return visitDateYM_(t.visit_date) === ym; })
-      .map(normalizeTreatmentTimesForClient_)
-    : [];
+  var records = readTreatmentBootRecords_(ym);
 
   var setSh = getSheet("settings");
   var setRows = setSh.getDataRange().getValues();
@@ -1191,24 +1196,45 @@ function visitDateYM_(vd) {
  * 指定月の診療記録を返す
  * @param {string} [ymOpt] "yyyy-MM"（省略時は JST の今月）。ymOpt が "*" または "__all__" のときは全件
  */
-function getMonthlyRecords(ymOpt) {
-  const sh = getSheet("treatments");
+/** 起動・月次一覧用：exam_data を除く軽量行 */
+var TREATMENT_BOOT_COLS_ = [
+  "id", "patient_id", "fac_id", "visit_date", "treatments", "notes",
+  "next_date", "next_content", "doctor", "visit_time_start", "visit_time_end", "notes_tones"
+];
+
+function readTreatmentBootRecords_(ymOpt) {
+  var sh = getSheet("treatments");
   ensureTreatmentTimeColumns_(sh);
-  const rows = sh.getDataRange().getValues();
-  const header = rows[0];
-  const sOpt = ymOpt != null ? String(ymOpt).trim() : "";
-  const wantAll = sOpt === "*" || sOpt === "__all__" || sOpt.toLowerCase() === "all";
-  const now = new Date();
-  const ymDefault = Utilities.formatDate(now, "JST", "yyyy-MM-dd").slice(0, 7);
-  const ym = wantAll
+  var rows = sh.getDataRange().getValues();
+  if (rows.length < 2) return [];
+  var header = rows[0];
+  var colIdx = {};
+  header.forEach(function (h, i) {
+    var k = String(h || "").trim();
+    if (k) colIdx[k] = i;
+  });
+  var sOpt = ymOpt != null ? String(ymOpt).trim() : "";
+  var wantAll = sOpt === "*" || sOpt === "__all__" || sOpt.toLowerCase() === "all";
+  var now = new Date();
+  var ymDefault = Utilities.formatDate(now, "JST", "yyyy-MM-dd").slice(0, 7);
+  var ym = wantAll
     ? null
     : (sOpt && /^\d{4}-\d{2}$/.test(sOpt) ? sOpt : ymDefault);
-  const mapped = rows.slice(1).map(function (r) { return rowToObj(header, r); });
-  const filtered = wantAll
-    ? mapped
-    : mapped.filter(function (t) { return visitDateYM_(t.visit_date) === ym; });
-  const result = filtered.map(normalizeTreatmentTimesForClient_);
-  return JSON.stringify(result);
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    var obj = {};
+    TREATMENT_BOOT_COLS_.forEach(function (k) {
+      if (colIdx[k] != null) obj[k] = r[colIdx[k]];
+    });
+    if (!wantAll && visitDateYM_(obj.visit_date) !== ym) continue;
+    out.push(normalizeTreatmentTimesForClient_(obj));
+  }
+  return out;
+}
+
+function getMonthlyRecords(ymOpt) {
+  return JSON.stringify(readTreatmentBootRecords_(ymOpt));
 }
 
 /** 診療日＋開始時刻の重複判定用キー */
@@ -1579,6 +1605,49 @@ function getFacilityMonthlyCareReportData(facId, ymOpt) {
   });
 }
 
+var MUSHO_KENSHIN_TREATMENT_GS_ = "無料検診";
+var PATIENT_STATUS_TREATMENTS_GS_ = ["初診", "入院中", "退所", "ご逝去"];
+
+function treatmentCodesListGs_(treatments) {
+  return String(treatments || "").split(/[、,]/).map(function (s) { return String(s).trim(); }).filter(Boolean);
+}
+
+/** 無料検診・報告書ステータス以外の処置が1つ以上あるか */
+function recordHasCountableTreatmentGs_(rec) {
+  return treatmentCodesListGs_(rec && rec.treatments != null ? rec.treatments : rec).some(function (c) {
+    return c && c !== MUSHO_KENSHIN_TREATMENT_GS_ && PATIENT_STATUS_TREATMENTS_GS_.indexOf(c) === -1;
+  });
+}
+
+function recordHasTreatmentCodeGs_(rec, code) {
+  return treatmentCodesListGs_(rec && rec.treatments != null ? rec.treatments : rec).indexOf(String(code || "")) !== -1;
+}
+
+/** 患者ごとの初診日（「初診」チップの最古日。無ければ数えられる処置の最古日。無料検診のみの日は含めない） */
+function buildFirstConsultDateByPidGs_(rows, header) {
+  var byShoshin = {};
+  var byCountable = {};
+  if (!rows || rows.length < 2) return {};
+  for (var j = 1; j < rows.length; j++) {
+    var t0 = rowToObj(header, rows[j]);
+    var pid0 = String(t0.patient_id || "");
+    var vd0 = visitDateYMD_(t0.visit_date);
+    if (!pid0 || !vd0) continue;
+    if (recordHasTreatmentCodeGs_(t0, "初診")) {
+      if (!byShoshin[pid0] || vd0.localeCompare(byShoshin[pid0]) < 0) byShoshin[pid0] = vd0;
+    }
+    if (recordHasCountableTreatmentGs_(t0)) {
+      if (!byCountable[pid0] || vd0.localeCompare(byCountable[pid0]) < 0) byCountable[pid0] = vd0;
+    }
+  }
+  var out = {};
+  Object.keys(byShoshin).forEach(function (pid) { out[pid] = byShoshin[pid]; });
+  Object.keys(byCountable).forEach(function (pid) {
+    if (!out[pid] || byCountable[pid].localeCompare(out[pid]) < 0) out[pid] = byCountable[pid];
+  });
+  return out;
+}
+
 /**
  * 施設単位・指定月の看護・医療従事者向け月次報告用データ（患者一覧＋訪問別記録）
  * @param {string} facId
@@ -1604,19 +1673,7 @@ function getFacilityClinicalMonthlyReportData(facId, ymOpt) {
   var settings = JSON.parse(getSettings());
   var patients = JSON.parse(getPatients(null));
 
-  var minDateByPid = {};
-  if (rows.length >= 2) {
-    var headerAll = rows[0];
-    for (var j = 1; j < rows.length; j++) {
-      var t0 = rowToObj(headerAll, rows[j]);
-      var pid0 = String(t0.patient_id);
-      var vd0 = visitDateYMD_(t0.visit_date);
-      if (!pid0 || !vd0) continue;
-      if (!minDateByPid[pid0] || vd0.localeCompare(minDateByPid[pid0]) < 0) {
-        minDateByPid[pid0] = vd0;
-      }
-    }
-  }
+  var minDateByPid = rows.length >= 2 ? buildFirstConsultDateByPidGs_(rows, rows[0]) : {};
 
   if (rows.length < 2) {
     return JSON.stringify({
@@ -1973,10 +2030,12 @@ function deleteFacility(facilityId) {
 
 /** 患者の最新歯式データを返す（JSON文字列）*/
 function getTeethData(patientId) {
+  const pid = String(patientId || "").trim();
+  if (!pid) return "{}";
   const sh = getSheet("teeth_data");
   const rows = sh.getDataRange().getValues();
   for (let i = rows.length - 1; i >= 1; i--) {
-    if (rows[i][0] === patientId) return rows[i][2]; // col: patient_id, date, json
+    if (String(rows[i][0] || "").trim() === pid) return rows[i][2] != null ? String(rows[i][2]) : "{}";
   }
   return "{}";
 }
@@ -2417,11 +2476,12 @@ function getDashboardData() {
 // ─────────────────────────────────────────
 
 function getMedicalInfo(patientId) {
+  const pid = String(patientId || "").trim();
   const sh = getSheet("patient_medical");
   const rows = sh.getDataRange().getValues();
   const header = rows[0];
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === patientId) {
+    if (String(rows[i][0] || "").trim() === pid) {
       const obj = rowToObj(header, rows[i]);
       try { obj.conditions  = JSON.parse(obj.conditions  || "[]"); } catch(e){ obj.conditions  = []; }
       try { obj.medications = JSON.parse(obj.medications || "[]"); } catch(e){ obj.medications = []; }
@@ -2632,14 +2692,10 @@ function diagnoseDrivePhotoFirstRow() {
   return diagnoseDrivePhotoById(id);
 }
 
-/** クライアントの <img src> 用。ウェブアプリが取れる URL（doGet ?driveimg=）を優先 */
+/** クライアントの <img src> 用。Drive 共有リンク直URL（バイナリ配信不可の ?driveimg= は使わない） */
 function photoWebAppViewUrl_(fileId) {
   var id = String(fileId || "").trim();
   if (!id) return "";
-  var base = getWebAppBaseUrl_();
-  if (base) {
-    return base + "?driveimg=" + encodeURIComponent(id);
-  }
   return "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(id);
 }
 
@@ -2787,12 +2843,17 @@ function repairPhotoSharingForWebDisplay() {
  */
 var INLINE_PHOTO_MAX_BYTES = 2.5 * 1024 * 1024;
 
-function getPhotos(patientId) {
+/**
+ * 患者の写真一覧。既定ではメタデータのみ（Drive の base64 埋め込みは行わない＝高速）。
+ * 第2引数 includeInline が true のときだけ、小さい画像を inline_data_url で返す。
+ */
+function getPhotos(patientId, includeInline) {
   const sh = getSheet("photos");
   const rows = sh.getDataRange().getValues();
   if (rows.length <= 1) return JSON.stringify([]);
   const header = rows[0];
-  const pid = String(patientId);
+  const pid = String(patientId || "").trim();
+  const wantInline = includeInline === true || String(includeInline) === "true";
   const list = rows
     .slice(1)
     .map(function (r) {
@@ -2806,7 +2867,7 @@ function getPhotos(patientId) {
       return o;
     })
     .filter(function (r) {
-      return String(r.patient_id || r.patientId || "") === pid;
+      return String(r.patient_id || r.patientId || "").trim() === pid;
     })
     .reverse(); // 新しい順
 
@@ -2816,6 +2877,7 @@ function getPhotos(patientId) {
     fid = String(fid).trim();
     r.file_url = photoWebAppViewUrl_(fid);
     r.inline_data_url = "";
+    if (!wantInline) return;
     try {
       var file = DriveApp.getFileById(fid);
       var sz = file.getSize();

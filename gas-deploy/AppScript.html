@@ -6514,6 +6514,11 @@ function renderTeethSummary(pid) {
   ensureTeethChartBlockListener();
   const gen = ++teethLoadGen_;
   const reqPid = String(pid || "").trim();
+  const host = document.getElementById("teethChartView");
+  if (host) {
+    host.setAttribute("aria-busy", "true");
+    host.dataset.teethLoading = "1";
+  }
   gasCallPatientRead_("getTeethData", pid).then(json => {
     if (gen !== teethLoadGen_) return;
     if (reqPid && selectedPatient && String(selectedPatient.id) !== reqPid) return;
@@ -6526,13 +6531,21 @@ function renderTeethSummary(pid) {
     migrateLegacyTeethProsthesis(currentTeethData);
     paintTeethChart();
     refreshTeethBaseline();
+    if (host) {
+      host.removeAttribute("aria-busy");
+      delete host.dataset.teethLoading;
+    }
   }).catch(e => {
     if (gen !== teethLoadGen_) return;
     if (reqPid && selectedPatient && String(selectedPatient.id) !== reqPid) return;
     currentTeethData = {};
     paintTeethChart();
     refreshTeethBaseline();
-    showToast("歯式の読み込みに失敗: " + (e && e.message ? e.message : String(e)));
+    if (host) {
+      host.removeAttribute("aria-busy");
+      delete host.dataset.teethLoading;
+    }
+    showToast("歯式の読み込みに失敗: " + formatUserFacingRpcError_(e));
   });
 }
 
@@ -8515,15 +8528,50 @@ let photoCatSelectInFlight_ = false;
 /** 複数枚選択時のカテゴリ選択キュー */
 let photoUploadQueue_ = [];
 
-/** Drive 写真を <img> で出す用（PRIVATE ファイルは driveUrl＝GAS ?driveimg= 経由） */
+/** Drive 共有リンク向けの直URL（サムネ。img 向けに安定） */
+function patientPhotoDriveThumbUrl_(fid) {
+  const id = String(fid || "").trim();
+  if (!id) return "";
+  return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w1200";
+}
+
+/** Drive 共有リンク向けの直URL（原寸寄り） */
+function patientPhotoDriveUcUrl_(fid) {
+  const id = String(fid || "").trim();
+  if (!id) return "";
+  return "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(id);
+}
+
+/**
+ * 写真 <img src>。優先順位:
+ * 1) 端末内 dataUrl（アップロード直後）
+ * 2) Drive 直URL（file_id・リンク共有前提）… GAS ?driveimg= はバイナリを返せないため使わない
+ * 3) driveUrl が Drive 系ならそのまま
+ */
 function patientPhotoDisplaySrc_(p) {
   if (!p) return "";
   if (p.dataUrl) return p.dataUrl;
-  const u = p.driveUrl ? String(p.driveUrl).trim() : "";
-  if (u) return u;
   const fid = p.id && !String(p.id).startsWith("tmp_") ? String(p.id) : "";
-  if (fid) return "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(fid);
+  if (fid) return patientPhotoDriveThumbUrl_(fid);
+  const u = p.driveUrl ? String(p.driveUrl).trim() : "";
+  if (u && u.indexOf("driveimg=") < 0) return u;
   return "";
+}
+
+/** サムネ失敗時: thumbnail → uc → googleusercontent */
+function patientPhotoImgOnError_(img) {
+  if (!img) return;
+  const fid = String(img.getAttribute("data-photo-id") || "").trim();
+  if (!fid || String(fid).startsWith("tmp_")) return;
+  const step = Number(img.dataset.photoFallback || "0");
+  if (step >= 2) return;
+  if (step === 0) {
+    img.dataset.photoFallback = "1";
+    img.src = patientPhotoDriveUcUrl_(fid);
+    return;
+  }
+  img.dataset.photoFallback = "2";
+  img.src = "https://lh3.googleusercontent.com/d/" + encodeURIComponent(fid);
 }
 
 function isTempPhotoId_(id) {
@@ -8589,6 +8637,19 @@ function loadPhotos(patientId) {
   }
   const seq = (loadPhotosSeqByPid_[pid] || 0) + 1;
   loadPhotosSeqByPid_[pid] = seq;
+  const grid = document.getElementById("photoGrid");
+  if (grid) {
+    grid.setAttribute("aria-busy", "true");
+    const loadingHint = grid.querySelector(".photo-loading-hint");
+    if (!loadingHint) {
+      const hint = document.createElement("div");
+      hint.className = "photo-loading-hint";
+      hint.style.cssText = "grid-column:1/-1;padding:10px 4px;font-size:12px;font-weight:700;color:var(--muted)";
+      hint.textContent = "写真を読み込み中…";
+      grid.insertBefore(hint, grid.firstChild);
+    }
+  }
+  // メタデータのみ（重い base64 同梱はしない＝歯式など他RPCを塞がない）
   gasCallPatientRead_("getPhotos", pid).then(json => {
     if (loadPhotosSeqByPid_[pid] !== seq) return; // 古い応答は捨てる
     const photos = JSON.parse(json);
@@ -8799,10 +8860,13 @@ function renderPhotoGrid() {
   if (currentPhotoCat !== "all") photos = photos.filter(p => p.category === currentPhotoCat);
 
   const grid = document.getElementById("photoGrid");
+  if (!grid) return;
+  grid.removeAttribute("aria-busy");
   grid.innerHTML = photos.map(p => `
-    <div class="photo-thumb" onclick="openPhotoViewer('${p.id}')">
-      <button type="button" class="photo-thumb-del" title="削除" aria-label="削除" onclick="deletePatientPhoto('${p.id}',event)">✕</button>
-      <img src="${escAttr(patientPhotoDisplaySrc_(p))}" alt="${escAttr(p.category)}" loading="lazy">
+    <div class="photo-thumb" onclick="openPhotoViewer('${escAttr(String(p.id))}')">
+      <button type="button" class="photo-thumb-del" title="削除" aria-label="削除" onclick="deletePatientPhoto('${escAttr(String(p.id))}',event)">✕</button>
+      <img src="${escAttr(patientPhotoDisplaySrc_(p))}" alt="${escAttr(p.category)}" loading="lazy"
+        data-photo-id="${escAttr(String(p.id || ""))}" onerror="patientPhotoImgOnError_(this)">
       <div class="photo-cat">${catIcon(p.category)} ${escHtml(p.category)}</div>
       <div class="photo-meta">${escHtml(p.dateTaken || "")}<br>${escHtml((p.filename || "").slice(0, 16))}</div>
     </div>
@@ -8856,6 +8920,9 @@ function openPhotoViewer(photoId) {
     img.style.height = "";
     img.style.maxWidth = "100%";
     img.style.maxHeight = "100%";
+    img.dataset.photoFallback = "0";
+    img.setAttribute("data-photo-id", String(p.id || ""));
+    img.onerror = function () { patientPhotoImgOnError_(img); };
     img.onload = function () {
       if (stage) stage.scrollTop = 0;
       fitPhotoViewerImage_();

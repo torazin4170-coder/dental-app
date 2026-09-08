@@ -299,6 +299,31 @@ export function runStaticGuards(root) {
     errors.push('帳票モーダルに fax-daily-modal-foot（固定フッター）がありません')
   }
 
+  if (!script.includes('function patientPhotoDriveThumbUrl_')) {
+    errors.push('patientPhotoDriveThumbUrl_ がありません（写真 Drive 直URL）')
+  }
+  if (!script.includes('function patientPhotoImgOnError_')) {
+    errors.push('patientPhotoImgOnError_ がありません（写真フォールバック）')
+  }
+  const photoSrcFn = extractFunctionSource_(script, 'patientPhotoDisplaySrc_')
+  if (photoSrcFn && !photoSrcFn.includes('driveimg=')) {
+    errors.push('patientPhotoDisplaySrc_ が壊れた driveimg URL を除外していません')
+  }
+  if (photoSrcFn && /if \(u\) return u/.test(photoSrcFn)) {
+    errors.push('patientPhotoDisplaySrc_ が driveUrl を無条件優先しています（driveimg 回帰）')
+  }
+
+  const mainGs = readText(root, 'AppsScript-Main-差し替え用.gs')
+  if (mainGs.includes('ContentService.createBlobOutput')) {
+    errors.push('AppsScript-Main: ContentService.createBlobOutput は存在しないAPIです')
+  }
+  if (mainGs.includes('function photoWebAppViewUrl_') && mainGs.includes('?driveimg=')) {
+    const urlFn = extractFunctionSource_(mainGs, 'photoWebAppViewUrl_')
+    if (urlFn.includes('driveimg=')) {
+      errors.push('AppsScript-Main: photoWebAppViewUrl_ が ?driveimg= を返しています（Drive 直URLにすること）')
+    }
+  }
+
   const printErrors = runPrintParityGuards(script)
   errors.push(...printErrors)
 

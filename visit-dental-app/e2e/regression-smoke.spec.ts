@@ -182,4 +182,35 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(fns.every(Boolean)).toBe(true)
   })
+
+  test('patientPhotoDisplaySrc_ prefers Drive URL over broken driveimg', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        patientPhotoDisplaySrc_?: (p: {
+          id?: string
+          dataUrl?: string
+          driveUrl?: string
+        }) => string
+      }
+      if (typeof w.patientPhotoDisplaySrc_ !== 'function') return false
+      const src = w.patientPhotoDisplaySrc_({
+        id: 'abc123FILE',
+        driveUrl: 'https://script.google.com/macros/s/xxx/exec?driveimg=abc123FILE',
+      })
+      return (
+        !!src &&
+        src.indexOf('driveimg=') < 0 &&
+        (src.indexOf('thumbnail') >= 0 || src.indexOf('drive.google.com') >= 0)
+      )
+    })
+    expect(ok).toBe(true)
+  })
 })

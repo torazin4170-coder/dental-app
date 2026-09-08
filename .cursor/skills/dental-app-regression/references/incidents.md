@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-09 写真完全非表示・歯式遅い
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | 診療記録で写真が全く出ない／歯式が遅い・空のままに見える |
+| **原因** | ① `patientPhotoDisplaySrc_` が壊れた GAS `?driveimg=`（存在しない `ContentService.createBlobOutput`）を優先 ② 写真の重い読込が他RPCを遅く見せる |
+| **修正** | Drive 直URL（thumbnail/uc）優先＋img onerror フォールバック。GAS は `photoWebAppViewUrl_` を Drive URL に変更、`driveImageResponse_` を修正 |
+| **再発条件** | `patientPhotoDisplaySrc_` / `getPhotos` / `driveImageResponse_` / `photoWebAppViewUrl_` を変更したとき |
+| **必須確認** | 患者1人 → 写真表示、歯式が表示（読み込み中のあと埋まる）。古い写真が出ない場合は GAS で `repairPhotoSharingForWebDisplay` を1回実行 |
+
+---
+
 ## 2026-09 情報共有シート — テキスト修飾
 
 | 項目 | 内容 |
