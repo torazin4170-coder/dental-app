@@ -159,6 +159,12 @@ async function callGasPostRpc(gasUrl, func, args) {
     const tryParsed = await parseGasText(res.clone())
     if (tryParsed.ok) return tryParsed
     if (![301, 302, 303, 307, 308].includes(res.status)) {
+      // リダイレクト無しで HTML/非JSON → 保存は完了していることが多い
+      if (!tryParsed.ok && /JSON 以外|HTML/i.test(String(tryParsed.error || ''))) {
+        tryParsed.error =
+          String(tryParsed.error || '') +
+          '（保存処理は完了している可能性があります。画面で再確認してください）'
+      }
       return tryParsed
     }
     const loc = res.headers.get('location')

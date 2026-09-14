@@ -2800,16 +2800,26 @@ function isUnknownRpcError_(err) {
 /** RPC エラーをトースト向けに短く・読みやすく整形（HTML 漏れ防止） */
 function formatUserFacingRpcError_(err) {
   const msg = String(err && err.message ? err.message : err || "不明なエラー");
-  if (/<!doctype|<html|<script|nonce=|window\[|ppConfig|GAS_WEBAPP/i.test(msg)) {
-    return "サーバーが想定外の応答（HTML）を返しました。設定→接続状態、または GAS の再デプロイを確認してください。";
+  if (/<!doctype html|<html[\s>]|<script[\s>]|nonce=|window\[|ppConfig|boot-loading|訪問歯科カルテ/i.test(msg)) {
+    return "サーバーが想定外の応答（HTML）を返しました。設定→接続状態を確認してください。保存済みの場合もあります。";
   }
-  if (msg.length > 140) return msg.slice(0, 140) + "…";
+  if (/GAS が HTML を返しました|JSON 以外を返しました/i.test(msg)) {
+    return "サーバー通信が不安定でした。設定→接続状態を確認してください。保存済みの場合もあります。";
+  }
+  if (msg.length > 160) return msg.slice(0, 160) + "…";
   return msg;
 }
 
 function isRpcTimeoutError_(err) {
   const msg = String(err && err.message ? err.message : err || "");
   return /タイムアウト/.test(msg) || !!(err && err.name === "AbortError");
+}
+
+/** 保存はサーバー完了済みなのに、応答だけ壊れて失敗に見えるケース */
+function isAmbiguousRpcFailure_(err) {
+  if (isRpcTimeoutError_(err)) return true;
+  const msg = String(err && err.message ? err.message : err || "");
+  return /HTML|JSON 以外|想定外の応答|502|503|504|ネットワーク|Failed to fetch|NetworkError|通信/i.test(msg);
 }
 
 /** 患者データ読み込み：タイムアウト時は1回だけ再試行 */
@@ -2821,10 +2831,11 @@ function gasCallPatientRead_(funcName, ...args) {
 }
 
 function treatmentVisitSlotKeyClient_(visitDate, visitTimeStart) {
-  return normalizeVisitDateKey(visitDate) + "\t" + (visitTimeStart != null ? String(visitTimeStart) : "");
+  // 重複チェックと同じ正規化（時刻ゼロ埋め）で事後確認する
+  return treatmentVisitSlotKey_(visitDate, visitTimeStart);
 }
 
-/** タイムアウト後にサーバー側で保存済みか確認 */
+/** タイムアウト／HTML 応答後にサーバー側で保存済みか確認 */
 function verifyTreatmentSaveAfterTimeout_(ctx) {
   const pid = ctx.pid;
   const data = ctx.data;
@@ -2842,6 +2853,22 @@ function verifyTreatmentSaveAfterTimeout_(ctx) {
     if (!hit) return { ok: false };
     return { ok: true, id: hit.id, mode: "new", partial: hit.treatments !== data.treatments };
   }).catch(() => ({ ok: false }));
+}
+
+function applyVerifiedTreatmentSave_(hit, recoveryCtx) {
+  if (!hit || !hit.ok || !recoveryCtx) return;
+  if (hit.mode === "update") {
+    applyTreatmentUpdateSuccess_(recoveryCtx.data, recoveryCtx.pid, recoveryCtx.visitDateVal, hit.id);
+  } else {
+    applyTreatmentNewSuccess_(
+      recoveryCtx.data,
+      recoveryCtx.pid,
+      recoveryCtx.visitDateVal,
+      hit.id,
+      hit.partial ? "通信遅延のため内容を要確認" : null,
+      { skipToast: true }
+    );
+  }
 }
 
 /** 起動データ取得（4 API を並列取得＝getInitData より高速） */
@@ -5343,28 +5370,36 @@ function checkTreatmentRecordDuplicateBeforeSave_(patientId, visitDate, visitTim
 
 function handleTreatmentSaveError_(e, label, recoveryCtx) {
   const msg = formatUserFacingRpcError_(e);
-  if (msg.indexOf("同じ診療日") !== -1) {
-    showRecordDuplicateWarn_(msg);
-    return Promise.resolve();
-  }
-  if (recoveryCtx && isRpcTimeoutError_(e)) {
+  const raw = String(e && e.message ? e.message : e || "");
+  const looksDup = msg.indexOf("同じ診療日") !== -1 || raw.indexOf("同じ診療日") !== -1;
+
+  // 通信失敗後の再保存で重複エラーになった場合も、サーバーに既にあるなら成功扱い
+  if (looksDup && recoveryCtx) {
     showToast("保存結果を確認中…");
     return verifyTreatmentSaveAfterTimeout_(recoveryCtx).then(hit => {
       if (hit && hit.ok) {
-        if (hit.mode === "update") {
-          applyTreatmentUpdateSuccess_(recoveryCtx.data, recoveryCtx.pid, recoveryCtx.visitDateVal, hit.id);
-        } else {
-          applyTreatmentNewSuccess_(
-            recoveryCtx.data,
-            recoveryCtx.pid,
-            recoveryCtx.visitDateVal,
-            hit.id,
-            hit.partial ? "通信遅延のため内容を要確認" : null,
-            { skipToast: true }
-          );
-        }
+        applyVerifiedTreatmentSave_(hit, recoveryCtx);
         const note = hit.partial ? "（内容の一部は要確認）" : "";
-        showToast("保存は完了していました（通信が遅延したため確認しました）" + note);
+        showToast("すでに保存されています" + note);
+        clearRecordDuplicateWarn_();
+        return;
+      }
+      showRecordDuplicateWarn_(msg);
+    });
+  }
+  if (looksDup) {
+    showRecordDuplicateWarn_(msg);
+    return Promise.resolve();
+  }
+
+  // タイムアウトだけでなく HTML/502 でも「保存済みか」を確認する
+  if (recoveryCtx && isAmbiguousRpcFailure_(e)) {
+    showToast("保存結果を確認中…");
+    return verifyTreatmentSaveAfterTimeout_(recoveryCtx).then(hit => {
+      if (hit && hit.ok) {
+        applyVerifiedTreatmentSave_(hit, recoveryCtx);
+        const note = hit.partial ? "（内容の一部は要確認）" : "";
+        showToast("保存は完了していました（通信が不安定だったため確認しました）" + note);
       } else {
         showToast((label || "保存") + "エラー: " + msg);
       }
@@ -6885,6 +6920,11 @@ function saveTreatmentRecord() {
   treatmentRecordSaveInFlight = true;
   setTreatmentRecordSaving_(true);
   setDataSyncBanner_("診療記録を保存中…（他の画面へ移れます）");
+  // 保存中の写真・歯式読込応答を捨てて GAS 競合を減らす
+  try {
+    Object.keys(loadPhotosSeqByPid_ || {}).forEach(k => { loadPhotosSeqByPid_[k] = (loadPhotosSeqByPid_[k] || 0) + 1; });
+  } catch (_) {}
+  teethLoadGen_ += 1;
 
   const recoveryCtx = { data, pid, visitDateVal, editingId: editingTreatmentId || null };
 
@@ -20401,6 +20441,10 @@ function savePatientModal() {
   const fn = id ? "updatePatient" : "addPatient";
   patientModalSaveInFlight = true;
   setPatientModalSaving_(true);
+  // 保存中は写真読込を抑止
+  try {
+    Object.keys(loadPhotosSeqByPid_ || {}).forEach(k => { loadPhotosSeqByPid_[k] = (loadPhotosSeqByPid_[k] || 0) + 1; });
+  } catch (_) {}
   gasCall(fn, JSON.stringify(data))
     .then(result => {
       const recordId = id || result;
@@ -20419,19 +20463,36 @@ function savePatientModal() {
           independence: patientMedical.independence,
           dementia_level: patientMedical.dementiaLevel
         };
-        saves.push(gasCall("saveMedicalInfo", recordId, JSON.stringify(med)));
-        saves.push(gasCall("saveTeethData", recordId, JSON.stringify(currentTeethData)));
+        saves.push(
+          gasCall("saveMedicalInfo", recordId, JSON.stringify(med))
+            .then(() => ({ ok: true, kind: "medical" }))
+            .catch(err => ({ ok: false, kind: "medical", err }))
+        );
+        saves.push(
+          gasCall("saveTeethData", recordId, JSON.stringify(currentTeethData))
+            .then(() => ({ ok: true, kind: "teeth" }))
+            .catch(err => ({ ok: false, kind: "teeth", err }))
+        );
       }
-      const flushP = !id && recordId ? flushPendingNewPatientPhotos_(recordId) : Promise.resolve();
-      return Promise.all([flushP, ...saves]).then(() => {
-        if (saves.length) refreshTeethBaseline();
-        showToast(id ? "患者情報・歯式・医療を更新しました" : "患者を追加しました");
+      const flushP = !id && recordId
+        ? flushPendingNewPatientPhotos_(recordId).then(() => ({ ok: true, kind: "photo" })).catch(err => ({ ok: false, kind: "photo", err }))
+        : Promise.resolve({ ok: true, kind: "photo" });
+      return Promise.all([flushP, ...saves]).then(results => {
+        const fails = results.filter(r => r && r.ok === false);
+        if (saves.length && fails.every(f => f.kind !== "teeth" && f.kind !== "medical")) refreshTeethBaseline();
+        else if (saves.length && !fails.some(f => f.kind === "teeth")) refreshTeethBaseline();
+        if (fails.length) {
+          const parts = fails.map(f => f.kind === "medical" ? "医療情報" : f.kind === "teeth" ? "歯式" : "写真");
+          showToast("患者の基本情報は保存済み。一部失敗: " + parts.join("・") + "（" + formatUserFacingRpcError_(fails[0].err) + "）");
+        } else {
+          showToast(id ? "患者情報・歯式・医療を更新しました" : "患者を追加しました");
+        }
         closePatientEditModal(false);
         renderMgmtPatients();
         renderPatients();
       });
     })
-    .catch(e => showToast("保存エラー: " + (e && e.message ? e.message : String(e))))
+    .catch(e => showToast("保存エラー: " + formatUserFacingRpcError_(e)))
     .finally(() => {
       patientModalSaveInFlight = false;
       setPatientModalSaving_(false);

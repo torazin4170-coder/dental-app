@@ -20,21 +20,23 @@ function resolveRpcPath(): string {
 }
 
 function resolveRpcTimeoutMs(funcName: string): number {
-  if (funcName === 'savePhoto') return 120_000
-  if (/^save(ReportPreviewDraft|GeneratedDocument)/.test(funcName)) return 120_000
+  // Vercel maxDuration(120s) より少し短くし、Abort→事後確認ルートに寄せる
+  if (funcName === 'savePhoto') return 110_000
+  if (/^save(ReportPreviewDraft|GeneratedDocument)/.test(funcName)) return 110_000
   if (/^loadReportPreviewDraft/.test(funcName)) return 90_000
-  if (/^(save|update|add|delete|clear|append|generate)/i.test(funcName)) return 120_000
-  if (/^get/i.test(funcName)) return 120_000
+  if (/^(save|update|add|delete|clear|append|generate)/i.test(funcName)) return 110_000
+  if (/^get/i.test(funcName)) return 110_000
   return 45_000
 }
 
 function sanitizeRpcErrorMessage(raw: string, status: number): string {
   const text = String(raw || '').trim()
   if (!text) return `サーバー応答が不正です (${status})`
-  if (/<!doctype|<html|<script|nonce=|window\[|ppConfig|GAS_WEBAPP/i.test(text)) {
-    return 'GAS が HTML を返しました。Vercel の GAS_WEBAPP_URL または GAS の再デプロイを確認してください。'
+  // 実 HTML / GAS 画面だけを検知（「GAS_WEBAPP」という設定エラー文言まで潰さない）
+  if (/<!doctype html|<html[\s>]|<script[\s>]|nonce=|window\[|ppConfig|boot-loading|訪問歯科カルテ/i.test(text)) {
+    return 'GAS が HTML を返しました。設定→接続状態、または GAS の再デプロイを確認してください。'
   }
-  if (text.length > 140) return text.slice(0, 140) + '…'
+  if (text.length > 180) return text.slice(0, 180) + '…'
   return text
 }
 
