@@ -2801,10 +2801,10 @@ function isUnknownRpcError_(err) {
 function formatUserFacingRpcError_(err) {
   const msg = String(err && err.message ? err.message : err || "不明なエラー");
   if (/<!doctype html|<html[\s>]|<script[\s>]|nonce=|window\[|ppConfig|boot-loading|訪問歯科カルテ/i.test(msg)) {
-    return "サーバーが想定外の応答（HTML）を返しました。設定→接続状態を確認してください。保存済みの場合もあります。";
+    return "サーバー通信が不安定でした。設定→接続状態を確認し、一覧を開き直して保存済みか確かめてください。";
   }
-  if (/GAS が HTML を返しました|JSON 以外を返しました/i.test(msg)) {
-    return "サーバー通信が不安定でした。設定→接続状態を確認してください。保存済みの場合もあります。";
+  if (/GAS が HTML を返しました|JSON 以外を返しました|HTML応答/i.test(msg)) {
+    return "サーバー通信が不安定でした。設定→接続状態を確認し、一覧を開き直して保存済みか確かめてください。";
   }
   if (msg.length > 160) return msg.slice(0, 160) + "…";
   return msg;
@@ -2852,6 +2852,51 @@ function verifyTreatmentSaveAfterTimeout_(ctx) {
     const hit = records.find(r => treatmentVisitSlotKeyClient_(r.visit_date, r.visit_time_start) === key);
     if (!hit) return { ok: false };
     return { ok: true, id: hit.id, mode: "new", partial: hit.treatments !== data.treatments };
+  }).catch(() => ({ ok: false }));
+}
+
+function patientMatchesSavedBasic_(p, data) {
+  if (!p || !data) return false;
+  if (normalizePatientNameForDup_(p.name) !== normalizePatientNameForDup_(data.name)) return false;
+  if (String(p.fac || "") !== String(data.fac || "")) return false;
+  if (String(p.room || "").trim() !== String(data.room || "").trim()) return false;
+  return true;
+}
+
+/** 患者基本情報の保存が曖昧失敗したあと、一覧再取得で完了済みか確認 */
+function verifyPatientBasicSaveAfterAmbiguous_(data, existingId) {
+  return gasCallPatientRead_("getPatients", null).then(json => {
+    const list = typeof json === "string" ? JSON.parse(json) : json;
+    if (!Array.isArray(list)) return { ok: false };
+    if (existingId) {
+      const hit = list.find(p => String(p.id) === String(existingId));
+      if (!hit) return { ok: false };
+      return { ok: patientMatchesSavedBasic_(hit, data), id: String(existingId), mode: "update", hit };
+    }
+    const hits = list.filter(p => patientMatchesSavedBasic_(p, data));
+    if (!hits.length) return { ok: false };
+    const hit = hits[hits.length - 1];
+    return { ok: true, id: String(hit.id), mode: "new", hit };
+  }).catch(() => ({ ok: false }));
+}
+
+function medicalInfoFingerprint_(d) {
+  const src = d || {};
+  return JSON.stringify({
+    conditions: src.conditions || [],
+    medications: src.medications || [],
+    allergies: src.allergies || [],
+    care_level: src.care_level != null ? src.care_level : (src.careLevel || ""),
+    independence: src.independence || "",
+    dementia_level: src.dementia_level != null ? src.dementia_level : (src.dementiaLevel || "")
+  });
+}
+
+function verifyMedicalSaveAfterAmbiguous_(pid, data) {
+  return gasCallPatientRead_("getMedicalInfo", pid).then(json => {
+    const remote = typeof json === "string" ? JSON.parse(json) : json;
+    if (!remote || typeof remote !== "object") return { ok: false };
+    return { ok: medicalInfoFingerprint_(remote) === medicalInfoFingerprint_(data) };
   }).catch(() => ({ ok: false }));
 }
 
@@ -4428,16 +4473,45 @@ function closePatientCareModal(save) {
       independence: patientMedical.independence,
       dementia_level: patientMedical.dementiaLevel
     };
+    const teethSnap = JSON.stringify(currentTeethData);
     setDataSyncBanner_("歯式・医療情報を保存中…");
     Promise.all([
-      gasCall("saveMedicalInfo", pid, JSON.stringify(med)),
-      gasCall("saveTeethData", pid, JSON.stringify(currentTeethData))
+      gasCall("saveMedicalInfo", pid, JSON.stringify(med))
+        .then(() => ({ ok: true, kind: "medical" }))
+        .catch(err => {
+          if (!isAmbiguousRpcFailure_(err)) return { ok: false, kind: "medical", err };
+          return verifyMedicalSaveAfterAmbiguous_(pid, med).then(v =>
+            v && v.ok ? { ok: true, kind: "medical", recovered: true } : { ok: false, kind: "medical", err }
+          );
+        }),
+      gasCall("saveTeethData", pid, teethSnap)
+        .then(() => ({ ok: true, kind: "teeth" }))
+        .catch(err => {
+          if (!isAmbiguousRpcFailure_(err)) return { ok: false, kind: "teeth", err };
+          return gasCallPatientRead_("getTeethData", pid).then(json => {
+            try {
+              const remote = typeof json === "string" ? JSON.parse(json) : json;
+              const ok = JSON.stringify(remote || {}) === teethSnap;
+              return ok ? { ok: true, kind: "teeth", recovered: true } : { ok: false, kind: "teeth", err };
+            } catch (_) {
+              return { ok: false, kind: "teeth", err };
+            }
+          }).catch(() => ({ ok: false, kind: "teeth", err }));
+        })
     ])
-      .then(() => {
-        refreshTeethBaseline();
-        showToast("歯式・医療情報を保存しました");
+      .then(results => {
+        const fails = results.filter(r => r && r.ok === false);
+        if (!fails.length) {
+          refreshTeethBaseline();
+          const recovered = results.some(r => r && r.recovered);
+          showToast(recovered
+            ? "歯式・医療情報は保存済みでした（通信が不安定だったため確認しました）"
+            : "歯式・医療情報を保存しました");
+        } else {
+          const parts = fails.map(f => f.kind === "medical" ? "医療情報" : "歯式");
+          showToast("保存エラー: " + parts.join("・") + "（" + formatUserFacingRpcError_(fails[0].err) + "）");
+        }
       })
-      .catch(e => showToast("保存エラー: " + formatUserFacingRpcError_(e)))
       .finally(() => setDataSyncBanner_(""));
   }
   returnRollableClinicalToRecordIfNeeded();
@@ -8097,7 +8171,20 @@ function saveMedicalInfoNow_(opts) {
   };
   gasCall("saveMedicalInfo", selectedPatient.id, JSON.stringify(data))
     .then(() => { if (!opts.silent) showToast("医療情報を保存しました"); })
-    .catch(e => showToast("保存エラー: " + formatUserFacingRpcError_(e)));
+    .catch(e => {
+      if (!isAmbiguousRpcFailure_(e)) {
+        showToast("保存エラー: " + formatUserFacingRpcError_(e));
+        return;
+      }
+      showToast("保存結果を確認中…");
+      return verifyMedicalSaveAfterAmbiguous_(selectedPatient.id, data).then(v => {
+        if (v && v.ok) {
+          if (!opts.silent) showToast("医療情報は保存済みでした（通信が不安定だったため確認しました）");
+        } else {
+          showToast("保存エラー: " + formatUserFacingRpcError_(e));
+        }
+      });
+    });
 }
 
 // ── 要介護認定等 UI（画像の区分に準拠）──
@@ -20439,6 +20526,61 @@ function confirmSameNamePatientsBeforeSave_(name, excludeId) {
   );
 }
 
+function continuePatientModalAfterBasicSaved_(data, recordId, wasNew) {
+  if (wasNew) {
+    data.id = recordId;
+    if (!PATIENTS.some(x => String(x.id) === String(recordId))) {
+      PATIENTS.push({ ...data, visits: 0, last: "—" });
+    }
+  } else {
+    const p = PATIENTS.find(x => String(x.id) === String(recordId));
+    if (p) { Object.assign(p, data); selectedPatient = p; }
+  }
+  const saves = [];
+  if (document.getElementById("pm-clinical-section")?.style.display !== "none" && recordId) {
+    const med = {
+      conditions: patientMedical.conditions,
+      medications: patientMedical.medications,
+      allergies: patientMedical.allergies,
+      care_level: patientMedical.careLevel,
+      independence: patientMedical.independence,
+      dementia_level: patientMedical.dementiaLevel
+    };
+    saves.push(
+      gasCall("saveMedicalInfo", recordId, JSON.stringify(med))
+        .then(() => ({ ok: true, kind: "medical" }))
+        .catch(err => {
+          if (!isAmbiguousRpcFailure_(err)) return { ok: false, kind: "medical", err };
+          return verifyMedicalSaveAfterAmbiguous_(recordId, med).then(v =>
+            v && v.ok ? { ok: true, kind: "medical", recovered: true } : { ok: false, kind: "medical", err }
+          );
+        })
+    );
+    saves.push(
+      gasCall("saveTeethData", recordId, JSON.stringify(currentTeethData))
+        .then(() => ({ ok: true, kind: "teeth" }))
+        .catch(err => ({ ok: false, kind: "teeth", err }))
+    );
+  }
+  const flushP = wasNew && recordId
+    ? flushPendingNewPatientPhotos_(recordId).then(() => ({ ok: true, kind: "photo" })).catch(err => ({ ok: false, kind: "photo", err }))
+    : Promise.resolve({ ok: true, kind: "photo" });
+  return Promise.all([flushP, ...saves]).then(results => {
+    const fails = results.filter(r => r && r.ok === false);
+    if (saves.length && fails.every(f => f.kind !== "teeth" && f.kind !== "medical")) refreshTeethBaseline();
+    else if (saves.length && !fails.some(f => f.kind === "teeth")) refreshTeethBaseline();
+    if (fails.length) {
+      const parts = fails.map(f => f.kind === "medical" ? "医療情報" : f.kind === "teeth" ? "歯式" : "写真");
+      showToast("患者の基本情報は保存済み。一部失敗: " + parts.join("・") + "（" + formatUserFacingRpcError_(fails[0].err) + "）");
+    } else {
+      showToast(wasNew ? "患者を追加しました" : "患者情報・歯式・医療を更新しました");
+    }
+    closePatientEditModal(false);
+    renderMgmtPatients();
+    renderPatients();
+  });
+}
+
 function savePatientModal() {
   if (patientModalSaveInFlight) return;
   const id = document.getElementById("pm-id").value;
@@ -20477,6 +20619,7 @@ function savePatientModal() {
   if (!confirmSameNamePatientsBeforeSave_(data.name, id || null)) return;
   flushMedOnsetFromDom_();
   const fn = id ? "updatePatient" : "addPatient";
+  const wasNew = !id;
   patientModalSaveInFlight = true;
   setPatientModalSaving_(true);
   // 保存中は写真読込を抑止
@@ -20486,51 +20629,22 @@ function savePatientModal() {
   gasCall(fn, JSON.stringify(data))
     .then(result => {
       const recordId = id || result;
-      if (!id) { data.id = result; PATIENTS.push({ ...data, visits: 0, last: "—" }); }
-      else {
-        const p = PATIENTS.find(x => x.id === id);
-        if (p) { Object.assign(p, data); selectedPatient = p; }
+      return continuePatientModalAfterBasicSaved_(data, recordId, wasNew);
+    })
+    .catch(e => {
+      if (!isAmbiguousRpcFailure_(e)) {
+        showToast("保存エラー: " + formatUserFacingRpcError_(e));
+        return;
       }
-      const saves = [];
-      if (document.getElementById("pm-clinical-section")?.style.display !== "none" && recordId) {
-        const med = {
-          conditions: patientMedical.conditions,
-          medications: patientMedical.medications,
-          allergies: patientMedical.allergies,
-          care_level: patientMedical.careLevel,
-          independence: patientMedical.independence,
-          dementia_level: patientMedical.dementiaLevel
-        };
-        saves.push(
-          gasCall("saveMedicalInfo", recordId, JSON.stringify(med))
-            .then(() => ({ ok: true, kind: "medical" }))
-            .catch(err => ({ ok: false, kind: "medical", err }))
-        );
-        saves.push(
-          gasCall("saveTeethData", recordId, JSON.stringify(currentTeethData))
-            .then(() => ({ ok: true, kind: "teeth" }))
-            .catch(err => ({ ok: false, kind: "teeth", err }))
-        );
-      }
-      const flushP = !id && recordId
-        ? flushPendingNewPatientPhotos_(recordId).then(() => ({ ok: true, kind: "photo" })).catch(err => ({ ok: false, kind: "photo", err }))
-        : Promise.resolve({ ok: true, kind: "photo" });
-      return Promise.all([flushP, ...saves]).then(results => {
-        const fails = results.filter(r => r && r.ok === false);
-        if (saves.length && fails.every(f => f.kind !== "teeth" && f.kind !== "medical")) refreshTeethBaseline();
-        else if (saves.length && !fails.some(f => f.kind === "teeth")) refreshTeethBaseline();
-        if (fails.length) {
-          const parts = fails.map(f => f.kind === "medical" ? "医療情報" : f.kind === "teeth" ? "歯式" : "写真");
-          showToast("患者の基本情報は保存済み。一部失敗: " + parts.join("・") + "（" + formatUserFacingRpcError_(fails[0].err) + "）");
-        } else {
-          showToast(id ? "患者情報・歯式・医療を更新しました" : "患者を追加しました");
+      showToast("保存結果を確認中…");
+      return verifyPatientBasicSaveAfterAmbiguous_(data, id || null).then(hit => {
+        if (hit && hit.ok && hit.id) {
+          showToast("基本情報は保存済みでした。続けて医療・歯式を確認します…");
+          return continuePatientModalAfterBasicSaved_(data, hit.id, wasNew);
         }
-        closePatientEditModal(false);
-        renderMgmtPatients();
-        renderPatients();
+        showToast("保存エラー: " + formatUserFacingRpcError_(e));
       });
     })
-    .catch(e => showToast("保存エラー: " + formatUserFacingRpcError_(e)))
     .finally(() => {
       patientModalSaveInFlight = false;
       setPatientModalSaving_(false);

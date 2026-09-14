@@ -34,7 +34,7 @@ function sanitizeRpcErrorMessage(raw: string, status: number): string {
   if (!text) return `サーバー応答が不正です (${status})`
   // 実 HTML / GAS 画面だけを検知（「GAS_WEBAPP」という設定エラー文言まで潰さない）
   if (/<!doctype html|<html[\s>]|<script[\s>]|nonce=|window\[|ppConfig|boot-loading|訪問歯科カルテ/i.test(text)) {
-    return 'GAS が HTML を返しました。設定→接続状態、または GAS の再デプロイを確認してください。'
+    return 'サーバー通信が不安定でした（HTML応答）。設定→接続状態を確認し、一覧を開き直して保存済みか確かめてください。'
   }
   if (text.length > 180) return text.slice(0, 180) + '…'
   return text
