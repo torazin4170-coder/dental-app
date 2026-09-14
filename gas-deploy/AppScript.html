@@ -2520,7 +2520,7 @@ const TEETH_SYMBOL_GROUPS = [
     { sym: "仮封", label: "仮封・セメント" },
   ]},
 ];
-const TEETH_MISS_EXTRA_SYMBOLS = ["埋伏", "半埋伏"];
+const TEETH_MISS_EXTRA_SYMBOLS = ["埋伏", "半埋伏", "矮小歯", "先欠"];
 const ALL_TEETH_SYMBOLS = new Set(
   TEETH_SYMBOL_GROUPS.flatMap(g => g.items.map(i => i.sym)).concat(TEETH_MISS_EXTRA_SYMBOLS)
 );
@@ -6179,22 +6179,21 @@ function renderTeethSymbolPicker() {
   const selected = new Set(input ? parseTeethCondParts(input.value).known : []);
   const missOn = document.getElementById("teethEditMiss")?.checked;
   const missCls = missOn ? " sel" : "";
-  const impOn = selected.has("埋伏") ? " sel" : "";
-  const semiOn = selected.has("半埋伏") ? " sel" : "";
+  const missExtraChips = TEETH_MISS_EXTRA_SYMBOLS.map(sym => {
+    const on = selected.has(sym) ? " sel" : "";
+    return `<button type="button" class="teeth-sym-chip${on}" data-teeth-sym="${encodeURIComponent(sym)}" title="${escAttr(sym + " · タップで選択 · 長押しで即反映")}">
+          <span class="tsc-sym">${escHtml(sym)}</span>
+        </button>`;
+  }).join("");
   const missBtn = `
     <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">欠損・埋伏</div>
+      <div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">欠損・埋伏・先欠など</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         <button type="button" class="teeth-sym-chip teeth-miss-chip${missCls}" data-teeth-miss="1" title="喪失歯。チェック欄と連動。タップで切替 · 長押しで即反映">
         <span class="tsc-sym">✕</span>
         <span class="tsc-lab">欠損</span>
         </button>
-        <button type="button" class="teeth-sym-chip${impOn}" data-teeth-sym="${encodeURIComponent("埋伏")}" title="埋伏 · タップで選択 · 長押しで即反映">
-          <span class="tsc-sym">埋伏</span>
-        </button>
-        <button type="button" class="teeth-sym-chip${semiOn}" data-teeth-sym="${encodeURIComponent("半埋伏")}" title="半埋伏 · タップで選択 · 長押しで即反映">
-          <span class="tsc-sym">半埋伏</span>
-        </button>
+        ${missExtraChips}
       </div>
     </div>`;
   container.innerHTML = missBtn + TEETH_SYMBOL_GROUPS.map(g => `
@@ -20402,6 +20401,44 @@ function closePatientEditModal(saveClinical) {
   if (currentScreen !== "record") selectedPatient = null;
 }
 
+/** 患者名の比較用（空白・全半角の差を吸収） */
+function normalizePatientNameForDup_(name) {
+  return String(name || "")
+    .normalize("NFKC")
+    .replace(/[\s\u3000]+/g, "")
+    .trim();
+}
+
+/**
+ * 同姓同名の既存患者がいれば警告。OK で続行、キャンセルで中止。
+ * @param {string} name 入力中の氏名
+ * @param {string|null} excludeId 編集中の自分の ID（新規は null）
+ * @returns {boolean}
+ */
+function confirmSameNamePatientsBeforeSave_(name, excludeId) {
+  const key = normalizePatientNameForDup_(name);
+  if (!key) return true;
+  const hits = (PATIENTS || []).filter(p => {
+    if (!p) return false;
+    if (excludeId && String(p.id) === String(excludeId)) return false;
+    return normalizePatientNameForDup_(p.name) === key;
+  });
+  if (!hits.length) return true;
+  const lines = hits.slice(0, 8).map(p => {
+    const fac = FACILITIES.find(f => f.id === p.fac);
+    const facName = fac ? String(fac.name || fac.id) : String(p.fac || "施設不明");
+    const room = p.room ? String(p.room) : "—";
+    return `・${facName} ／ 部屋 ${room}`;
+  });
+  const more = hits.length > 8 ? `\n…ほか ${hits.length - 8} 名` : "";
+  return confirm(
+    `同じ氏名「${String(name || "").trim()}」の患者がすでに ${hits.length} 名います。\n\n` +
+      lines.join("\n") +
+      more +
+      `\n\nそれでも登録（更新）しますか？`
+  );
+}
+
 function savePatientModal() {
   if (patientModalSaveInFlight) return;
   const id = document.getElementById("pm-id").value;
@@ -20437,6 +20474,7 @@ function savePatientModal() {
     })()
   };
   if (!data.name || !data.fac) { showToast("患者名と施設は必須です"); return; }
+  if (!confirmSameNamePatientsBeforeSave_(data.name, id || null)) return;
   flushMedOnsetFromDom_();
   const fn = id ? "updatePatient" : "addPatient";
   patientModalSaveInFlight = true;
