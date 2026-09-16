@@ -2471,6 +2471,7 @@ const TEETH_SYMBOL_GROUPS = [
     { sym: "C4", label: "C4（残根歯）" },
     { sym: "Pul", label: "Pul" },
     { sym: "根C", label: "根C" },
+    { sym: "縁下C", label: "縁下C" },
     { sym: "Dul", label: "Dul" },
     { sym: "失活", label: "失活" },
   ]},
@@ -6831,14 +6832,17 @@ function renderTeethChartHtml_(data, opts) {
   const pdLower = !!data.pd_lower && !data.no_denture_lower;
   const noDenUpper = !!data.no_denture_upper;
   const noDenLower = !!data.no_denture_lower;
+  const lostUpper = !!data.denture_lost_upper;
+  const lostLower = !!data.denture_lost_lower;
   const prosthesisMeta = new Set([
     "fd", "pd", "fd_upper", "pd_upper", "fd_lower", "pd_lower",
     "no_denture_upper", "no_denture_lower",
+    "denture_lost_upper", "denture_lost_lower",
     "bridge_hide_upper", "bridge_hide_lower"
   ]);
   const dataKeys = Object.keys(data).filter(k =>
     !prosthesisMeta.has(k) && !k.endsWith("_miss") && !k.endsWith("_red"));
-  const anyProsth = fdUpper || pdUpper || fdLower || pdLower || noDenUpper || noDenLower;
+  const anyProsth = fdUpper || pdUpper || fdLower || pdLower || noDenUpper || noDenLower || lostUpper || lostLower;
   const emptyNote = !dataKeys.length && !anyProsth
     ? `<div style="text-align:center;color:var(--muted);font-size:14px;padding:8px">未入力（歯をタップして入力）</div>` : "";
 
@@ -6855,9 +6859,14 @@ function renderTeethChartHtml_(data, opts) {
     const noEl = readOnly
       ? `<span class="${noCls}">義歯無し</span>`
       : `<button type="button" data-teeth-toggle="no_denture_${suffix}" class="${noCls}">義歯無し</button>`;
+    const lostOn = !!data[`denture_lost_${suffix}`];
+    const lostCls = "teeth-type-btn" + (lostOn ? " on" : "");
+    const lostEl = readOnly
+      ? `<span class="${lostCls}">紛失</span>`
+      : `<button type="button" data-teeth-toggle="denture_lost_${suffix}" class="${lostCls}">紛失</button>`;
     return `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;${marginCss}">
       <span style="font-size:13px;font-weight:700;color:var(--muted)">義歯：</span>
-      ${fdEl}${pdEl}${noEl}
+      ${fdEl}${pdEl}${noEl}${lostEl}
     </div>`;
   };
 
