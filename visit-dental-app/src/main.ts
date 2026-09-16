@@ -1,4 +1,5 @@
 import './boot-dark-mode'
+import { registerSW } from 'virtual:pwa-register'
 import { installGasCallFetch } from './gas-call'
 
 import appStyles from '../vendor/gas-deploy/AppStyles.html?raw'
@@ -42,3 +43,10 @@ function injectScript(code: string): void {
 injectStyle(appStyles)
 injectBody(appBody)
 injectScript(appScript)
+
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    updateSW(true)
+  },
+})

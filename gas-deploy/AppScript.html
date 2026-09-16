@@ -2983,6 +2983,18 @@ function verifyMedicalSaveAfterAmbiguous_(pid, data) {
   }).catch(() => ({ ok: false }));
 }
 
+function verifyTeethSaveAfterAmbiguous_(pid, teethJson) {
+  const want = String(teethJson || "");
+  return gasCallPatientRead_("getTeethData", pid).then(json => {
+    try {
+      const remote = typeof json === "string" ? JSON.parse(json) : json;
+      return { ok: JSON.stringify(remote || {}) === want };
+    } catch (_) {
+      return { ok: false };
+    }
+  }).catch(() => ({ ok: false }));
+}
+
 function applyVerifiedTreatmentSave_(hit, recoveryCtx) {
   if (!hit || !hit.ok || !recoveryCtx) return;
   if (hit.mode === "update") {
@@ -7146,6 +7158,7 @@ function saveTreatmentRecord() {
   const uiOpts = {
     skipToast: true,
     skipRemoteRefresh: true,
+    skipNavigate: true,
     notesValue: extra.notesValue,
     treatments: extra.treatments
   };
@@ -7159,11 +7172,11 @@ function saveTreatmentRecord() {
 
   if (editingId) {
     applyTreatmentUpdateSuccess_(dataSnap, pid, visitDateVal, editingId, uiOpts);
-    showToast("記録を受け付けました。裏で送信します");
   } else {
     applyTreatmentNewSuccess_(dataSnap, pid, visitDateVal, tempId, null, uiOpts);
-    showToast("記録を受け付けました。裏で送信します");
   }
+  backToList({ patientId: pid });
+  showToast("記録を受け付けました。裏で送信します");
 
   const job = {
     kind: "treatment",
@@ -20619,14 +20632,13 @@ function setPatientModalSaving_(active) {
   const bar = document.getElementById("pmSaveProgress");
   if (!saveBtn) return;
   if (active) {
-    saveBtn.disabled = true;
     saveBtn.classList.add("is-loading");
-    saveBtn.textContent = "⏳ 保存中…";
-    saveBtn.setAttribute("aria-busy", "true");
-    if (cancelBtn) cancelBtn.disabled = true;
+    saveBtn.textContent = "保存";
+    saveBtn.removeAttribute("aria-busy");
+    if (cancelBtn) cancelBtn.disabled = false;
     if (bar) {
-      bar.classList.add("is-on");
-      bar.setAttribute("aria-busy", "true");
+      bar.classList.remove("is-on");
+      bar.removeAttribute("aria-busy");
     }
   } else {
     saveBtn.disabled = false;
@@ -20724,7 +20736,12 @@ function continuePatientModalAfterBasicSaved_(data, recordId, wasNew, extra) {
     saves.push(
       gasCall("saveTeethData", recordId, teethJson)
         .then(() => ({ ok: true, kind: "teeth" }))
-        .catch(err => ({ ok: false, kind: "teeth", err }))
+        .catch(err => {
+          if (!isAmbiguousRpcFailure_(err)) return { ok: false, kind: "teeth", err };
+          return verifyTeethSaveAfterAmbiguous_(recordId, teethJson).then(v =>
+            v && v.ok ? { ok: true, kind: "teeth", recovered: true } : { ok: false, kind: "teeth", err }
+          );
+        })
     );
   }
   const photoFromId = extra.photoFromId;
@@ -20855,8 +20872,28 @@ function savePatientModal() {
         job.recordId = recordId;
         job.pid = recordId;
         if (wasNew && recordId) replaceLocalPatientId_(tempId, recordId);
-        return continuePatientModalAfterBasicSaved_(payload, recordId, wasNew, extra)
-          .then(res => ({ recordId, res }));
+        finishBgSaveJob_(job, true);
+        const needSide = extra.includeClinical || (wasNew && extra.photoFromId);
+        if (!needSide || !recordId) return { recordId, res: { ok: true } };
+        const side = {
+          kind: "patient-side",
+          label: (data.name || "患者") + "の歯式・医療",
+          pid: recordId,
+          okToast: "歯式・医療情報を保存しました",
+          run() {
+            continuePatientModalAfterBasicSaved_(payload, recordId, wasNew, extra).then(res => {
+              renderMgmtPatients();
+              renderPatients();
+              if (res && res.ok === false) {
+                finishBgSaveJob_(side, false, res.err);
+                return;
+              }
+              finishBgSaveJob_(side, true);
+            }).catch(e => finishBgSaveJob_(side, false, e));
+          }
+        };
+        enqueueBgSaveJob_(side);
+        return { recordId, res: { ok: true } };
       };
       const start = job.recordId
         ? Promise.resolve(job.recordId).then(afterBasic)
@@ -20869,15 +20906,9 @@ function savePatientModal() {
             return afterBasic(hit.id);
           });
         })
-        .then(({ res }) => {
+        .then(() => {
           renderMgmtPatients();
           renderPatients();
-          if (res && res.ok === false) {
-            finishBgSaveJob_(job, false, res.err);
-            showToast("基本情報は保存済み。一部失敗: " + (res.parts || []).join("・"));
-            return;
-          }
-          finishBgSaveJob_(job, true);
         })
         .catch(e => {
           finishBgSaveJob_(job, false, e);

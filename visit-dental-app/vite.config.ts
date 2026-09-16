@@ -148,6 +148,7 @@ export default defineConfig(({ mode }) => {
     apiDevPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: false,
       manifest: {
         name: '訪問歯科カルテ',
         short_name: '訪問歯科',
@@ -166,6 +167,8 @@ export default defineConfig(({ mode }) => {
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         navigateFallbackDenylist: [/^\/api\//],
+        skipWaiting: true,
+        clientsClaim: true,
       },
     }),
   ],
