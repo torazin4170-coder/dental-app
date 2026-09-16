@@ -282,10 +282,10 @@ function onRecordInHospitalChange_() {
 }
 
 /** 診療記録保存後：入院中ラベルを患者マスタへ反映（チェックボックスが正） */
-function persistPatientInHospitalFromRecord_(pid) {
+function persistPatientInHospitalFromRecord_(pid, wantOverride) {
   const p = PATIENTS.find(x => x.id === pid);
   if (!p) return Promise.resolve(false);
-  const want = getRecordInHospitalChecked_() ? "1" : "";
+  const want = wantOverride !== undefined ? (wantOverride ? "1" : "") : (getRecordInHospitalChecked_() ? "1" : "");
   const cur = isPatientInHospital_(p) ? "1" : "";
   if (want === cur) return Promise.resolve(false);
   return gasCall("updatePatient", JSON.stringify({ id: pid, in_hospital: want })).then(res => {
@@ -411,6 +411,9 @@ function patientStatusBadgeHtml_(p) {
   const st = p.status || "active";
   if (st === "deceased") h += ` <span class="pif-badge dec">逝去</span>`;
   else if (st === "left") h += ` <span class="pif-badge lft">退去</span>`;
+  const jobs = bgSaveJobsForPatient_(p.id);
+  if (jobs.some(j => j.status === "failed")) h += ` <span class="pif-badge unsync">未送信</span>`;
+  else if (jobs.some(j => j.status === "sending")) h += ` <span class="pif-badge syncing">送信中</span>`;
   return h;
 }
 
@@ -2552,10 +2555,52 @@ function hideFullLoading_() {
   if (ld) ld.style.display = "none";
 }
 
+let dataSyncBannerSystemText_ = "";
+let bgSaveJobs_ = [];
+let bgSaveJobSeq_ = 0;
+
+function snapshotClone_(v) {
+  try { return JSON.parse(JSON.stringify(v)); } catch (_) { return v; }
+}
+
+function bgSaveJobsForPatient_(pid) {
+  const id = String(pid || "");
+  if (!id) return [];
+  return (bgSaveJobs_ || []).filter(j =>
+    String(j.pid || "") === id || String(j.tempId || "") === id
+  );
+}
+
 function setDataSyncBanner_(text) {
+  dataSyncBannerSystemText_ = String(text || "").trim();
+  renderBgSaveBanner_();
+}
+
+function renderBgSaveBanner_() {
   const el = document.getElementById("dataSyncBanner");
   if (!el) return;
-  const t = String(text || "").trim();
+  const sending = (bgSaveJobs_ || []).filter(j => j.status === "sending");
+  const failed = (bgSaveJobs_ || []).filter(j => j.status === "failed");
+  el.classList.remove("is-fail", "has-action");
+  if (failed.length) {
+    const job = failed[0];
+    const more = failed.length > 1 ? ` ほか${failed.length - 1}件` : "";
+    el.innerHTML =
+      escHtml((job.label || "保存") + "を送れませんでした。" + more) +
+      `<button type="button" class="bg-save-retry-btn" onclick="retryBgSaveJob_('${escAttr(job.id)}')">再送信</button>`;
+    el.classList.add("is-on", "is-fail", "has-action");
+    el.setAttribute("aria-hidden", "false");
+    return;
+  }
+  if (sending.length) {
+    const names = sending.slice(0, 2).map(j => j.label || "保存").join("、");
+    const more = sending.length > 2 ? ` ほか${sending.length - 2}件` : "";
+    el.textContent = `${names}${more}を送信中（次の患者へ進んで大丈夫です）`;
+    el.classList.add("is-on");
+    el.setAttribute("aria-hidden", "false");
+    return;
+  }
+  const t = String(dataSyncBannerSystemText_ || "").trim();
   if (!t) {
     el.classList.remove("is-on");
     el.textContent = "";
@@ -2565,6 +2610,44 @@ function setDataSyncBanner_(text) {
   el.textContent = t;
   el.classList.add("is-on");
   el.setAttribute("aria-hidden", "false");
+}
+
+function enqueueBgSaveJob_(job) {
+  bgSaveJobSeq_ += 1;
+  job.id = job.id || ("bg_" + bgSaveJobSeq_ + "_" + Date.now());
+  job.status = job.status || "sending";
+  bgSaveJobs_.push(job);
+  renderBgSaveBanner_();
+  if (typeof renderPatients === "function") renderPatients();
+  job.run();
+}
+
+function finishBgSaveJob_(job, ok, err) {
+  if (!job) return;
+  if (ok) {
+    bgSaveJobs_ = bgSaveJobs_.filter(j => j.id !== job.id);
+    if (job.okToast) showToast(job.okToast);
+  } else {
+    job.status = "failed";
+    job.error = err;
+  }
+  renderBgSaveBanner_();
+  if (typeof renderPatients === "function") renderPatients();
+  if (typeof renderMgmtPatients === "function") renderMgmtPatients();
+}
+
+function retryBgSaveJob_(id) {
+  const job = (bgSaveJobs_ || []).find(j => String(j.id) === String(id));
+  if (!job || typeof job.run !== "function") return;
+  job.status = "sending";
+  job.error = null;
+  renderBgSaveBanner_();
+  if (typeof renderPatients === "function") renderPatients();
+  job.run();
+}
+
+function hasPendingBgSaveJobs_() {
+  return (bgSaveJobs_ || []).some(j => j.status === "sending" || j.status === "failed");
 }
 
 function readInitCache_() {
@@ -2927,12 +3010,15 @@ function fetchInitData_(initYm) {
 }
 
 /** 診療記録＋歯式＋患者メモ（新API優先・旧GASでは従来の3回にフォールバック） */
-function saveTreatmentWithFallback_(data, pid, editingId) {
+function saveTreatmentWithFallback_(data, pid, editingId, extra) {
+  extra = extra || {};
+  const teethJson = extra.teethJson != null ? extra.teethJson : JSON.stringify(currentTeethData);
+  const patientNotes = extra.patientNotes != null ? extra.patientNotes : getRecordPatientNotesValue_();
   const bundle = {
     patientId: pid,
     treatment: data,
-    teethJson: JSON.stringify(currentTeethData),
-    patientNotes: getRecordPatientNotesValue_(),
+    teethJson,
+    patientNotes,
   };
   return gasCall("saveTreatmentRecordBundle", JSON.stringify(bundle))
     .then(raw => {
@@ -2950,11 +3036,11 @@ function saveTreatmentWithFallback_(data, pid, editingId) {
         return gasCall("updateTreatmentRecord", JSON.stringify(data))
           .then(res => {
             if (res !== "ok") throw new Error(String(res));
-            return finishTreatmentSideSaves_(pid).then(() => editingId);
+            return finishTreatmentSideSaves_(pid, extra).then(() => ({ id: editingId }));
           });
       }
       return gasCall("saveTreatmentRecord", JSON.stringify(data))
-        .then(id => finishTreatmentSideSaves_(pid).then(() => id));
+        .then(id => finishTreatmentSideSaves_(pid, extra).then(() => ({ id })));
     });
 }
 
@@ -4465,54 +4551,58 @@ function closePatientCareModal(save) {
   if (save && selectedPatient) {
     flushMedOnsetFromDom_();
     const pid = selectedPatient.id;
-    const med = {
+    const patientName = selectedPatient.name || "患者";
+    const med = snapshotClone_({
       conditions: patientMedical.conditions,
       medications: patientMedical.medications,
       allergies: patientMedical.allergies,
       care_level: patientMedical.careLevel,
       independence: patientMedical.independence,
       dementia_level: patientMedical.dementiaLevel
+    });
+    const teethSnap = snapshotClone_(currentTeethData);
+    const teethJson = JSON.stringify(teethSnap);
+    showToast("歯式・医療情報を受け付けました。裏で送信します");
+    const job = {
+      kind: "clinical",
+      label: patientName + "の歯式・医療",
+      pid,
+      okToast: "歯式・医療情報を保存しました",
+      run() {
+        Promise.all([
+          gasCall("saveMedicalInfo", pid, JSON.stringify(med))
+            .then(() => ({ ok: true, kind: "medical" }))
+            .catch(err => {
+              if (!isAmbiguousRpcFailure_(err)) return { ok: false, kind: "medical", err };
+              return verifyMedicalSaveAfterAmbiguous_(pid, med).then(v =>
+                v && v.ok ? { ok: true, kind: "medical", recovered: true } : { ok: false, kind: "medical", err }
+              );
+            }),
+          gasCall("saveTeethData", pid, teethJson)
+            .then(() => ({ ok: true, kind: "teeth" }))
+            .catch(err => {
+              if (!isAmbiguousRpcFailure_(err)) return { ok: false, kind: "teeth", err };
+              return gasCallPatientRead_("getTeethData", pid).then(json => {
+                try {
+                  const remote = typeof json === "string" ? JSON.parse(json) : json;
+                  const ok = JSON.stringify(remote || {}) === teethJson;
+                  return ok ? { ok: true, kind: "teeth", recovered: true } : { ok: false, kind: "teeth", err };
+                } catch (_) {
+                  return { ok: false, kind: "teeth", err };
+                }
+              }).catch(() => ({ ok: false, kind: "teeth", err }));
+            })
+        ]).then(results => {
+          const fails = results.filter(r => r && r.ok === false);
+          if (!fails.length) {
+            finishBgSaveJob_(job, true);
+          } else {
+            finishBgSaveJob_(job, false, fails[0].err);
+          }
+        });
+      }
     };
-    const teethSnap = JSON.stringify(currentTeethData);
-    setDataSyncBanner_("歯式・医療情報を保存中…");
-    Promise.all([
-      gasCall("saveMedicalInfo", pid, JSON.stringify(med))
-        .then(() => ({ ok: true, kind: "medical" }))
-        .catch(err => {
-          if (!isAmbiguousRpcFailure_(err)) return { ok: false, kind: "medical", err };
-          return verifyMedicalSaveAfterAmbiguous_(pid, med).then(v =>
-            v && v.ok ? { ok: true, kind: "medical", recovered: true } : { ok: false, kind: "medical", err }
-          );
-        }),
-      gasCall("saveTeethData", pid, teethSnap)
-        .then(() => ({ ok: true, kind: "teeth" }))
-        .catch(err => {
-          if (!isAmbiguousRpcFailure_(err)) return { ok: false, kind: "teeth", err };
-          return gasCallPatientRead_("getTeethData", pid).then(json => {
-            try {
-              const remote = typeof json === "string" ? JSON.parse(json) : json;
-              const ok = JSON.stringify(remote || {}) === teethSnap;
-              return ok ? { ok: true, kind: "teeth", recovered: true } : { ok: false, kind: "teeth", err };
-            } catch (_) {
-              return { ok: false, kind: "teeth", err };
-            }
-          }).catch(() => ({ ok: false, kind: "teeth", err }));
-        })
-    ])
-      .then(results => {
-        const fails = results.filter(r => r && r.ok === false);
-        if (!fails.length) {
-          refreshTeethBaseline();
-          const recovered = results.some(r => r && r.recovered);
-          showToast(recovered
-            ? "歯式・医療情報は保存済みでした（通信が不安定だったため確認しました）"
-            : "歯式・医療情報を保存しました");
-        } else {
-          const parts = fails.map(f => f.kind === "medical" ? "医療情報" : "歯式");
-          showToast("保存エラー: " + parts.join("・") + "（" + formatUserFacingRpcError_(fails[0].err) + "）");
-        }
-      })
-      .finally(() => setDataSyncBanner_(""));
+    enqueueBgSaveJob_(job);
   }
   returnRollableClinicalToRecordIfNeeded();
   document.getElementById("patientCareModal")?.classList.remove("show");
@@ -5642,7 +5732,15 @@ function applyRecordPrefill(prefill) {
  * @param {string} pid
  * @param {{ editingTreatmentId?: string|null, prefill?: object }} [options]
  */
+function isTemporaryPatientId_(pid) {
+  return /^tmp_pat_/.test(String(pid || ""));
+}
+
 function openRecord(pid, options) {
+  if (isTemporaryPatientId_(pid)) {
+    showToast("この患者はまだ送信中です。画面上部の表示が消えてから開いてください");
+    return;
+  }
   options = options || {};
   clearUndoStack_();
   returnRollableClinicalToRecordIfNeeded();
@@ -6864,24 +6962,30 @@ function setTreatmentRecordSaving_(active) {
 }
 
 /** 診療記録本体のあと、歯式・メモ・タグ更新を並列で送る（待ち時間短縮） */
-function finishTreatmentSideSaves_(pid) {
-  const teethP = gasCall("saveTeethData", pid, JSON.stringify(currentTeethData));
-  const notesP = savePatientNotesFromRecord_(pid, getRecordPatientNotesValue_());
+function finishTreatmentSideSaves_(pid, extra) {
+  extra = extra || {};
+  const teethObj = extra.teethSnap != null ? extra.teethSnap : currentTeethData;
+  const notes = extra.patientNotes != null ? extra.patientNotes : getRecordPatientNotesValue_();
+  const treats = extra.treatments || selectedTreatments;
+  const teethP = gasCall("saveTeethData", pid, JSON.stringify(teethObj));
+  const notesP = savePatientNotesFromRecord_(pid, notes);
   return Promise.all([teethP, notesP]).then(([, notesRes]) => {
     if (notesRes !== "ok") showToast("患者メモの保存に失敗しました（診療記録・歯式は保存済み）");
     return Promise.all([
-      applyIntakeStageAfterTreatmentSave_(pid, selectedTreatments),
-      persistPatientInHospitalFromRecord_(pid),
-      applyPatientMasterAfterTreatmentSave_(pid, selectedTreatments)
+      applyIntakeStageAfterTreatmentSave_(pid, treats),
+      persistPatientInHospitalFromRecord_(pid, extra.inHospital),
+      applyPatientMasterAfterTreatmentSave_(pid, treats)
     ]);
   });
 }
 
-function afterTreatmentRecordSaved_(pid) {
+function afterTreatmentRecordSaved_(pid, extra) {
+  extra = extra || {};
+  const treats = extra.treatments || selectedTreatments;
   return Promise.all([
-    persistPatientInHospitalFromRecord_(pid),
-    applyIntakeStageAfterTreatmentSave_(pid, selectedTreatments),
-    applyPatientMasterAfterTreatmentSave_(pid, selectedTreatments)
+    persistPatientInHospitalFromRecord_(pid, extra.inHospital),
+    applyIntakeStageAfterTreatmentSave_(pid, treats),
+    applyPatientMasterAfterTreatmentSave_(pid, treats)
   ]).catch(() => {});
 }
 
@@ -6891,8 +6995,11 @@ function localHistoryRecordsForPatient_(pid) {
     .sort((a, b) => String(b.visit_date || "").localeCompare(String(a.visit_date || "")));
 }
 
-function applyTreatmentUpdateSuccess_(data, pid, visitDateVal, recordId) {
-  syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
+function applyTreatmentUpdateSuccess_(data, pid, visitDateVal, recordId, opts) {
+  opts = opts || {};
+  const notesVal = opts.notesValue != null ? opts.notesValue : getRecordPatientNotesValue_();
+  const treats = opts.treatments || selectedTreatments;
+  syncLocalPatientNotes_(pid, notesVal);
   mergeTreatmentRecordsIntoLocal_([{
     ...data,
     visit_date: visitDateVal,
@@ -6903,44 +7010,52 @@ function applyTreatmentUpdateSuccess_(data, pid, visitDateVal, recordId) {
   }]);
   markRestricted(
     pid,
-    [...selectedTreatments].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
+    [...treats].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
     visitDateVal
   );
   editingTreatmentId = null;
   refreshTeethBaseline();
   refreshTreatmentBaseline();
   clearUndoStack_();
-  const list = localHistoryRecordsForPatient_(pid);
-  openHistory(pid, { records: list });
+  if (!opts.skipNavigate) {
+    const list = localHistoryRecordsForPatient_(pid);
+    openHistory(pid, { records: list });
+  }
   paintCalGrid();
-  gasCall("getTreatmentsByPatient", pid).then(json => {
-    const remote = JSON.parse(json);
-    mergeTreatmentRecordsIntoLocal_(remote);
-    if (currentHistoryPatientId && String(currentHistoryPatientId) === String(pid)) {
-      const el = document.getElementById("historyList");
-      if (el) renderHistoryList(remote, el);
-    }
-    paintCalGrid();
-  }).catch(() => {});
+  if (!opts.skipRemoteRefresh) {
+    gasCall("getTreatmentsByPatient", pid).then(json => {
+      const remote = JSON.parse(json);
+      mergeTreatmentRecordsIntoLocal_(remote);
+      if (currentHistoryPatientId && String(currentHistoryPatientId) === String(pid)) {
+        const el = document.getElementById("historyList");
+        if (el) renderHistoryList(remote, el);
+      }
+      paintCalGrid();
+    }).catch(() => {});
+  }
 }
 
 function applyTreatmentNewSuccess_(data, pid, visitDateVal, id, partialWarning, opts) {
   opts = opts || {};
-  syncLocalPatientNotes_(pid, getRecordPatientNotesValue_());
+  const notesVal = opts.notesValue != null ? opts.notesValue : getRecordPatientNotesValue_();
+  const treats = opts.treatments || selectedTreatments;
+  syncLocalPatientNotes_(pid, notesVal);
   markRestricted(
     pid,
-    [...selectedTreatments].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
+    [...treats].filter(c => c !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(c)),
     visitDateVal
   );
-  localRecords.push({
-    ...data,
-    visit_date: visitDateVal,
-    id,
-    visit_time_start: data.visit_time_start || "",
-    visit_time_end: data.visit_time_end || "",
-    exam_data: data.exam_data || "",
-    _clientSavedAt: Date.now()
-  });
+  if (!localRecords.some(r => String(r.id) === String(id))) {
+    localRecords.push({
+      ...data,
+      visit_date: visitDateVal,
+      id,
+      visit_time_start: data.visit_time_start || "",
+      visit_time_end: data.visit_time_end || "",
+      exam_data: data.exam_data || "",
+      _clientSavedAt: Date.now()
+    });
+  }
   selectedNextTreatments.clear();
   applyPatientVisitStatsFromRecords_();
   refreshTeethBaseline();
@@ -6950,7 +7065,7 @@ function applyTreatmentNewSuccess_(data, pid, visitDateVal, id, partialWarning, 
   if (document.activeElement && typeof document.activeElement.blur === "function") {
     try { document.activeElement.blur(); } catch (_) {}
   }
-  backToList({ patientId: pid });
+  if (!opts.skipNavigate) backToList({ patientId: pid });
   if (!opts.skipToast) {
     if (partialWarning) {
       showToast("記録を保存しました（注意: " + partialWarning + "）");
@@ -6960,10 +7075,32 @@ function applyTreatmentNewSuccess_(data, pid, visitDateVal, id, partialWarning, 
   }
 }
 
+function replaceLocalTreatmentId_(fromId, toId, pid) {
+  if (!fromId || !toId || String(fromId) === String(toId)) return;
+  localRecords.forEach(r => {
+    if (String(r.id) === String(fromId)) r.id = toId;
+  });
+  if (editingTreatmentId && String(editingTreatmentId) === String(fromId)) editingTreatmentId = toId;
+  if (currentHistoryPatientId && String(currentHistoryPatientId) === String(pid)) {
+    const el = document.getElementById("historyList");
+    if (el) renderHistoryList(localHistoryRecordsForPatient_(pid), el);
+  }
+  paintCalGrid();
+}
+
+function recoverAmbiguousTreatmentSave_(e, recoveryCtx) {
+  const msg = formatUserFacingRpcError_(e);
+  const raw = String(e && e.message ? e.message : e || "");
+  const looksDup = msg.indexOf("同じ診療日") !== -1 || raw.indexOf("同じ診療日") !== -1;
+  if ((looksDup || isAmbiguousRpcFailure_(e)) && recoveryCtx) {
+    return verifyTreatmentSaveAfterTimeout_(recoveryCtx).then(hit => (hit && hit.ok ? hit : null));
+  }
+  return Promise.resolve(null);
+}
+
 function saveTreatmentRecord() {
   if (!selectedPatient) return;
   if (!selectedTreatments.size) { showToast("処置内容を1つ以上選択してください"); return; }
-  if (treatmentRecordSaveInFlight) return;
   flushVisitTimesForSave_();
   const treatList = formatTreatmentsForSave_();
   const notes = getNotesEditorValue_();
@@ -6985,54 +7122,91 @@ function saveTreatmentRecord() {
   const examObj = collectExamDataForSave_();
   data.exam_data = examObj ? JSON.stringify(examObj) : "";
   const pid = selectedPatient.id;
+  const patientName = selectedPatient.name || "患者";
+  const editingId = editingTreatmentId || null;
+  if (editingId) data.id = editingId;
 
-  if (!checkTreatmentRecordDuplicateBeforeSave_(pid, visitDateVal, data.visit_time_start, editingTreatmentId || null)) {
+  if (!checkTreatmentRecordDuplicateBeforeSave_(pid, visitDateVal, data.visit_time_start, editingId)) {
+    return;
+  }
+  const slotKey = treatmentVisitSlotKey_(visitDateVal, data.visit_time_start);
+  if ((bgSaveJobs_ || []).some(j => j.kind === "treatment" && j.slotKey === slotKey && j.status === "sending")) {
+    showToast("同じ日時の記録を送信中です。終わるまで待ってください");
     return;
   }
 
-  treatmentRecordSaveInFlight = true;
-  setTreatmentRecordSaving_(true);
-  setDataSyncBanner_("診療記録を保存中…（他の画面へ移れます）");
-  // 保存中の写真・歯式読込応答を捨てて GAS 競合を減らす
+  const extra = {
+    teethSnap: snapshotClone_(currentTeethData),
+    teethJson: JSON.stringify(currentTeethData),
+    patientNotes: getRecordPatientNotesValue_(),
+    treatments: new Set(selectedTreatments),
+    inHospital: getRecordInHospitalChecked_(),
+    notesValue: getRecordPatientNotesValue_()
+  };
+  const uiOpts = {
+    skipToast: true,
+    skipRemoteRefresh: true,
+    notesValue: extra.notesValue,
+    treatments: extra.treatments
+  };
+  const tempId = editingId || ("tmp_trt_" + Date.now());
+  const dataSnap = snapshotClone_(data);
+
   try {
     Object.keys(loadPhotosSeqByPid_ || {}).forEach(k => { loadPhotosSeqByPid_[k] = (loadPhotosSeqByPid_[k] || 0) + 1; });
   } catch (_) {}
   teethLoadGen_ += 1;
 
-  const recoveryCtx = { data, pid, visitDateVal, editingId: editingTreatmentId || null };
-
-  if (editingTreatmentId) {
-    data.id = editingTreatmentId;
-    saveTreatmentWithFallback_(data, pid, editingTreatmentId)
-      .then(() => afterTreatmentRecordSaved_(pid))
-      .then(() => {
-        applyTreatmentUpdateSuccess_(data, pid, visitDateVal, editingTreatmentId);
-        showToast("記録を更新しました（歯式・患者メモも保存済み）");
-      })
-      .catch(e => handleTreatmentSaveError_(e, "更新", recoveryCtx))
-      .finally(() => {
-        treatmentRecordSaveInFlight = false;
-        setTreatmentRecordSaving_(false);
-        setDataSyncBanner_("");
-      });
-    return;
+  if (editingId) {
+    applyTreatmentUpdateSuccess_(dataSnap, pid, visitDateVal, editingId, uiOpts);
+    showToast("記録を受け付けました。裏で送信します");
+  } else {
+    applyTreatmentNewSuccess_(dataSnap, pid, visitDateVal, tempId, null, uiOpts);
+    showToast("記録を受け付けました。裏で送信します");
   }
 
-  saveTreatmentWithFallback_(data, pid, null)
-    .then(result => {
-      const id = typeof result === "object" ? result.id : result;
-      const partialWarning = typeof result === "object" ? result.partialWarning : null;
-      return afterTreatmentRecordSaved_(pid).then(() => ({ id, partialWarning }));
-    })
-    .then(({ id, partialWarning }) => {
-      applyTreatmentNewSuccess_(data, pid, visitDateVal, id, partialWarning);
-    })
-    .catch(e => handleTreatmentSaveError_(e, "保存", recoveryCtx))
-    .finally(() => {
-      treatmentRecordSaveInFlight = false;
-      setTreatmentRecordSaving_(false);
-      setDataSyncBanner_("");
-    });
+  const job = {
+    kind: "treatment",
+    label: patientName + "の診療記録",
+    pid,
+    tempId,
+    editingId,
+    slotKey,
+    okToast: editingId ? "記録を更新しました" : "記録を保存しました",
+    run() {
+      const recoveryCtx = { data: dataSnap, pid, visitDateVal, editingId };
+      saveTreatmentWithFallback_(dataSnap, pid, editingId, extra)
+        .then(result => {
+          const id = result && typeof result === "object" ? result.id : result;
+          const partialWarning = result && typeof result === "object" ? result.partialWarning : null;
+          return afterTreatmentRecordSaved_(pid, extra).then(() => ({ id, partialWarning }));
+        })
+        .then(({ id, partialWarning }) => {
+          if (!editingId && id) replaceLocalTreatmentId_(tempId, id, pid);
+          gasCall("getTreatmentsByPatient", pid).then(json => {
+            try {
+              mergeTreatmentRecordsIntoLocal_(JSON.parse(json));
+              paintCalGrid();
+            } catch (_) {}
+          }).catch(() => {});
+          if (partialWarning) showToast("記録を保存しました（注意: " + partialWarning + "）");
+          finishBgSaveJob_(job, true);
+        })
+        .catch(e => {
+          return recoverAmbiguousTreatmentSave_(e, recoveryCtx).then(hit => {
+            if (hit && hit.ok) {
+              if (!editingId && hit.id) replaceLocalTreatmentId_(tempId, hit.id, pid);
+              job.okToast = "";
+              finishBgSaveJob_(job, true);
+              showToast("記録は保存済みでした（通信が不安定だったため確認しました）");
+              return;
+            }
+            finishBgSaveJob_(job, false, e);
+          });
+        });
+    }
+  };
+  enqueueBgSaveJob_(job);
 }
 
 // ══════════════════════════════════════════
@@ -8724,8 +8898,9 @@ function dedupeLocalPhotosById_() {
 }
 
 /** 新規患者モーダルで溜めた写真を、登録後の patientId で Drive に保存する */
-function flushPendingNewPatientPhotos_(newPatientId) {
-  const pending = localPhotos.filter(p => p.patientId === PHOTO_PENDING_NEW_ID);
+function flushPendingNewPatientPhotos_(newPatientId, fromPatientId) {
+  const src = fromPatientId || PHOTO_PENDING_NEW_ID;
+  const pending = localPhotos.filter(p => String(p.patientId) === String(src));
   if (!pending.length) return Promise.resolve();
   const idStr = String(newPatientId || "").trim();
   if (!idStr) return Promise.resolve();
@@ -20352,6 +20527,10 @@ function scrollPatientModalToTop_() {
 }
 
 function openPatientModal(pid) {
+  if (pid && isTemporaryPatientId_(pid)) {
+    showToast("この患者はまだ送信中です。画面上部の表示が消えてから開いてください");
+    return;
+  }
   clearUndoStack_();
   returnRollableClinicalToRecordIfNeeded();
   const p = pid ? PATIENTS.find(x=>x.id===pid) : null;
@@ -20526,26 +20705,12 @@ function confirmSameNamePatientsBeforeSave_(name, excludeId) {
   );
 }
 
-function continuePatientModalAfterBasicSaved_(data, recordId, wasNew) {
-  if (wasNew) {
-    data.id = recordId;
-    if (!PATIENTS.some(x => String(x.id) === String(recordId))) {
-      PATIENTS.push({ ...data, visits: 0, last: "—" });
-    }
-  } else {
-    const p = PATIENTS.find(x => String(x.id) === String(recordId));
-    if (p) { Object.assign(p, data); selectedPatient = p; }
-  }
+function continuePatientModalAfterBasicSaved_(data, recordId, wasNew, extra) {
+  extra = extra || {};
   const saves = [];
-  if (document.getElementById("pm-clinical-section")?.style.display !== "none" && recordId) {
-    const med = {
-      conditions: patientMedical.conditions,
-      medications: patientMedical.medications,
-      allergies: patientMedical.allergies,
-      care_level: patientMedical.careLevel,
-      independence: patientMedical.independence,
-      dementia_level: patientMedical.dementiaLevel
-    };
+  if (extra.includeClinical && recordId) {
+    const med = extra.med || {};
+    const teethJson = extra.teethJson != null ? extra.teethJson : JSON.stringify(currentTeethData);
     saves.push(
       gasCall("saveMedicalInfo", recordId, JSON.stringify(med))
         .then(() => ({ ok: true, kind: "medical" }))
@@ -20557,28 +20722,45 @@ function continuePatientModalAfterBasicSaved_(data, recordId, wasNew) {
         })
     );
     saves.push(
-      gasCall("saveTeethData", recordId, JSON.stringify(currentTeethData))
+      gasCall("saveTeethData", recordId, teethJson)
         .then(() => ({ ok: true, kind: "teeth" }))
         .catch(err => ({ ok: false, kind: "teeth", err }))
     );
   }
+  const photoFromId = extra.photoFromId;
   const flushP = wasNew && recordId
-    ? flushPendingNewPatientPhotos_(recordId).then(() => ({ ok: true, kind: "photo" })).catch(err => ({ ok: false, kind: "photo", err }))
+    ? flushPendingNewPatientPhotos_(recordId, photoFromId).then(() => ({ ok: true, kind: "photo" })).catch(err => ({ ok: false, kind: "photo", err }))
     : Promise.resolve({ ok: true, kind: "photo" });
   return Promise.all([flushP, ...saves]).then(results => {
     const fails = results.filter(r => r && r.ok === false);
-    if (saves.length && fails.every(f => f.kind !== "teeth" && f.kind !== "medical")) refreshTeethBaseline();
-    else if (saves.length && !fails.some(f => f.kind === "teeth")) refreshTeethBaseline();
     if (fails.length) {
       const parts = fails.map(f => f.kind === "medical" ? "医療情報" : f.kind === "teeth" ? "歯式" : "写真");
-      showToast("患者の基本情報は保存済み。一部失敗: " + parts.join("・") + "（" + formatUserFacingRpcError_(fails[0].err) + "）");
-    } else {
-      showToast(wasNew ? "患者を追加しました" : "患者情報・歯式・医療を更新しました");
+      return { ok: false, err: fails[0].err, parts };
     }
-    closePatientEditModal(false);
-    renderMgmtPatients();
-    renderPatients();
+    return { ok: true };
   });
+}
+
+function replaceLocalPatientId_(fromId, toId) {
+  if (!fromId || !toId || String(fromId) === String(toId)) return;
+  const p = PATIENTS.find(x => String(x.id) === String(fromId));
+  if (p) p.id = toId;
+  localPhotos.forEach(ph => {
+    if (String(ph.patientId) === String(fromId)) ph.patientId = toId;
+  });
+  localRecords.forEach(r => {
+    if (String(r.patient_id) === String(fromId)) r.patient_id = toId;
+  });
+  if (selectedPatient && String(selectedPatient.id) === String(fromId)) selectedPatient.id = toId;
+}
+
+function dismissPatientEditModalKeepPhotos_() {
+  returnRollableClinicalToRecordIfNeeded();
+  document.getElementById("patientModal")?.classList.remove("show");
+  clearUndoStack_();
+  patientModalSaveInFlight = false;
+  setPatientModalSaving_(false);
+  if (currentScreen !== "record") selectedPatient = null;
 }
 
 function savePatientModal() {
@@ -20617,38 +20799,92 @@ function savePatientModal() {
   };
   if (!data.name || !data.fac) { showToast("患者名と施設は必須です"); return; }
   if (!confirmSameNamePatientsBeforeSave_(data.name, id || null)) return;
+  const lockId = id || "__new__";
+  if ((bgSaveJobs_ || []).some(j => j.kind === "patient" && String(j.lockId) === String(lockId) && j.status === "sending")) {
+    showToast("この患者を送信中です。終わるまで待ってください");
+    return;
+  }
   flushMedOnsetFromDom_();
-  const fn = id ? "updatePatient" : "addPatient";
   const wasNew = !id;
-  patientModalSaveInFlight = true;
-  setPatientModalSaving_(true);
-  // 保存中は写真読込を抑止
+  const includeClinical = document.getElementById("pm-clinical-section")?.style.display !== "none";
+  const extra = {
+    includeClinical,
+    med: snapshotClone_({
+      conditions: patientMedical.conditions,
+      medications: patientMedical.medications,
+      allergies: patientMedical.allergies,
+      care_level: patientMedical.careLevel,
+      independence: patientMedical.independence,
+      dementia_level: patientMedical.dementiaLevel
+    }),
+    teethJson: JSON.stringify(currentTeethData)
+  };
+  const tempId = wasNew ? ("tmp_pat_" + Date.now()) : id;
+  if (wasNew) {
+    localPhotos.forEach(ph => {
+      if (ph.patientId === PHOTO_PENDING_NEW_ID) ph.patientId = tempId;
+    });
+    extra.photoFromId = tempId;
+    const localRow = { ...data, id: tempId, visits: 0, last: "—" };
+    if (!PATIENTS.some(x => String(x.id) === String(tempId))) PATIENTS.push(localRow);
+  } else {
+    const p = PATIENTS.find(x => String(x.id) === String(id));
+    if (p) Object.assign(p, data);
+  }
+
   try {
     Object.keys(loadPhotosSeqByPid_ || {}).forEach(k => { loadPhotosSeqByPid_[k] = (loadPhotosSeqByPid_[k] || 0) + 1; });
   } catch (_) {}
-  gasCall(fn, JSON.stringify(data))
-    .then(result => {
-      const recordId = id || result;
-      return continuePatientModalAfterBasicSaved_(data, recordId, wasNew);
-    })
-    .catch(e => {
-      if (!isAmbiguousRpcFailure_(e)) {
-        showToast("保存エラー: " + formatUserFacingRpcError_(e));
-        return;
-      }
-      showToast("保存結果を確認中…");
-      return verifyPatientBasicSaveAfterAmbiguous_(data, id || null).then(hit => {
-        if (hit && hit.ok && hit.id) {
-          showToast("基本情報は保存済みでした。続けて医療・歯式を確認します…");
-          return continuePatientModalAfterBasicSaved_(data, hit.id, wasNew);
-        }
-        showToast("保存エラー: " + formatUserFacingRpcError_(e));
-      });
-    })
-    .finally(() => {
-      patientModalSaveInFlight = false;
-      setPatientModalSaving_(false);
-    });
+
+  dismissPatientEditModalKeepPhotos_();
+  renderMgmtPatients();
+  renderPatients();
+  showToast(wasNew ? "患者を受け付けました。裏で送信します" : "患者情報を受け付けました。裏で送信します");
+
+  const payload = snapshotClone_({ ...data, id: wasNew ? "" : id });
+  const fn = wasNew ? "addPatient" : "updatePatient";
+  const job = {
+    kind: "patient",
+    label: (data.name || "患者") + "の登録",
+    pid: tempId,
+    tempId,
+    lockId,
+    okToast: wasNew ? "患者を追加しました" : "患者情報を更新しました",
+    run() {
+      const afterBasic = (recordId) => {
+        job.recordId = recordId;
+        job.pid = recordId;
+        if (wasNew && recordId) replaceLocalPatientId_(tempId, recordId);
+        return continuePatientModalAfterBasicSaved_(payload, recordId, wasNew, extra)
+          .then(res => ({ recordId, res }));
+      };
+      const start = job.recordId
+        ? Promise.resolve(job.recordId).then(afterBasic)
+        : gasCall(fn, JSON.stringify(payload)).then(result => afterBasic(wasNew ? result : id));
+      start
+        .catch(e => {
+          if (!isAmbiguousRpcFailure_(e)) throw e;
+          return verifyPatientBasicSaveAfterAmbiguous_(payload, wasNew ? (job.recordId || null) : id).then(hit => {
+            if (!(hit && hit.ok && hit.id)) throw e;
+            return afterBasic(hit.id);
+          });
+        })
+        .then(({ res }) => {
+          renderMgmtPatients();
+          renderPatients();
+          if (res && res.ok === false) {
+            finishBgSaveJob_(job, false, res.err);
+            showToast("基本情報は保存済み。一部失敗: " + (res.parts || []).join("・"));
+            return;
+          }
+          finishBgSaveJob_(job, true);
+        })
+        .catch(e => {
+          finishBgSaveJob_(job, false, e);
+        });
+    }
+  };
+  enqueueBgSaveJob_(job);
 }
 
 function openFacModal(fid) {
@@ -20840,7 +21076,7 @@ function applyPcModeOnLoad() {
 
 /* ── START ── */
 window.addEventListener("beforeunload", e => {
-  if (hasRecordDraftUnsaved()) {
+  if (hasRecordDraftUnsaved() || hasPendingBgSaveJobs_()) {
     e.preventDefault();
     e.returnValue = "";
   }

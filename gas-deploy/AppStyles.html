@@ -857,6 +857,33 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
   pointer-events: none;
 }
 .data-sync-banner.is-on { display: block; }
+.data-sync-banner.has-action { pointer-events: auto; }
+.data-sync-banner.is-fail {
+  color: #991b1b;
+  background: linear-gradient(180deg, #fee2e2 0%, #fef2f2 100%);
+  border-bottom-color: #fca5a5;
+}
+.data-sync-banner .bg-save-retry-btn {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #b91c1c;
+  background: #fff;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.save-now-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.4;
+  text-align: center;
+}
+.pif-badge.syncing { background: #ffedd5; color: #9a3412; }
+.pif-badge.unsync { background: #fee2e2; color: #991b1b; }
 
 /* ── ④ 五香様式 4マス月次報告（プレビュー＝編集用・印刷サイズより大きく表示） ── */
 #monthCarePreviewScroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -1209,6 +1236,18 @@ body.dark-mode .data-sync-banner {
   background: linear-gradient(180deg, #1e3a8a 0%, #172554 100%);
   border-bottom-color: #1d4ed8;
 }
+body.dark-mode .data-sync-banner.is-fail {
+  color: #fecaca;
+  background: linear-gradient(180deg, #7f1d1d 0%, #450a0a 100%);
+  border-bottom-color: #b91c1c;
+}
+body.dark-mode .data-sync-banner .bg-save-retry-btn {
+  background: #1e293b;
+  border-color: #fca5a5;
+  color: #fecaca;
+}
+body.dark-mode .pif-badge.syncing { background: #7c2d12; color: #fed7aa; }
+body.dark-mode .pif-badge.unsync { background: #7f1d1d; color: #fecaca; }
 body.dark-mode #teethChartBlock { background: var(--surface) !important; }
 body.dark-mode .cal-day-rec-card:hover { background: #1e3a8a !important; }
 body.dark-mode .cal-day-rec-card:active { background: #1d4ed8 !important; }

@@ -213,4 +213,27 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('background save helpers and save-now hint exist', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    await expect(page.locator('#dataSyncBanner')).toHaveCount(1)
+    await expect(page.locator('#screen-record .save-now-hint')).toHaveCount(1)
+    const fns = await page.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>
+      return [
+        'enqueueBgSaveJob_',
+        'retryBgSaveJob_',
+        'renderBgSaveBanner_',
+        'hasPendingBgSaveJobs_',
+      ].map(n => typeof w[n] === 'function')
+    })
+    expect(fns.every(Boolean)).toBe(true)
+  })
 })
