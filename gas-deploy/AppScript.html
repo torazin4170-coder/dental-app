@@ -8814,8 +8814,8 @@ body { font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif; font-siz
 .th-print-table th { background: #f1f5f9; font-size: 10pt; }
 .th-print-table .th-no { width: 28px; text-align: center; }
 .th-print-table .th-date { width: 88px; }
-.th-print-table .th-treats { width: 22%; }
-.th-print-table .th-next { width: 18%; }
+.th-print-table .th-treats { width: 24%; }
+.th-print-table .th-notes { width: auto; }
 .th-time { font-size: 9pt; color: #64748b; }
 .th-tones { margin-top: 4px; font-size: 9pt; color: #64748b; }
 .th-print-notes .fax-em-red { color: #dc2626; font-weight: 800; }
@@ -8841,15 +8841,11 @@ function buildTreatmentHistoryPrintHtml_(p, records) {
     const toneHtml = tones.length
       ? `<div class="th-tones">報告カテゴリ：${tones.map(k => escHtml(getRecordCareCatLabel_(k))).join("、")}</div>`
       : "";
-    const nextLine = r.next_date
-      ? escHtml(formatVisitDateDisp(r.next_date) + (r.next_content ? "　" + r.next_content : ""))
-      : "—";
     return `<tr>
       <td class="th-no">${i + 1}</td>
       <td class="th-date">${escHtml(dateDisp)}${timeRange ? `<br><span class="th-time">${escHtml(timeRange)}</span>` : ""}</td>
       <td class="th-treats">${treatsHtml}</td>
       <td class="th-notes">${notes}${toneHtml}</td>
-      <td class="th-next">${nextLine}</td>
     </tr>`;
   }).join("");
   return `<div class="th-print-doc">
@@ -8862,10 +8858,9 @@ function buildTreatmentHistoryPrintHtml_(p, records) {
         <th class="th-no">No</th>
         <th class="th-date">診療日</th>
         <th class="th-treats">処置・治療内容</th>
-        <th>コメント・メモ</th>
-        <th class="th-next">次回予定</th>
+        <th class="th-notes">コメント・メモ</th>
       </tr></thead>
-      <tbody>${rows || `<tr><td colspan="5">記録なし</td></tr>`}</tbody>
+      <tbody>${rows || `<tr><td colspan="4">記録なし</td></tr>`}</tbody>
     </table>
   </div>`;
 }
@@ -10677,33 +10672,37 @@ function svListHtmlForPrint_() {
   return rptPlainHtmlForFax_(buildSupervisorListDocumentHtml_({ forPrint: true }));
 }
 
-/** 印刷ウィンドウ：DOM 反映後すぐ print()（画像 decode 完了は待たない・全帳票共通） */
+/** 印刷ウィンドウ：子ウィンドウ内で1回だけ print()（背景タブ・二重呼び出し対策・全帳票共通） */
 function rptTriggerPrintWhenReady_(w, beforePrint) {
-  if (!w) return;
-  let fired = false;
-  const doPrint = () => {
-    if (fired) return;
-    fired = true;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
+  if (!w || w.__rptPrintScheduled) return;
+  w.__rptPrintScheduled = true;
+  try {
+    if (typeof beforePrint === "function") beforePrint(w);
+    try { w.focus(); } catch (_) {}
+    const doc = w.document;
+    if (!doc || !doc.body) {
+      setTimeout(() => {
         try {
-          if (typeof beforePrint === "function") beforePrint(w);
+          if (w.__rptPrintInvoked) return;
+          w.__rptPrintInvoked = true;
           w.focus();
           w.print();
         } catch (_) {}
-      });
-    });
-  };
-  try {
-    const doc = w.document;
-    // document.write + close 後は interactive/complete。load は img decode まで待つため使わない
-    if (!doc || doc.readyState === "complete" || doc.readyState === "interactive") {
-      doPrint();
-    } else {
-      doc.addEventListener("DOMContentLoaded", doPrint, { once: true });
+      }, 120);
+      return;
     }
+    const s = doc.createElement("script");
+    s.textContent = `(function(){var done=false;function go(){if(done)return;done=true;try{window.focus();window.print();}catch(e){}}if(document.readyState==="complete")setTimeout(go,120);else window.addEventListener("load",function(){setTimeout(go,120);},{once:true});})();`;
+    doc.body.appendChild(s);
   } catch (_) {
-    doPrint();
+    setTimeout(() => {
+      try {
+        if (w.__rptPrintInvoked) return;
+        w.__rptPrintInvoked = true;
+        w.focus();
+        w.print();
+      } catch (__) {}
+    }, 120);
   }
 }
 
