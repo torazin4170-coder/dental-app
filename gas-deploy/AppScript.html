@@ -2439,6 +2439,8 @@ let patientListScrollSnapshot_ = null;
 /** 治療履歴一覧の直近データ（日付クリックで参照） */
 let historyRecordsCache = [];
 let currentHistoryPatientId = null;
+/** 履歴画面の戻り先（record=診療記録 / settings=設定・管理） */
+let historyReturnScreen_ = "record";
 
 /** 歯式JSON（画面上の編集中データ） */
 let currentTeethData = {};
@@ -4637,9 +4639,10 @@ function mgmtPatientRowHtml_(p) {
   return `<div class="manage-item${limRowCls}">
       <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">${escHtml(p.name)}${istTag} <span style="font-size:11px;font-weight:400;color:var(--muted)">${escHtml(String(p.age || ""))}歳</span>${inageTag ? " " + inageTag : ""}${limBadge ? " " + limBadge : ""}${p.coverage_type ? ` <span style="font-size:10px;font-weight:700;color:#64748b;border:1px solid var(--border);padding:1px 6px;border-radius:4px">${escHtml(String(p.coverage_type))}</span>` : ""}</div><div style="font-size:11px;color:var(--muted)">${escHtml(fac?.name || "")} ｜ ${escHtml(p.room || "")}</div></div>
       <span class="status-badge" style="padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;${bgs[st]}">${labels[st]}</span>
-      <button type="button" class="icon-btn" title="削除" onclick="event.stopPropagation();confirmDeleteMgmtPatient('${p.id}')">🗑</button>
+      <button type="button" class="icon-btn" title="治療経過一覧（処置・コメント・印刷）" onclick="event.stopPropagation();openHistoryFromMgmt_('${p.id}')">📋</button>
       <button type="button" class="icon-btn" title="患者を編集（基本情報・歯式・写真・医療）" onclick="event.stopPropagation();openPatientModal('${p.id}')">✏️</button>
       <button type="button" class="icon-btn" title="ステータス" onclick="event.stopPropagation();openStatusModal('${p.id}')">⋯</button>
+      <button type="button" class="icon-btn" title="削除" onclick="event.stopPropagation();confirmDeleteMgmtPatient('${p.id}')">🗑</button>
     </div>`;
 }
 
@@ -8735,16 +8738,175 @@ function confirmDeleteHistoryRecord(recId) {
   gasCall("deleteTreatmentRecord", recId).then(() => {
     localRecords = localRecords.filter(r => String(r.id) !== String(recId));
     showToast("削除しました");
-    openHistory(currentHistoryPatientId);
+    openHistory(currentHistoryPatientId, { returnTo: historyReturnScreen_ });
   }).catch(e => showToast("削除に失敗: " + (e && e.message ? e.message : String(e))));
+}
+
+function openHistoryFromMgmt_(pid) {
+  if (isTemporaryPatientId_(pid)) {
+    showToast("この患者はまだ送信中です。完了後に履歴を開いてください");
+    return;
+  }
+  openHistory(pid, { returnTo: "settings" });
+}
+
+function closeHistoryScreen_() {
+  if (historyReturnScreen_ === "settings") {
+    switchScreen("settings");
+    switchSettingsTab("patients");
+    return;
+  }
+  switchScreen("record");
+}
+
+function syncHistoryScreenChrome_() {
+  const btn = document.getElementById("historyBackBtn");
+  if (btn) {
+    btn.textContent = historyReturnScreen_ === "settings" ? "← 設定に戻る" : "← 診療記録";
+  }
+  const sub = document.getElementById("historyScreenSub");
+  if (sub) {
+    sub.textContent = historyReturnScreen_ === "settings" ? "治療経過一覧（設定・管理）" : "治療経過一覧";
+  }
+}
+
+function renderHistoryPatientMeta_(pid) {
+  const el = document.getElementById("historyPatientMeta");
+  if (!el) return;
+  const p = PATIENTS.find(x => String(x.id) === String(pid));
+  if (!p) { el.textContent = ""; return; }
+  const fac = FACILITIES.find(f => f.id === p.fac);
+  const parts = [
+    fac?.name || "",
+    p.room ? "部屋 " + String(p.room) : "",
+    p.age != null && String(p.age) !== "" ? String(p.age) + "歳" : ""
+  ].filter(Boolean);
+  el.textContent = parts.join(" ｜ ");
+}
+
+function sortHistoryRecordsChronological_(records, ascending) {
+  const list = (records || []).slice();
+  list.sort((a, b) => {
+    const ka = normalizeVisitDateKey(a.visit_date) + "\t" + (formatTimeForInput_(a.visit_time_start) || "");
+    const kb = normalizeVisitDateKey(b.visit_date) + "\t" + (formatTimeForInput_(b.visit_time_start) || "");
+    return ascending ? ka.localeCompare(kb) : kb.localeCompare(ka);
+  });
+  return list;
+}
+
+function formatHistoryTreatmentsHtml_(raw) {
+  const chips = String(raw || "").split(/[、,]/).map(t => t.trim()).filter(Boolean);
+  if (!chips.length) return `<span style="color:var(--muted)">—</span>`;
+  return chips.map(t =>
+    `<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:var(--accent-light);color:var(--accent);font-size:12px;font-weight:700;margin:0 4px 4px 0">${escHtml(t)}</span>`
+  ).join("");
+}
+
+function getTreatmentHistoryPrintCss_() {
+  return `
+body { font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif; font-size: 11pt; color: #111; margin: 12mm; }
+.th-print-title { font-size: 16pt; font-weight: 800; margin: 0 0 6px; }
+.th-print-patient { font-size: 14pt; font-weight: 800; margin-bottom: 4px; }
+.th-furi { font-size: 11pt; font-weight: 600; color: #475569; }
+.th-print-meta { font-size: 10pt; color: #475569; margin-bottom: 4px; }
+.th-print-table { width: 100%; border-collapse: collapse; margin-top: 12px; table-layout: fixed; }
+.th-print-table th, .th-print-table td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; text-align: left; word-break: break-word; }
+.th-print-table th { background: #f1f5f9; font-size: 10pt; }
+.th-print-table .th-no { width: 28px; text-align: center; }
+.th-print-table .th-date { width: 88px; }
+.th-print-table .th-treats { width: 22%; }
+.th-print-table .th-next { width: 18%; }
+.th-time { font-size: 9pt; color: #64748b; }
+.th-tones { margin-top: 4px; font-size: 9pt; color: #64748b; }
+.th-print-notes .fax-em-red { color: #dc2626; font-weight: 800; }
+.th-print-notes .fax-em-hl { background: #fef08a; padding: 1px 3px; }
+.th-print-notes .fax-em-box-black { display: inline-block; border: 2px solid #111; padding: 2px 6px; border-radius: 4px; }
+.th-print-notes .fax-em-box { display: inline-block; border: 2px solid #dc2626; padding: 2px 6px; border-radius: 4px; }
+@media print { body { margin: 10mm; } }`;
+}
+
+function buildTreatmentHistoryPrintHtml_(p, records) {
+  const fac = FACILITIES.find(f => f.id === p.fac);
+  const sorted = sortHistoryRecordsChronological_(records, true);
+  const today = getTodayYmdJstForRecord_();
+  const rows = sorted.map((r, i) => {
+    const dateDisp = formatVisitDateDisp(r.visit_date);
+    const trStart = formatTimeForInput_(r.visit_time_start);
+    const trEnd = formatTimeForInput_(r.visit_time_end);
+    const timeRange = trStart && trEnd ? `${trStart}～${trEnd}` : trStart ? `${trStart}～` : "";
+    const treats = String(r.treatments || "").split(/[、,]/).map(t => t.trim()).filter(Boolean);
+    const treatsHtml = treats.length ? treats.map(t => escHtml(t)).join("<br>") : "—";
+    const notes = r.notes ? rptRichPrintHtml_(r.notes, "th-print-notes") : "—";
+    const tones = parseNotesTonesFromString_(r.notes_tones);
+    const toneHtml = tones.length
+      ? `<div class="th-tones">報告カテゴリ：${tones.map(k => escHtml(getRecordCareCatLabel_(k))).join("、")}</div>`
+      : "";
+    const nextLine = r.next_date
+      ? escHtml(formatVisitDateDisp(r.next_date) + (r.next_content ? "　" + r.next_content : ""))
+      : "—";
+    return `<tr>
+      <td class="th-no">${i + 1}</td>
+      <td class="th-date">${escHtml(dateDisp)}${timeRange ? `<br><span class="th-time">${escHtml(timeRange)}</span>` : ""}</td>
+      <td class="th-treats">${treatsHtml}</td>
+      <td class="th-notes">${notes}${toneHtml}</td>
+      <td class="th-next">${nextLine}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="th-print-doc">
+    <h1 class="th-print-title">治療経過一覧</h1>
+    <div class="th-print-patient">${escHtml(p.name || "")}${p.furi ? ` <span class="th-furi">(${escHtml(String(p.furi))})</span>` : ""}</div>
+    <div class="th-print-meta">${escHtml(fac?.name || "—")} ｜ 部屋 ${escHtml(String(p.room || "—"))} ｜ ${escHtml(p.age != null && String(p.age) !== "" ? String(p.age) + "歳" : "—")}</div>
+    <div class="th-print-meta">印刷日：${escHtml(formatVisitDateDisp(today))}　全 ${sorted.length} 件（古い順）</div>
+    <table class="th-print-table">
+      <thead><tr>
+        <th class="th-no">No</th>
+        <th class="th-date">診療日</th>
+        <th class="th-treats">処置・治療内容</th>
+        <th>コメント・メモ</th>
+        <th class="th-next">次回予定</th>
+      </tr></thead>
+      <tbody>${rows || `<tr><td colspan="5">記録なし</td></tr>`}</tbody>
+    </table>
+  </div>`;
+}
+
+function printTreatmentHistory_() {
+  const pid = currentHistoryPatientId;
+  if (!pid) return;
+  const p = PATIENTS.find(x => String(x.id) === String(pid));
+  if (!p) { showToast("患者が見つかりません"); return; }
+  const records = historyRecordsCache.length
+    ? historyRecordsCache
+    : localHistoryRecordsForPatient_(pid);
+  if (!records.length) { showToast("印刷する履歴がありません"); return; }
+  const inner = buildTreatmentHistoryPrintHtml_(p, records);
+  const css = getTreatmentHistoryPrintCss_() + getRptPrintWhitespaceCss_();
+  const title = (p.name || "患者") + " 治療経過一覧";
+  const doc = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${escHtml(title)}</title><style>${css}</style></head><body>${inner}</body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) {
+    showToast("ポップアップがブロックされています。許可してから再度お試しください。");
+    return;
+  }
+  w.document.open();
+  w.document.write(doc);
+  w.document.close();
+  rptTriggerPrintWhenReady_(w);
 }
 
 function openHistory(pid, options) {
   options = options || {};
   if (!pid) return;
+  if (isTemporaryPatientId_(pid)) {
+    showToast("この患者はまだ送信中です。完了後に履歴を開いてください");
+    return;
+  }
+  historyReturnScreen_ = options.returnTo === "settings" ? "settings" : "record";
   currentHistoryPatientId = pid;
   const p = PATIENTS.find(x => x.id === pid);
   document.getElementById("historyPatientName").textContent = p?.name || "";
+  syncHistoryScreenChrome_();
+  renderHistoryPatientMeta_(pid);
   const listEl = document.getElementById("historyList");
   switchScreen("history");
   if (options.records && Array.isArray(options.records)) {
@@ -8759,6 +8921,8 @@ function openHistory(pid, options) {
     renderHistoryList(localFirst, listEl);
   } else {
     listEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted)">読み込み中…</div>`;
+    const bar = document.getElementById("historySummaryBar");
+    if (bar) bar.textContent = "";
   }
 
   gasCall("getTreatmentsByPatient", pid).then(json => {
@@ -8778,6 +8942,12 @@ function openHistory(pid, options) {
 
 function renderHistoryList(records, el) {
   historyRecordsCache = records || [];
+  const bar = document.getElementById("historySummaryBar");
+  if (bar) {
+    bar.textContent = records.length
+      ? `全 ${records.length} 件（新しい順）・日付タップでその回の記録を開けます`
+      : "";
+  }
   if (!records.length) {
     el.innerHTML = `<div style="text-align:center;padding:30px;color:var(--muted)">治療履歴はありません</div>`;
     return;

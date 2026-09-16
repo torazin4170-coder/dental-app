@@ -399,14 +399,17 @@
 
   <!-- 治療履歴画面 -->
   <div class="screen" id="screen-history">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <button class="btn btn-secondary" style="padding:8px 14px;font-size:14px"
-        onclick="switchScreen('record')">← 戻る</button>
-      <div>
+    <div class="history-screen-head">
+      <button type="button" class="btn btn-secondary history-back-btn" id="historyBackBtn"
+        onclick="closeHistoryScreen_()">← 戻る</button>
+      <div class="history-screen-title">
         <div id="historyPatientName" style="font-size:18px;font-weight:800"></div>
-        <div style="font-size:12px;color:var(--muted)">治療履歴</div>
+        <div id="historyScreenSub" style="font-size:12px;color:var(--muted)">治療経過一覧</div>
       </div>
+      <button type="button" class="btn btn-secondary history-print-btn" onclick="printTreatmentHistory_()">🖨 印刷</button>
     </div>
+    <div id="historyPatientMeta" class="history-patient-meta"></div>
+    <div id="historySummaryBar" class="history-summary-bar" aria-live="polite"></div>
     <div id="historyList"></div>
   </div>
 
@@ -1083,7 +1086,7 @@
         <button id="st-left" onclick="toggleStatusFilter('left')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">退去</button>
         <button id="st-deceased" onclick="toggleStatusFilter('deceased')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">逝去</button>
       </div>
-      <p style="font-size:12px;color:var(--muted);line-height:1.45;margin:0 0 8px">各行の <strong>📋</strong> から、診療記録を開かずに<strong>要介護・既往・服薬・アレルギー</strong>を編集できます（✏️ は氏名・施設などのマスタ項目）。</p>
+      <p style="font-size:12px;color:var(--muted);line-height:1.45;margin:0 0 8px">各行の <strong>📋</strong> で<strong>治療経過一覧</strong>（処置・コメント含む）を表示・印刷できます。✏️ は基本情報・歯式・医療の編集です。</p>
       <div id="mgmt-patient-list"></div>
       <button onclick="openPatientModal(null)" style="width:100%;padding:12px;border-radius:10px;border:1.5px dashed var(--border);background:white;font-size:13px;font-weight:700;color:var(--accent);cursor:pointer;margin-top:4px">＋ 新しい患者を追加</button>
     </div>
