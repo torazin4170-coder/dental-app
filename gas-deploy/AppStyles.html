@@ -837,6 +837,21 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
   z-index: 2;
 }
 
+/* ── 帳票プレビュー：スマホ向け2タップ範囲指定 ── */
+.fax-em-btn-range.on {
+  background: #dbeafe;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+.rpt-edit-rich.rpt-em-range-pick-mode {
+  outline: 2px dashed #2563eb;
+  outline-offset: 2px;
+}
+.rpt-edit-rich.rpt-em-range-pick-mode::selection {
+  background: #fef08a;
+  color: inherit;
+}
+
 /* ── Toast ── */
 #toast { position: fixed; bottom: calc(var(--bottom-h) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: #1e293b; color: white; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; opacity: 0; transition: .25s; pointer-events: none; z-index: 100; white-space: nowrap; }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
