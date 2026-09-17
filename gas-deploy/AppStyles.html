@@ -851,6 +851,23 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
   background: #fef08a;
   color: inherit;
 }
+@media (pointer: coarse) {
+  .fax-em-bar.fax-em-bar--pinned {
+    position: fixed !important;
+    z-index: 1200;
+    margin: 0 !important;
+    max-height: min(42vh, 220px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.18);
+    border-radius: 14px 14px 0 0;
+    border: 1.5px solid var(--border);
+  }
+  .fax-em-bar.fax-em-bar--pinned .fax-em-bar-label {
+    font-size: 10px;
+    line-height: 1.4;
+  }
+}
 
 /* ── Toast ── */
 #toast { position: fixed; bottom: calc(var(--bottom-h) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: #1e293b; color: white; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; opacity: 0; transition: .25s; pointer-events: none; z-index: 100; white-space: nowrap; }
