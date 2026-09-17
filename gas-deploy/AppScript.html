@@ -10505,9 +10505,11 @@ function rptEmRichCellTouchEnd_(e, el) {
   setTimeout(() => rptSaveSelectionFromCell_(el), 0);
 }
 
-function rptEnsureRangePickButtons_(bar) {
+function rptEnsureEmphasisBarExtras_(bar) {
   if (!bar) return;
-  if (!bar.querySelector("[data-fax-em-range]")) {
+  const touch = rptEmTouchPrimary_();
+  const rangeBtn = bar.querySelector("[data-fax-em-range]");
+  if (!touch && !rangeBtn) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "fax-em-btn fax-em-btn-range";
@@ -10516,8 +10518,37 @@ function rptEnsureRangePickButtons_(bar) {
     const clearBtn = bar.querySelector('[data-fax-em="clear"]');
     if (clearBtn) bar.insertBefore(btn, clearBtn);
     else bar.appendChild(btn);
+  } else if (touch && rangeBtn) {
+    rangeBtn.style.display = "none";
   }
-  if (rptEmTouchPrimary_() && !bar.querySelector("[data-fax-em-dismiss]")) {
+  if (touch && !bar.querySelector(".fax-em-mobile-tools")) {
+    const wrap = document.createElement("div");
+    wrap.className = "fax-em-mobile-tools";
+    wrap.innerHTML = `<div class="fax-em-phrase-row">
+        <span class="fax-em-phrase-label">強調する文字</span>
+        <input type="text" class="fax-em-phrase-inp" placeholder="例：セメント" autocomplete="off" enterkeyhint="done" inputmode="text">
+      </div>
+      <div class="fax-em-whole-row">
+        <button type="button" class="fax-em-btn fax-em-btn-whole-box" data-fax-em-whole="box">欄全体を赤枠</button>
+        <button type="button" class="fax-em-btn fax-em-btn-whole-box-black" data-fax-em-whole="boxBlack">欄全体を黒枠</button>
+      </div>`;
+    const label = bar.querySelector(".fax-em-bar-label");
+    if (label) label.insertAdjacentElement("afterend", wrap);
+    else bar.prepend(wrap);
+    wrap.addEventListener("touchstart", e => e.stopPropagation(), { passive: true });
+    const inp = wrap.querySelector(".fax-em-phrase-inp");
+    if (inp) {
+      inp.addEventListener("touchstart", e => e.stopPropagation(), { passive: true });
+      inp.addEventListener("focus", () => {
+        const b = rptActiveEmphasisBar_();
+        if (b) {
+          b.classList.add("show");
+          b.setAttribute("aria-hidden", "false");
+        }
+      });
+    }
+  }
+  if (touch && !bar.querySelector("[data-fax-em-dismiss]")) {
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "fax-em-btn fax-em-btn-dismiss";
@@ -10528,11 +10559,11 @@ function rptEnsureRangePickButtons_(bar) {
   const label = bar.querySelector(".fax-em-bar-label");
   if (label && !label.dataset.defaultLabel) {
     label.dataset.defaultLabel = label.textContent || "";
-    if (rptEmTouchPrimary_()) {
-      label.textContent = "スマホ：①欄をタップ → ②範囲指定 → 始まり・終わりをタップ → ③赤字など";
-    }
   }
-  if (rptEmTouchPrimary_()) bar.classList.add("fax-em-bar--touch");
+  if (label && touch) {
+    label.textContent = "スマホ：①欄をタップ → ②語句を入力（または欄全体ボタン）→ ③赤字など";
+  }
+  if (touch) bar.classList.add("fax-em-bar--touch");
 }
 
 function rptBindIssRowsEmTouch_() {
@@ -10582,8 +10613,10 @@ let rptEmBtnLastAction_ = { key: "", t: 0 };
 function rptEmBarBtnAction_(btn) {
   if (!btn) return;
   const barId = btn.closest(".fax-em-bar")?.id || "";
+  const wholeK = btn.getAttribute("data-fax-em-whole");
   const kind = btn.getAttribute("data-fax-em-dismiss") != null ? "dismiss"
     : btn.hasAttribute("data-fax-em-range") ? "range"
+    : wholeK ? "whole:" + wholeK
     : (btn.getAttribute("data-fax-em") || "");
   const dedupeKey = barId + ":" + kind;
   const now = Date.now();
@@ -10599,9 +10632,55 @@ function rptEmBarBtnAction_(btn) {
     rptEmRangePickToggle_();
     return;
   }
+  const wholeKind = btn.getAttribute("data-fax-em-whole");
+  if (wholeKind) {
+    rptEmApplyWholeField_(wholeKind);
+    return;
+  }
   const k = btn.getAttribute("data-fax-em");
   if (k === "clear") rptEmClear_();
   else if (k) rptEmApply_(k);
+}
+
+function rptEmPhraseInputInBar_(bar) {
+  return bar ? bar.querySelector(".fax-em-phrase-inp") : null;
+}
+
+function rptEmActivePhrase_() {
+  const bar = rptActiveEmphasisBar_();
+  const inp = rptEmPhraseInputInBar_(bar);
+  return inp ? String(inp.value || "").trim() : "";
+}
+
+function rptEmFinishApply_(el, toastMsg) {
+  const issOpen = document.getElementById("shareSheetModal")?.classList.contains("show");
+  if (issOpen && (el.closest("#issPreviewInner") || el.closest("#issRows") || el.id === "issFreeTextEd")) {
+    rptEmSyncIssAfterEdit_(el);
+  } else {
+    rptEmPullActiveContext_(rptEmActivePreviewInner_());
+  }
+  rptEmRangePickStep_ = 0;
+  rptEmRangePickStart_ = null;
+  rptEmRangePickEnd_ = null;
+  rptEmSavedRange_ = null;
+  if (rptEmRangePickActive_) rptEmUpdateRangePickUi_();
+  showToast(toastMsg);
+}
+
+function rptEmApplyWholeField_(kind) {
+  const el = rptEmLastRichCell_;
+  if (!el) {
+    showToast("強調したい欄をタップしてください");
+    return;
+  }
+  if (kind !== "box" && kind !== "boxBlack") return;
+  const applied = faxApplyEmphasisByMarkers_(el, kind, "");
+  if (!applied) {
+    showToast("欄が空のため枠を付けられません");
+    return;
+  }
+  const label = kind === "boxBlack" ? "黒枠" : "赤枠";
+  rptEmFinishApply_(el, "欄全体を" + label + "で囲みました");
 }
 
 function rptUnpinEmphasisBarMobile_() {
@@ -10655,7 +10734,7 @@ function rptSetActiveRichCell_(cellEl) {
   if (rptEmLastRichCell_) {
     bar.classList.add("show");
     bar.setAttribute("aria-hidden", "false");
-    rptEnsureRangePickButtons_(bar);
+    rptEnsureEmphasisBarExtras_(bar);
     rptBindEmphasisBarButtons_();
   }
   rptEmUpdateRangePickUi_();
@@ -10728,7 +10807,7 @@ function rptEmBarBtnPrep_(btn) {
 
 function rptBindEmphasisBarButtons_() {
   document.querySelectorAll("#faxEmphasisBar, #svListEmphasisBar, #issEmphasisBar, #personalSheetEmphasisBar, #recordNotesEmBar").forEach(bar => {
-    rptEnsureRangePickButtons_(bar);
+    rptEnsureEmphasisBarExtras_(bar);
     bar.querySelectorAll(".fax-em-btn").forEach(btn => {
       if (btn.dataset.rptEmBtnBound === "1") return;
       btn.dataset.rptEmBtnBound = "1";
@@ -10925,35 +11004,29 @@ function rptEmApply_(kind) {
     return;
   }
   const liveSel = faxCaptureSelectionIn_(el).trim();
-  const selected = liveSel || (rptEmSavedSelText_ || "").trim();
+  let selected = liveSel || (rptEmSavedSelText_ || "").trim();
+  const phrase = rptEmActivePhrase_();
+  if (!selected && phrase) selected = phrase;
   let applied = false;
-  if (selected && rptEmSavedRange_) {
+  if (selected && rptEmSavedRange_ && !phrase) {
     applied = faxApplyEmphasisToSavedRange_(el, kind);
   }
   if (!applied) {
     applied = faxApplyEmphasisByMarkers_(el, kind, selected);
   }
-  if (!applied && rptEmRangePickStart_ != null && rptEmRangePickEnd_ != null && rptEmRangePickEnd_ > rptEmRangePickStart_) {
+  if (!applied && !rptEmTouchPrimary_() && rptEmRangePickStart_ != null && rptEmRangePickEnd_ != null && rptEmRangePickEnd_ > rptEmRangePickStart_) {
     applied = rptApplyEmphasisByInnerTextSlice_(el, kind, rptEmRangePickStart_, rptEmRangePickEnd_);
   }
   if (!applied) {
     showToast(rptEmTouchPrimary_()
-      ? "強調できませんでした。「範囲指定」で始まり・終わりをタップしてからもう一度お試しください"
+      ? "強調できませんでした。「強調する文字」に語句を入力するか、欄全体ボタンをお試しください"
       : "強調できませんでした。欄をタップし、文字を選び直してからもう一度押してください");
     return;
   }
-  const issOpen = document.getElementById("shareSheetModal")?.classList.contains("show");
-  if (issOpen && (el.closest("#issPreviewInner") || el.closest("#issRows") || el.id === "issFreeTextEd")) {
-    rptEmSyncIssAfterEdit_(el);
-  } else {
-    rptEmPullActiveContext_(rptEmActivePreviewInner_());
-  }
-  rptEmRangePickStep_ = 0;
-  rptEmRangePickStart_ = null;
-  rptEmRangePickEnd_ = null;
-  rptEmSavedRange_ = null;
-  if (rptEmRangePickActive_) rptEmUpdateRangePickUi_();
-  showToast(selected ? "選択した文字に強調を付けました" : "欄全体に強調を付けました");
+  let toastMsg = "欄全体に強調を付けました";
+  if (phrase) toastMsg = "「" + phrase + "」に強調を付けました";
+  else if (selected) toastMsg = "選択した文字に強調を付けました";
+  rptEmFinishApply_(el, toastMsg);
 }
 
 function rptEmClear_() {
