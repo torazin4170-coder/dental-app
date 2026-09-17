@@ -10506,15 +10506,25 @@ function rptEmRichCellTouchEnd_(e, el) {
 }
 
 function rptEnsureRangePickButtons_(bar) {
-  if (!bar || bar.querySelector("[data-fax-em-range]")) return;
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "fax-em-btn fax-em-btn-range";
-  btn.setAttribute("data-fax-em-range", "1");
-  btn.textContent = "範囲指定";
-  const clearBtn = bar.querySelector('[data-fax-em="clear"]');
-  if (clearBtn) bar.insertBefore(btn, clearBtn);
-  else bar.appendChild(btn);
+  if (!bar) return;
+  if (!bar.querySelector("[data-fax-em-range]")) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "fax-em-btn fax-em-btn-range";
+    btn.setAttribute("data-fax-em-range", "1");
+    btn.textContent = "範囲指定";
+    const clearBtn = bar.querySelector('[data-fax-em="clear"]');
+    if (clearBtn) bar.insertBefore(btn, clearBtn);
+    else bar.appendChild(btn);
+  }
+  if (rptEmTouchPrimary_() && !bar.querySelector("[data-fax-em-dismiss]")) {
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "fax-em-btn fax-em-btn-dismiss";
+    closeBtn.setAttribute("data-fax-em-dismiss", "1");
+    closeBtn.textContent = "✕ 閉じる";
+    bar.appendChild(closeBtn);
+  }
   const label = bar.querySelector(".fax-em-bar-label");
   if (label && !label.dataset.defaultLabel) {
     label.dataset.defaultLabel = label.textContent || "";
@@ -10540,6 +10550,60 @@ function rptBindIssRowsEmTouch_() {
   }, { passive: false });
 }
 
+function rptKeyboardOpen_() {
+  const vv = window.visualViewport;
+  if (!vv) return false;
+  return vv.height < window.innerHeight * 0.82;
+}
+
+function rptEmCollapseNativeSelection_() {
+  try {
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+  } catch (_) {}
+}
+
+function rptEmDismissBar_(keepCell) {
+  rptEmRangePickReset_(false);
+  rptUnpinEmphasisBarMobile_();
+  if (!keepCell) rptEmLastRichCell_ = null;
+  document.querySelectorAll(".fax-em-bar.show").forEach(bar => {
+    bar.classList.remove("show");
+    bar.setAttribute("aria-hidden", "true");
+  });
+  try {
+    const ae = document.activeElement;
+    if (ae && ae.closest && ae.closest("[data-rpt-rich='1']")) ae.blur();
+  } catch (_) {}
+}
+
+let rptEmBtnLastAction_ = { key: "", t: 0 };
+
+function rptEmBarBtnAction_(btn) {
+  if (!btn) return;
+  const barId = btn.closest(".fax-em-bar")?.id || "";
+  const kind = btn.getAttribute("data-fax-em-dismiss") != null ? "dismiss"
+    : btn.hasAttribute("data-fax-em-range") ? "range"
+    : (btn.getAttribute("data-fax-em") || "");
+  const dedupeKey = barId + ":" + kind;
+  const now = Date.now();
+  if (dedupeKey === rptEmBtnLastAction_.key && now - rptEmBtnLastAction_.t < 450) return;
+  rptEmBtnLastAction_ = { key: dedupeKey, t: now };
+  rptEmCollapseNativeSelection_();
+  if (btn.hasAttribute("data-fax-em-dismiss")) {
+    rptEmDismissBar_(true);
+    showToast("強調バーを閉じました");
+    return;
+  }
+  if (btn.hasAttribute("data-fax-em-range")) {
+    rptEmRangePickToggle_();
+    return;
+  }
+  const k = btn.getAttribute("data-fax-em");
+  if (k === "clear") rptEmClear_();
+  else if (k) rptEmApply_(k);
+}
+
 function rptUnpinEmphasisBarMobile_() {
   document.querySelectorAll(".fax-em-bar.fax-em-bar--pinned").forEach(bar => {
     bar.classList.remove("fax-em-bar--pinned");
@@ -10547,6 +10611,7 @@ function rptUnpinEmphasisBarMobile_() {
     bar.style.left = "";
     bar.style.width = "";
     bar.style.position = "";
+    bar.style.zIndex = "";
   });
 }
 
@@ -10554,6 +10619,10 @@ function rptPinEmphasisBarMobile_() {
   if (!rptEmTouchPrimary_()) return;
   const bar = rptActiveEmphasisBar_();
   if (!bar || !bar.classList.contains("show")) {
+    rptUnpinEmphasisBarMobile_();
+    return;
+  }
+  if (!rptKeyboardOpen_()) {
     rptUnpinEmphasisBarMobile_();
     return;
   }
@@ -10567,6 +10636,7 @@ function rptPinEmphasisBarMobile_() {
   bar.style.top = top + "px";
   bar.style.left = vv.offsetLeft + 8 + "px";
   bar.style.width = Math.max(0, vv.width - 16) + "px";
+  bar.style.zIndex = "5000";
 }
 
 function rptBindEmphasisBarMobilePin_() {
@@ -10586,6 +10656,7 @@ function rptSetActiveRichCell_(cellEl) {
     bar.classList.add("show");
     bar.setAttribute("aria-hidden", "false");
     rptEnsureRangePickButtons_(bar);
+    rptBindEmphasisBarButtons_();
   }
   rptEmUpdateRangePickUi_();
   rptBindEmphasisBarMobilePin_();
@@ -10647,36 +10718,49 @@ function rptSaveSelectionFromCell_(el) {
   }
 }
 
+function rptEmBarBtnPrep_(btn) {
+  if (rptEmLastRichCell_ && !rptEmSavedRange_) rptSaveSelectionFromCell_(rptEmLastRichCell_);
+  const inner = rptEmActivePreviewInner_();
+  if (inner && lastIssPreviewContext && rptEmLastRichCell_ && inner.contains(rptEmLastRichCell_)) {
+    rptFlushFocusedPreviewEdits_(inner, lastIssPreviewContext);
+  }
+}
+
 function rptBindEmphasisBarButtons_() {
   document.querySelectorAll("#faxEmphasisBar, #svListEmphasisBar, #issEmphasisBar, #personalSheetEmphasisBar, #recordNotesEmBar").forEach(bar => {
     rptEnsureRangePickButtons_(bar);
-    if (!bar || bar.dataset.rptEmBtnBound === "1") return;
-    bar.dataset.rptEmBtnBound = "1";
     bar.querySelectorAll(".fax-em-btn").forEach(btn => {
+      if (btn.dataset.rptEmBtnBound === "1") return;
+      btn.dataset.rptEmBtnBound = "1";
       btn.addEventListener("mousedown", e => {
+        if (rptEmTouchPrimary_()) return;
         e.preventDefault();
-        if (rptEmLastRichCell_ && !rptEmSavedRange_) rptSaveSelectionFromCell_(rptEmLastRichCell_);
-        const inner = rptEmActivePreviewInner_();
-        if (inner && lastIssPreviewContext && rptEmLastRichCell_ && inner.contains(rptEmLastRichCell_)) {
-          rptFlushFocusedPreviewEdits_(inner, lastIssPreviewContext);
-        }
+        rptEmBarBtnPrep_(btn);
       });
-      btn.addEventListener("touchstart", e => {
-        e.preventDefault();
-        if (rptEmLastRichCell_ && !rptEmSavedRange_) rptSaveSelectionFromCell_(rptEmLastRichCell_);
-      }, { passive: false });
-      btn.addEventListener("click", e => {
+      btn.addEventListener("touchend", e => {
+        if (!rptEmTouchPrimary_()) return;
         e.preventDefault();
         e.stopPropagation();
-        if (btn.hasAttribute("data-fax-em-range")) {
-          rptEmRangePickToggle_();
+        rptEmBarBtnPrep_(btn);
+        rptEmBarBtnAction_(btn);
+      }, { passive: false });
+      btn.addEventListener("click", e => {
+        if (rptEmTouchPrimary_()) {
+          e.preventDefault();
+          e.stopPropagation();
           return;
         }
-        const k = btn.getAttribute("data-fax-em");
-        if (k === "clear") rptEmClear_();
-        else if (k) rptEmApply_(k);
+        e.preventDefault();
+        e.stopPropagation();
+        rptEmBarBtnPrep_(btn);
+        rptEmBarBtnAction_(btn);
       });
     });
+    if (bar.dataset.rptEmBarShellBound === "1") return;
+    bar.dataset.rptEmBarShellBound = "1";
+    bar.addEventListener("touchstart", e => {
+      if (e.target.closest(".fax-em-btn")) e.stopPropagation();
+    }, { passive: true });
   });
   rptBindIssRowsEmTouch_();
   rptBindEmphasisBarMobilePin_();

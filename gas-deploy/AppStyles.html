@@ -852,20 +852,41 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
   color: inherit;
 }
 @media (pointer: coarse) {
+  #faxDailyModal #faxEmphasisBar.fax-em-bar.show,
+  #svListModal #svListEmphasisBar.fax-em-bar.show,
+  #personalSheetModal #personalSheetEmphasisBar.fax-em-bar.show,
+  #recordNotesEmBar.fax-em-bar.show {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: #f8fafc;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  }
   .fax-em-bar.fax-em-bar--pinned {
     position: fixed !important;
-    z-index: 1200;
+    z-index: 5000 !important;
     margin: 0 !important;
-    max-height: min(42vh, 220px);
+    max-height: min(38vh, 200px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.18);
+    touch-action: manipulation;
+    pointer-events: auto;
+    box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.22);
     border-radius: 14px 14px 0 0;
     border: 1.5px solid var(--border);
+  }
+  .fax-em-bar.fax-em-bar--pinned .fax-em-btn {
+    min-height: 44px;
+    touch-action: manipulation;
   }
   .fax-em-bar.fax-em-bar--pinned .fax-em-bar-label {
     font-size: 10px;
     line-height: 1.4;
+  }
+  .fax-em-btn-dismiss {
+    color: #64748b;
+    border-color: #cbd5e1;
+    background: #fff;
   }
 }
 
