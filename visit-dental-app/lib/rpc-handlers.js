@@ -387,10 +387,14 @@ const HANDLERS = {
       .select('json')
       .eq('patient_id', String(patientId))
       .order('id', { ascending: false })
-      .limit(1)
+      .limit(30)
     if (error) throw new Error(error.message)
-    if (!data?.length) return '{}'
-    return data[0].json != null ? String(data[0].json) : '{}'
+    for (const row of data || []) {
+      const raw = row.json != null ? String(row.json).trim() : ''
+      if (!raw || raw === '{}' || raw === 'null') continue
+      return raw
+    }
+    return '{}'
   },
 
   async saveTeethData([patientId, teethJson]) {
