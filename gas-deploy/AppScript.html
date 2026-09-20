@@ -5913,6 +5913,11 @@ function fitTeethChartViewport_() {
   mid.style.transform = "";
   mid.style.width = "auto";
   mid.style.transformOrigin = "";
+  mid.style.marginLeft = "";
+  wrap.style.width = "";
+  wrap.style.marginLeft = "";
+  wrap.style.marginRight = "";
+  if (block) block.style.overflowX = "";
   const sw = mid.scrollWidth;
   const sh = mid.scrollHeight;
   const w = Math.max(1, block && block.clientWidth > 0 ? block.clientWidth : wrap.clientWidth);
@@ -5930,14 +5935,23 @@ function fitTeethChartViewport_() {
     wrap.style.height = "";
     return;
   }
+  // 左上基準で縮小し、中央寄せによる左右のズレ（右だけ空き）を防ぐ
   mid.style.width = sw + "px";
-  mid.style.transformOrigin = "top center";
+  mid.style.transformOrigin = "top left";
   if (scRaw < 1 - 1e-6) {
     mid.style.transform = `scale(${scRaw})`;
+    wrap.style.width = "100%";
     wrap.style.height = Math.ceil(sh * scRaw) + "px";
+    if (block) block.style.overflowX = "hidden";
   } else {
     mid.style.transform = "";
     wrap.style.height = "";
+    // 親より狭いときだけ中央寄せ（左右均等）
+    if (sw < w - 2) {
+      wrap.style.width = sw + "px";
+      wrap.style.marginLeft = "auto";
+      wrap.style.marginRight = "auto";
+    }
   }
 }
 

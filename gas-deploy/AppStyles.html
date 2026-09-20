@@ -32,8 +32,9 @@ body { font-family: "Hiragino Kaku Gothic ProN",system-ui,sans-serif; background
   .screen-wrap {
     max-width: none;
     width: 100%;
-    padding-left: 8px;
-    padding-right: 8px;
+    /* ノッチ等の安全余白も左右とも同じルールで取る（片側だけ空くのを防ぐ） */
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
     box-sizing: border-box;
   }
   #teethChartBlock {
