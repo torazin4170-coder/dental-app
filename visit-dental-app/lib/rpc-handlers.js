@@ -1,12 +1,22 @@
 import {
   newIdJst,
-  normalizeTreatmentTimesForClient,
   nowJstTimestamp,
   treatmentVisitSlotKey,
   visitDateYMD,
   visitDateYM,
 } from './date-utils.js'
 import { getSupabaseAdmin } from './supabase-admin.js'
+import {
+  facilityRowToClient,
+  patientRowToClient,
+  treatmentRowToClient,
+} from './row-mappers.js'
+import * as faxDaily from './report/fax-daily.js'
+import * as monthly from './report/monthly.js'
+import * as initData from './queries/init-data.js'
+import * as drafts from './storage/chunk-cache.js'
+import * as photos from './storage/photos.js'
+import * as documents from './storage/documents.js'
 
 function parseJsonArg(raw, fallback = {}) {
   if (raw == null) return fallback
@@ -16,67 +26,6 @@ function parseJsonArg(raw, fallback = {}) {
   } catch {
     return fallback
   }
-}
-
-function facilityRowToClient(r) {
-  if (!r) return r
-  return {
-    id: r.id,
-    name: r.name ?? '',
-    short: r.short ?? '',
-    color: r.color ?? '',
-    visitDays: r.visit_days ?? '',
-    fax: r.fax ?? '',
-    cm: r.cm ?? '',
-    target: r.target ?? 10,
-  }
-}
-
-function patientRowToClient(r) {
-  if (!r) return r
-  let created = r.created_at
-  if (created instanceof Date) created = created.toISOString()
-  else if (created && typeof created === 'string') {
-    /* keep ISO or date string */
-  }
-  return {
-    id: r.id,
-    name: r.name ?? '',
-    furi: r.furi ?? '',
-    age: r.age ?? '',
-    gender: r.gender ?? '',
-    room: r.room ?? '',
-    fac: r.fac ?? '',
-    cm: r.cm ?? '',
-    status: r.status ?? 'active',
-    created_at: created ?? '',
-    notes: r.notes ?? '',
-    birth_date: r.birth_date ?? '',
-    coverage_type: r.coverage_type ?? '',
-    intake_stage: r.intake_stage ?? '',
-    assigned_doctor: r.assigned_doctor ?? '',
-    in_hospital: r.in_hospital ?? '',
-    monthly_visit_limit: r.monthly_visit_limit ?? '',
-    address: r.address ?? '',
-  }
-}
-
-function treatmentRowToClient(r) {
-  return normalizeTreatmentTimesForClient({
-    id: r.id,
-    patient_id: r.patient_id,
-    fac_id: r.fac_id,
-    visit_date: r.visit_date,
-    treatments: r.treatments ?? '',
-    notes: r.notes ?? '',
-    next_date: r.next_date ?? '',
-    next_content: r.next_content ?? '',
-    doctor: r.doctor ?? '',
-    visit_time_start: r.visit_time_start ?? '',
-    visit_time_end: r.visit_time_end ?? '',
-    notes_tones: r.notes_tones ?? '',
-    exam_data: r.exam_data ?? '',
-  })
 }
 
 async function findDuplicateTreatmentSlot(supabase, patientId, visitDate, visitTimeStart, excludeId) {
@@ -98,13 +47,8 @@ export async function invokeSupabaseRpc(funcName, args) {
   const list = Array.isArray(args) ? args : []
   const fn = HANDLERS[funcName]
   if (!fn) {
-    if (/^(get|load|list)/i.test(funcName)) {
-      throw new Error(
-        `試用版では「${funcName}」は未対応です（帳票・写真などは順次追加予定）。本番 GAS URL をご利用ください。`,
-      )
-    }
     throw new Error(
-      `試用版では「${funcName}」は未対応です。本番 GAS URL をご利用ください。`,
+      `「${funcName}」は未対応です。本番 GAS（現行システム）に戻すか、対応実装を確認してください。`,
     )
   }
   return fn(list)
@@ -285,7 +229,11 @@ const HANDLERS = {
     const ymDefault = `${jst.getFullYear()}-${String(jst.getMonth() + 1).padStart(2, '0')}`
     const ym = wantAll ? null : /^\d{4}-\d{2}$/.test(sOpt) ? sOpt : ymDefault
 
-    const { data, error } = await supabase.from('treatments').select('*')
+    let q = supabase.from('treatments').select('*')
+    if (!wantAll && ym) {
+      q = q.gte('visit_date', `${ym}-01`).lte('visit_date', `${ym}-31`)
+    }
+    const { data, error } = await q
     if (error) throw new Error(error.message)
     let rows = data || []
     if (!wantAll && ym) {
@@ -378,7 +326,9 @@ const HANDLERS = {
       patch.visit_time_end = t.visit_time_end != null ? String(t.visit_time_end) : ''
     }
     if (t.visit_date !== undefined && newDate) patch.visit_date = newDate
-    if (t.notes_tones !== undefined) patch.notes_tones = t.notes_tones != null ? String(t.notes_tones) : ''
+    if (t.notes_tones !== undefined) {
+      patch.notes_tones = t.notes_tones != null ? String(t.notes_tones) : ''
+    }
     if (t.exam_data !== undefined) patch.exam_data = t.exam_data != null ? String(t.exam_data) : ''
 
     const { error } = await supabase.from('treatments').update(patch).eq('id', t.id)
@@ -395,6 +345,39 @@ const HANDLERS = {
       .select('id')
     if (error) throw new Error(error.message)
     return data?.length ? 'ok' : 'not_found'
+  },
+
+  async saveTreatmentRecordBundle([bundleJson]) {
+    const b = parseJsonArg(bundleJson)
+    const pid = b.patientId
+    let tid
+    if (b.treatment && b.treatment.id) {
+      const ur = await HANDLERS.updateTreatmentRecord([JSON.stringify(b.treatment)])
+      if (ur !== 'ok') {
+        return JSON.stringify({ ok: false, error: String(ur) })
+      }
+      tid = b.treatment.id
+    } else if (b.treatment) {
+      try {
+        tid = await HANDLERS.saveTreatmentRecord([JSON.stringify(b.treatment)])
+      } catch (e) {
+        return JSON.stringify({ ok: false, error: e.message || String(e) })
+      }
+    } else {
+      return JSON.stringify({ ok: false, error: 'treatment required' })
+    }
+    if (b.teethJson != null && pid) {
+      await HANDLERS.saveTeethData([pid, b.teethJson])
+    }
+    if (b.patientNotes !== undefined && pid) {
+      const pr = await HANDLERS.updatePatient([
+        JSON.stringify({ id: pid, notes: String(b.patientNotes != null ? b.patientNotes : '') }),
+      ])
+      if (pr !== 'ok') {
+        return JSON.stringify({ ok: false, error: 'patient notes: ' + pr, id: tid })
+      }
+    }
+    return JSON.stringify({ ok: true, id: tid })
   },
 
   async getTeethData([patientId]) {
@@ -569,7 +552,45 @@ const HANDLERS = {
     await HANDLERS.saveSettings([JSON.stringify({ [key]: JSON.stringify(arr) })])
     return 'ok'
   },
+
+  // Priority A — FAX / drafts
+  getFacilityDailyReportData: faxDaily.getFacilityDailyReportData,
+  getFaxDailyBatchData: faxDaily.getFaxDailyBatchData,
+  getSupervisorDailyListData: faxDaily.getSupervisorDailyListData,
+  appendFaxStyleMemory: faxDaily.appendFaxStyleMemory,
+  generateFaxDailyFacilityComment: faxDaily.generateFaxDailyFacilityComment,
+  saveReportPreviewDraftSimple: drafts.saveReportPreviewDraftSimple,
+  saveReportPreviewDraftChunk: drafts.saveReportPreviewDraftChunk,
+  saveReportPreviewDraftChunkFinish: drafts.saveReportPreviewDraftChunkFinish,
+  loadReportPreviewDraftInfo: drafts.loadReportPreviewDraftInfo,
+  loadReportPreviewDraftChunk: drafts.loadReportPreviewDraftChunk,
+  clearReportPreviewDraft: drafts.clearReportPreviewDraft,
+
+  // Priority B — boot / dashboard
+  getInitData: initData.getInitData,
+  getDashboardData: initData.getDashboardData,
+  getTreatmentsForFacilityDate: initData.getTreatmentsForFacilityDate,
+
+  // Priority C — reports
+  getPatientMonthlyReportData: monthly.getPatientMonthlyReportData,
+  getFacilityMonthlyCareReportData: monthly.getFacilityMonthlyCareReportData,
+  getFacilityClinicalMonthlyReportData: monthly.getFacilityClinicalMonthlyReportData,
+  getPatientPersonalSheetData: monthly.getPatientPersonalSheetData,
+  getOfpiFormData: monthly.getOfpiFormData,
+  getDiagnosisCertificateData: monthly.getDiagnosisCertificateData,
+
+  // Priority D — photos / archive
+  savePhoto: photos.savePhoto,
+  getPhotos: photos.getPhotos,
+  deletePhoto: photos.deletePhoto,
+  saveGeneratedDocumentSimple: documents.saveGeneratedDocumentSimple,
+  saveGeneratedDocumentChunk: documents.saveGeneratedDocumentChunk,
+  saveGeneratedDocumentChunkFinish: documents.saveGeneratedDocumentChunkFinish,
+  listGeneratedDocuments: documents.listGeneratedDocuments,
+  loadGeneratedDocument: documents.loadGeneratedDocument,
+  loadGeneratedDocumentChunk: documents.loadGeneratedDocumentChunk,
+  deleteGeneratedDocument: documents.deleteGeneratedDocument,
 }
 
-/** 試用 MVP で実装済みの RPC */
+/** 実装済み RPC（GAS allowlist 54 件と揃える） */
 export const IMPLEMENTED_RPC = new Set(Object.keys(HANDLERS))

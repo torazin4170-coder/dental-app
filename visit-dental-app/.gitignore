@@ -5,4 +5,7 @@ vendor/gas-deploy
 .env*.local
 *.tsbuildinfo
 import-data/*.csv
+export-data/
 .vercel
+test-results
+playwright-report

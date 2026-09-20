@@ -12,7 +12,7 @@ export default async function handler(_req, res) {
         'Supabase Dashboard → Project Settings → API から URL と service_role key をコピー',
         'Vercel → Settings → Environment Variables に SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY を設定',
         'VITE_RPC_BACKEND=supabase を Preview 環境に設定して Redeploy',
-        'SQL Editor で supabase/migrations/001_initial_schema.sql を実行',
+        'SQL Editor で supabase/migrations/001_initial_schema.sql と 002_storage_and_indexes.sql を実行',
       ],
     })
     return
@@ -46,7 +46,7 @@ export default async function handler(_req, res) {
       backend: 'supabase',
       facilitiesCount: count ?? 0,
       implementedRpcCount: IMPLEMENTED_RPC.size,
-      note: '試用版。帳票・写真など未実装 RPC はエラーメッセージで案内します。',
+      note: 'GAS allowlist 相当の RPC を実装済み。本番切替前は Preview で確認してください。',
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

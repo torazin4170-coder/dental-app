@@ -172,6 +172,41 @@ async function main() {
     description: r.description ?? '',
   }))
 
+  const photos = readCsv('photos.csv').map((r) => ({
+    patient_id: r.patient_id || r.patientId || '',
+    drive_file_id: r.file_id || r.drive_file_id || r.fileId || '',
+    file_url: r.file_url || r.fileUrl || '',
+    filename: r.filename || '',
+    category: r.category || '',
+    date_taken: r.date_taken || r.dateTaken || '',
+    uploaded_at: r.uploaded_at || r.uploadedAt || null,
+  })).filter((r) => r.patient_id && r.drive_file_id)
+
+  const generatedDocs = readCsv('generated_documents.csv')
+    .map((r) => {
+      let savedAt = r.saved_at || null
+      if (savedAt && /^\d+$/.test(String(savedAt).trim())) {
+        const n = Number(savedAt)
+        savedAt = new Date(n < 1e12 ? n * 1000 : n).toISOString()
+      }
+      return {
+        doc_id: r.doc_id || r.docId || '',
+        kind: r.kind || '',
+        slot_key: r.slot_key || r.slotKey || '',
+        patient_id: r.patient_id || '',
+        fac_id: r.fac_id || '',
+        period_key: r.period_key || '',
+        title: r.title || '',
+        saved_at: savedAt,
+        save_mode: r.save_mode || '',
+        version: r.version ? parseInt(r.version, 10) || 1 : 1,
+        drive_file_id: r.drive_file_id || '',
+        status: r.status || '',
+        is_primary: r.is_primary === '1' || r.is_primary === 'true' || r.is_primary === true,
+      }
+    })
+    .filter((r) => r.doc_id)
+
   const upsert = async (table, rows, label, conflictKey = 'id') => {
     if (!rows.length) {
       console.log('[skip] ' + label + ' 0件')
@@ -192,6 +227,24 @@ async function main() {
   }
   await upsert('patient_medical', medical, 'patient_medical', 'patient_id')
   await upsert('settings', settings, 'settings', 'key')
+  if (photos.length) {
+    const patientIds = new Set(patients.map((p) => String(p.id)))
+    const photosOk = photos.filter((r) => patientIds.has(String(r.patient_id)))
+    const skipped = photos.length - photosOk.length
+    if (skipped) {
+      console.warn('[warn] photos: 患者がいない行を ' + skipped + ' 件スキップ')
+    }
+    if (photosOk.length) {
+      const { error } = await supabase.from('photos').insert(photosOk)
+      if (error) throw new Error('photos: ' + error.message)
+      console.log('[ok] photos ' + photosOk.length + '件（Drive 本体はコピー不要）')
+    } else {
+      console.log('[skip] photos 0件（有効な患者紐づけなし）')
+    }
+  } else {
+    console.log('[skip] photos 0件')
+  }
+  await upsert('generated_documents', generatedDocs, 'generated_documents', 'doc_id')
 
   console.log('\n完了。/api/supabase-check で接続を確認してください。')
 }
