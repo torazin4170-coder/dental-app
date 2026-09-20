@@ -1,5 +1,7 @@
 /**
- * Google Drive API client (service account).
+ * Google Drive API client (service account) — 補助用。
+ * 写真の新規アップロードは photos.js が GAS（ユーザー本人）経由で行う。
+ * 個人 Google ではサービスアカウントに容量がなく create が失敗するため。
  * Env:
  *   GOOGLE_SERVICE_ACCOUNT_JSON  … service account JSON (stringified)
  *   GOOGLE_DRIVE_PHOTO_FOLDER_ID … optional root folder id for 訪問歯科_写真

@@ -57,14 +57,19 @@ npm run compare:counts
 
 **写真の画像ファイル自体はコピー不要です**（Google ドライブにそのまま残ります）。
 
-### C. 写真用の Google 設定（写真を使う場合）
+### C. 写真の保存先（案 D・現行）
 
-1. Google Cloud でサービスアカウントを作り、Drive 権限を付ける
-2. JSON キーをダウンロード
-3. Vercel の環境変数に `GOOGLE_SERVICE_ACCOUNT_JSON` として貼る（1行の JSON）
-4. 「訪問歯科_写真」フォルダを、そのサービスアカウントのメールアドレスと共有（編集可）
+写真の**ファイル実体**は、従来どおり **あなたの Google ドライブ**（`訪問歯科_写真`）に置きます。  
+書き込みは **GAS（あなた本人）経由** で行い、サービスアカウントは使いません（個人 Google では容量 0 で失敗するため）。
 
-※ 難しい場合はこちら（エージェント）に「Google 設定を一緒に」と依頼してください。
+必要な環境変数:
+
+| 名前 | 内容 |
+|------|------|
+| `GAS_WEBAPP_URL` | **必須（写真）** — 従来の GAS ウェブアプリ `/exec` URL |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | 任意（書類アーカイブ等の補助）。写真の新規保存には使わない |
+
+メタデータ（どの患者の写真か等）だけ Supabase の `photos` に記録します。
 
 ### D. 試験用 URL（Preview）で確認
 
@@ -77,7 +82,7 @@ Vercel → プロジェクト → **Settings → Environment Variables**
 | `SUPABASE_URL` | Supabase の Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role キー（秘密） |
 | `VITE_RPC_BACKEND` | `supabase` |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | （写真を使うとき） |
+| `GAS_WEBAPP_URL` | （写真を使うとき・必須） |
 
 **Production（本番）はまだ触らない**（`VITE_RPC_BACKEND=gas` のまま）。
 
