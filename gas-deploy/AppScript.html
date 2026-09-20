@@ -5921,7 +5921,11 @@ function fitTeethChartViewport_() {
     return;
   }
   const scRaw = Math.min(1, w / sw);
-  const MIN_SCALE = 0.88;
+  // 横向きは画面幅を活かして全体表示を優先（縦は従来どおりタップしやすさ優先）
+  const landscape =
+    (typeof window.matchMedia === "function" && window.matchMedia("(orientation: landscape)").matches) ||
+    (window.innerWidth > window.innerHeight);
+  const MIN_SCALE = landscape ? 0.72 : 0.88;
   if (scRaw < MIN_SCALE) {
     wrap.style.height = "";
     return;
@@ -5944,6 +5948,16 @@ function ensureTeethChartFitObserver_() {
   if (typeof ResizeObserver !== "undefined") {
     const ro = new ResizeObserver(() => fitTeethChartViewport_());
     ro.observe(wrap);
+    const block = document.getElementById("teethChartBlock");
+    if (block) ro.observe(block);
+  }
+  if (!window.__teethOrientFitBound) {
+    window.__teethOrientFitBound = true;
+    const reflow = () => {
+      setTimeout(() => fitTeethChartViewport_(), 120);
+    };
+    window.addEventListener("orientationchange", reflow);
+    window.addEventListener("resize", reflow);
   }
 }
 

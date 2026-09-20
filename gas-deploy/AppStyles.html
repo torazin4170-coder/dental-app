@@ -26,6 +26,22 @@ body { font-family: "Hiragino Kaku Gothic ProN",system-ui,sans-serif; background
 
 .sidebar { display: none; }
 .screen-wrap { padding: 14px 16px; padding-bottom: calc(var(--bottom-h) + 12px); max-width: 520px; margin: 0 auto; }
+
+/* スマホ横向き：余白の細い柱をやめ、歯式が画面幅いっぱいに見えるようにする */
+@media (max-width: 1023px) and (orientation: landscape) {
+  .screen-wrap {
+    max-width: none;
+    width: 100%;
+    padding-left: 8px;
+    padding-right: 8px;
+    box-sizing: border-box;
+  }
+  #teethChartBlock {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
 .screen { display: none; }
 .screen.active { display: block; }
 
