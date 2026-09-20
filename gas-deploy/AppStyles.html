@@ -29,10 +29,14 @@ body { font-family: "Hiragino Kaku Gothic ProN",system-ui,sans-serif; background
 
 /* スマホ横向き：余白の細い柱をやめ、歯式が画面幅いっぱいに見えるようにする */
 @media (max-width: 1023px) and (orientation: landscape) {
+  html, body {
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
   .screen-wrap {
     max-width: none;
     width: 100%;
-    /* ノッチ等の安全余白も左右とも同じルールで取る（片側だけ空くのを防ぐ） */
     padding-left: max(8px, env(safe-area-inset-left, 0px));
     padding-right: max(8px, env(safe-area-inset-right, 0px));
     box-sizing: border-box;
@@ -41,6 +45,8 @@ body { font-family: "Hiragino Kaku Gothic ProN",system-ui,sans-serif; background
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+    /* 歯式の上で縦スクロールも通す（横だけ許可だとページが縦に動かない） */
+    touch-action: pan-x pan-y;
   }
 }
 .screen { display: none; }

@@ -5904,7 +5904,7 @@ function ensureTeethChartBlockListener() {
   block.addEventListener("pointerdown", onTeethChartPointerDown);
 }
 
-/** 歯式の合わせ込み用インラインスタイルを必ず消す（向き変更で縮小が残る事故防止） */
+/** 歯式の合わせ込み用インラインスタイルを必ず消す */
 function resetTeethChartFitStyles_() {
   const wrap = document.getElementById("teethChartFitWrap");
   const mid = document.getElementById("teethChartScaleInner");
@@ -5924,20 +5924,30 @@ function resetTeethChartFitStyles_() {
   if (block) block.style.overflowX = "";
 }
 
-/** 歯式ブロックを親幅に収める。極端な縮小はやめ横スクロールでタップしやすさを優先 */
+/**
+ * 歯式のサイズ合わせ。
+ * スマホでは CSS transform による拡大縮小をしない（向き変更で画面全体がおかしくなるため）。
+ * はみ出す場合は横スクロールのみ。
+ */
 function fitTeethChartViewport_() {
+  resetTeethChartFitStyles_();
+  // タッチ端末／狭い画面では scale しない
+  const touchUi =
+    (typeof window.matchMedia === "function" &&
+      (window.matchMedia("(max-width: 1023px)").matches ||
+        window.matchMedia("(pointer: coarse)").matches)) ||
+    window.innerWidth <= 1023;
+  if (touchUi) return;
   const wrap = document.getElementById("teethChartFitWrap");
   const mid = document.getElementById("teethChartScaleInner");
   const block = document.getElementById("teethChartBlock");
   if (!wrap || !mid) return;
-  resetTeethChartFitStyles_();
   const sw = mid.scrollWidth;
   const sh = mid.scrollHeight;
   const w = Math.max(1, block && block.clientWidth > 0 ? block.clientWidth : wrap.clientWidth);
   if (!sw || !sh) return;
   const scRaw = Math.min(1, w / sw);
   const MIN_SCALE = 0.88;
-  // 大きく縮小が必要なときは scale しない（横スクロール）。向き変更時の変な拡大・縮小を防ぐ
   if (scRaw < MIN_SCALE) return;
   mid.style.width = sw + "px";
   mid.style.transformOrigin = "top left";
@@ -5957,28 +5967,11 @@ function ensureTeethChartFitObserver_() {
   }
   if (!window.__teethOrientFitBound) {
     window.__teethOrientFitBound = true;
-    const nudgeViewportScale_ = () => {
-      // iOS などで向き変更後にページ全体の拡大/縮小が残ることがあるため、viewport を一度リセット
-      const meta = document.querySelector('meta[name="viewport"]');
-      if (!meta) return;
-      meta.setAttribute(
-        "content",
-        "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover",
-      );
-      setTimeout(() => {
-        meta.setAttribute("content", "width=device-width, initial-scale=1, viewport-fit=cover");
-      }, 400);
-    };
-    const reflowAfterOrient_ = () => {
+    window.addEventListener("orientationchange", () => {
+      // viewport はいじらない。縮小スタイルだけ消して終わり
       resetTeethChartFitStyles_();
-      nudgeViewportScale_();
-      // 向き変更のアニメ中は幅が不安定なので、落ち着いてから1回だけ合わせる
-      setTimeout(() => {
-        resetTeethChartFitStyles_();
-        fitTeethChartViewport_();
-      }, 320);
-    };
-    window.addEventListener("orientationchange", reflowAfterOrient_);
+      setTimeout(() => fitTeethChartViewport_(), 320);
+    });
   }
 }
 
