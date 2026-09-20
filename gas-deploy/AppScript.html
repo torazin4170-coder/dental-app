@@ -5904,56 +5904,40 @@ function ensureTeethChartBlockListener() {
   block.addEventListener("pointerdown", onTeethChartPointerDown);
 }
 
-/** 歯式の合わせ込み用インラインスタイルを必ず消す */
-function resetTeethChartFitStyles_() {
-  const wrap = document.getElementById("teethChartFitWrap");
-  const mid = document.getElementById("teethChartScaleInner");
-  const block = document.getElementById("teethChartBlock");
-  if (mid) {
-    mid.style.transform = "";
-    mid.style.width = "";
-    mid.style.transformOrigin = "";
-    mid.style.marginLeft = "";
-  }
-  if (wrap) {
-    wrap.style.height = "";
-    wrap.style.width = "";
-    wrap.style.marginLeft = "";
-    wrap.style.marginRight = "";
-  }
-  if (block) block.style.overflowX = "";
-}
-
-/**
- * 歯式のサイズ合わせ。
- * スマホでは CSS transform による拡大縮小をしない（向き変更で画面全体がおかしくなるため）。
- * はみ出す場合は横スクロールのみ。
- */
+/** 歯式ブロックを親幅に収める。極端な縮小はやめ横スクロールでタップしやすさを優先 */
 function fitTeethChartViewport_() {
-  resetTeethChartFitStyles_();
-  // タッチ端末／狭い画面では scale しない
-  const touchUi =
-    (typeof window.matchMedia === "function" &&
-      (window.matchMedia("(max-width: 1023px)").matches ||
-        window.matchMedia("(pointer: coarse)").matches)) ||
-    window.innerWidth <= 1023;
-  if (touchUi) return;
   const wrap = document.getElementById("teethChartFitWrap");
   const mid = document.getElementById("teethChartScaleInner");
   const block = document.getElementById("teethChartBlock");
   if (!wrap || !mid) return;
+  mid.style.transform = "";
+  mid.style.width = "auto";
+  mid.style.transformOrigin = "";
   const sw = mid.scrollWidth;
   const sh = mid.scrollHeight;
   const w = Math.max(1, block && block.clientWidth > 0 ? block.clientWidth : wrap.clientWidth);
-  if (!sw || !sh) return;
+  if (!sw || !sh) {
+    wrap.style.height = "";
+    return;
+  }
   const scRaw = Math.min(1, w / sw);
-  const MIN_SCALE = 0.88;
-  if (scRaw < MIN_SCALE) return;
+  // 横向きは画面幅を活かして全体表示を優先（縦は従来どおりタップしやすさ優先）
+  const landscape =
+    (typeof window.matchMedia === "function" && window.matchMedia("(orientation: landscape)").matches) ||
+    (window.innerWidth > window.innerHeight);
+  const MIN_SCALE = landscape ? 0.72 : 0.88;
+  if (scRaw < MIN_SCALE) {
+    wrap.style.height = "";
+    return;
+  }
   mid.style.width = sw + "px";
-  mid.style.transformOrigin = "top left";
+  mid.style.transformOrigin = "top center";
   if (scRaw < 1 - 1e-6) {
     mid.style.transform = `scale(${scRaw})`;
     wrap.style.height = Math.ceil(sh * scRaw) + "px";
+  } else {
+    mid.style.transform = "";
+    wrap.style.height = "";
   }
 }
 
@@ -5964,14 +5948,16 @@ function ensureTeethChartFitObserver_() {
   if (typeof ResizeObserver !== "undefined") {
     const ro = new ResizeObserver(() => fitTeethChartViewport_());
     ro.observe(wrap);
+    const block = document.getElementById("teethChartBlock");
+    if (block) ro.observe(block);
   }
   if (!window.__teethOrientFitBound) {
     window.__teethOrientFitBound = true;
-    window.addEventListener("orientationchange", () => {
-      // viewport はいじらない。縮小スタイルだけ消して終わり
-      resetTeethChartFitStyles_();
-      setTimeout(() => fitTeethChartViewport_(), 320);
-    });
+    const reflow = () => {
+      setTimeout(() => fitTeethChartViewport_(), 120);
+    };
+    window.addEventListener("orientationchange", reflow);
+    window.addEventListener("resize", reflow);
   }
 }
 
