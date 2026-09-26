@@ -10261,6 +10261,7 @@ let rptEmRangePickEnd_ = null;
 let rptEmTouchTrack_ = null;
 let rptEmRangeToggleLock_ = 0;
 let rptEmMobilePinBound_ = false;
+let rptEmBarHiddenForKeyboard_ = false;
 
 function rptEmTouchPrimary_() {
   try {
@@ -10554,6 +10555,7 @@ function rptEnsureEmphasisBarExtras_(bar) {
     if (inp) {
       inp.addEventListener("touchstart", e => e.stopPropagation(), { passive: true });
       inp.addEventListener("focus", () => {
+        if (rptEmTouchPrimary_() && rptKeyboardOpen_()) return;
         const b = rptActiveEmphasisBar_();
         if (b) {
           b.classList.add("show");
@@ -10609,6 +10611,7 @@ function rptEmCollapseNativeSelection_() {
 }
 
 function rptEmDismissBar_(keepCell) {
+  rptEmBarHiddenForKeyboard_ = false;
   rptEmRangePickReset_(false);
   rptUnpinEmphasisBarMobile_();
   if (!keepCell) rptEmLastRichCell_ = null;
@@ -10708,28 +10711,25 @@ function rptUnpinEmphasisBarMobile_() {
   });
 }
 
+/** スマホでは強調バーを画面にかぶせるポップアップにしない。キーボード中はしまい、閉じたら元の位置に戻す */
 function rptPinEmphasisBarMobile_() {
+  rptUnpinEmphasisBarMobile_();
   if (!rptEmTouchPrimary_()) return;
   const bar = rptActiveEmphasisBar_();
-  if (!bar || !bar.classList.contains("show")) {
-    rptUnpinEmphasisBarMobile_();
+  if (!bar) return;
+  if (rptKeyboardOpen_()) {
+    if (bar.classList.contains("show")) {
+      rptEmBarHiddenForKeyboard_ = true;
+      bar.classList.remove("show");
+      bar.setAttribute("aria-hidden", "true");
+    }
     return;
   }
-  if (!rptKeyboardOpen_()) {
-    rptUnpinEmphasisBarMobile_();
-    return;
+  if (rptEmBarHiddenForKeyboard_ && rptEmLastRichCell_ && rptEmLastRichCell_.isConnected) {
+    rptEmBarHiddenForKeyboard_ = false;
+    bar.classList.add("show");
+    bar.setAttribute("aria-hidden", "false");
   }
-  const vv = window.visualViewport;
-  if (!vv) return;
-  rptUnpinEmphasisBarMobile_();
-  bar.classList.add("fax-em-bar--pinned");
-  const h = bar.offsetHeight || 120;
-  const top = Math.max(8, vv.offsetTop + vv.height - h - 8);
-  bar.style.position = "fixed";
-  bar.style.top = top + "px";
-  bar.style.left = vv.offsetLeft + 8 + "px";
-  bar.style.width = Math.max(0, vv.width - 16) + "px";
-  bar.style.zIndex = "5000";
 }
 
 function rptBindEmphasisBarMobilePin_() {
@@ -10746,8 +10746,15 @@ function rptSetActiveRichCell_(cellEl) {
   const bar = rptActiveEmphasisBar_();
   if (!bar) return;
   if (rptEmLastRichCell_) {
-    bar.classList.add("show");
-    bar.setAttribute("aria-hidden", "false");
+    const typingOnPhone = rptEmTouchPrimary_() && rptKeyboardOpen_();
+    if (typingOnPhone) {
+      rptEmBarHiddenForKeyboard_ = true;
+      bar.classList.remove("show");
+      bar.setAttribute("aria-hidden", "true");
+    } else {
+      bar.classList.add("show");
+      bar.setAttribute("aria-hidden", "false");
+    }
     rptEnsureEmphasisBarExtras_(bar);
     rptBindEmphasisBarButtons_();
   }
@@ -10774,6 +10781,7 @@ function rptScheduleEmphasisBarCheck_() {
 }
 
 function rptHideEmphasisBar_() {
+  rptEmBarHiddenForKeyboard_ = false;
   rptEmLastRichCell_ = null;
   rptEmSavedSelText_ = "";
   rptEmSavedRange_ = null;
