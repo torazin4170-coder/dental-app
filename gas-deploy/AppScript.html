@@ -11069,7 +11069,7 @@ function rptEditNeedsPreserveWhitespace_(el) {
   if (el.getAttribute("data-rpt-rich") === "1") return true;
   if (el.classList.contains("rpt-edit-multiline")) return true;
   const preserveCls = [
-    "fax-cell-rich", "fax-footer-comment-body", "fax-body",
+    "fax-cell-rich", "fax-notes-body", "fax-row-notes", "fax-footer-comment-body", "fax-body",
     "ps-body-text", "ps-extra-comment",
     "iss-notes-rich", "iss-footer-rich", "iss-free-text-rich",
     "mc-matrix-comment-edit", "mc-body", "cm-body",
@@ -11098,7 +11098,7 @@ function rptPlainizeEditEl_(el) {
 function getRptPrintWhitespaceCss_() {
   return `
 .rpt-print-preserve-ws,
-.fax-cell-rich, .fax-footer-comment-body, .fax-body,
+.fax-cell-rich, .fax-notes-body, .fax-row-notes, .fax-footer-comment-body, .fax-body,
 .fax-doc .fax-table td,
 .sv-doc .sv-table td, .sv-notes-body, .sv-free-body, .sv-row-notes,
 .iss-notes-rich, .iss-footer-rich, .iss-free-text-rich, .iss-td-notes,
@@ -12316,6 +12316,29 @@ function sortFaxDailyRows_(rows) {
   });
 }
 
+function faxDailyNotesPlain_(raw) {
+  return notesPlainText_(raw)
+    .replace(/《赤》|《\/赤》|《黄》|《\/黄》|【黒枠】|【\/黒枠】|【枠】|【\/枠】/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** 下書きのメモが空なら、診療記録の報告書向けメモを足す（手入力済みの下書きは上書きしない） */
+function fillEmptyFaxDailyNotesFromBase_(rows, baseRows) {
+  const byKey = {};
+  (baseRows || []).forEach(r => {
+    const k = faxDailyRowKey_(r);
+    if (k) byKey[k] = r;
+  });
+  return (rows || []).map(r => {
+    if (faxDailyNotesPlain_(r && r.notes)) return r;
+    const base = byKey[faxDailyRowKey_(r)];
+    const fresh = base && base.notes != null ? String(base.notes) : "";
+    if (!faxDailyNotesPlain_(fresh)) return r;
+    return Object.assign({}, r, { notes: fresh });
+  });
+}
+
 function mergeFaxDailyPageCtx_(baseCtx, draftCtx) {
   const merged = Object.assign({}, baseCtx || {}, draftCtx || {});
   const allSrc = (merged.rows_all && merged.rows_all.length)
@@ -12335,6 +12358,9 @@ function mergeFaxDailyPageCtx_(baseCtx, draftCtx) {
   } else {
     merged.rows = sortFaxDailyRows_(merged.rows_all.slice());
   }
+  const baseRows = (baseCtx && (baseCtx.rows_all || baseCtx.rows)) || [];
+  merged.rows_all = fillEmptyFaxDailyNotesFromBase_(merged.rows_all, baseRows);
+  merged.rows = fillEmptyFaxDailyNotesFromBase_(merged.rows, baseRows);
   return merged;
 }
 
@@ -13060,6 +13086,25 @@ function getKentaiAspirationFooterImgHtml_() {
   return `<div class="kentai-edu-footer-wrap"><img class="kentai-edu-footer" src="${src}" alt="誤嚥性肺炎（ごえんせいはいえん）と口腔ケアについて"/></div>`;
 }
 
+/** ①施設FAX日報：処置の下に、診療記録のメモ・所見（報告書向け）を出す */
+function faxDailyTreatCellHtml_(row, rowIndex, forPrint) {
+  const treatTxt = formatTreatmentTextForReport_(row.treatments) || "—";
+  let html = forPrint
+    ? rptRichPrintHtml_(treatTxt, "fax-cell-rich")
+    : rptEditRich_(`rows.${rowIndex}.treatments`, treatTxt);
+  const noteRaw = row && row.notes != null ? String(row.notes).trim() : "";
+  if (!faxDailyNotesPlain_(noteRaw)) return html;
+  html += forPrint
+    ? `<div class="fax-row-notes">${rptRichPrintHtml_(noteRaw, "fax-notes-body")}</div>`
+    : `<div class="fax-row-notes">${rptEditRich_(`rows.${rowIndex}.notes`, noteRaw, {
+        block: true,
+        tag: "div",
+        cls: "fax-notes-body",
+        multiline: true
+      })}</div>`;
+  return html;
+}
+
 function buildFaxDailyDocumentHtml_(opts) {
   opts = opts || {};
   const c = opts.context || lastFaxDailyContext;
@@ -13107,8 +13152,7 @@ function buildFaxDailyDocumentHtml_(opts) {
       const nextCell = r.next_visit != null && String(r.next_visit) !== "" ? r.next_visit : formatNextVisitCell_(r);
       const rk = faxDailyRowKey_(r);
       h += `<tr><td>${opts.forPrint ? escHtml(r.room || "") : rptEdit_(`rows.${i}.room`, r.room || "")}</td><td>${opts.forPrint ? escHtml(r.name || "") : rptEdit_(`rows.${i}.name`, r.name || "")}</td>`;
-      const treatTxt = formatTreatmentTextForReport_(r.treatments) || "—";
-      h += `<td>${opts.forPrint ? rptRichPrintHtml_(treatTxt, "fax-cell-rich") : rptEditRich_(`rows.${i}.treatments`, treatTxt)}</td>`;
+      h += `<td>${faxDailyTreatCellHtml_(r, i, !!opts.forPrint)}</td>`;
       h += `<td>${opts.forPrint ? rptRichPrintHtml_(nextCell, "fax-cell-rich") : rptEditRich_(`rows.${i}.next_visit`, nextCell)}</td>`;
       if (showExcludeCol) {
         h += `<td class="fax-row-exclude-cell fax-col-exclude"><button type="button" class="fax-row-exclude-btn" title="この患者を表から外す" onclick="faxDailyExcludePatient_('${escAttr(String(c.fac_id))}','${escAttr(rk)}')">×</button></td>`;
@@ -16939,6 +16983,8 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .fax-doc .fax-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; }
 .fax-doc .fax-table th, .fax-doc .fax-table td { border: 1px solid #333; padding: 6px 7px; vertical-align: top; word-break: break-word; }
 .fax-doc .fax-table th { background: #e8e8e8; font-weight: 800; font-size: 9pt; }
+.fax-doc .fax-row-notes { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #94a3b8; }
+.fax-doc .fax-notes-body { display: block; white-space: pre-wrap; word-break: break-word; }
 .fax-doc .fax-note { font-size: 9pt; margin: 4px 0 0; line-height: 1.45; }
 .fax-doc .fax-footer-comment-block { margin-top: 10px; }
 .fax-doc .fax-footer-comment-body { min-height: 3em; line-height: 1.75; font-size: 11pt; padding: 6px 8px; border: 1px solid #333; white-space: pre-wrap; }
