@@ -10880,14 +10880,36 @@ function faxHtmlToMarkers_(html) {
   return s;
 }
 
+/** ①②：この語は最初から赤枠（長い語を先に） */
+const REPORT_AUTO_BOX_WORDS_ = ["無料検診", "初診"];
 /** ②上司向けリスト：本日の治療・メモ欄で自動赤字にする語（長い語句を先に） */
-const SV_LIST_AUTO_RED_WORDS_ = ["無料検診", "ご逝去", "入院中", "初診", "入院", "退所"];
+const SV_LIST_AUTO_RED_WORDS_ = ["ご逝去", "入院中", "入院", "退所"];
 
-/** ②表示用：治療・メモ内のキーワードを赤字に */
+function wrapReportKeyword_(text, word, wrapped) {
+  const hold = "\uE000";
+  let s = String(text || "");
+  s = s.split(wrapped).join(hold);
+  s = s.split(word).join(wrapped);
+  return s.split(hold).join(wrapped);
+}
+
+/** 処置名などの「初診」「無料検診」を赤枠マーカーにする（すでに枠がある語は二重にしない） */
+function faxApplyDefaultRedBoxMarkers_(text) {
+  let s = String(text == null ? "" : text);
+  REPORT_AUTO_BOX_WORDS_.forEach(word => {
+    s = wrapReportKeyword_(s, word, `【枠】${word}【/枠】`);
+  });
+  return s;
+}
+
+/** ②表示用：治療・メモ内のキーワードを赤枠または赤字に */
 function highlightSvListKeywordsInHtml_(html) {
   let result = String(html || "");
+  REPORT_AUTO_BOX_WORDS_.forEach(w => {
+    result = wrapReportKeyword_(result, w, `<span class="fax-em-box">${w}</span>`);
+  });
   SV_LIST_AUTO_RED_WORDS_.forEach(w => {
-    result = result.split(w).join(`<span class="fax-em-red">${w}</span>`);
+    result = wrapReportKeyword_(result, w, `<span class="fax-em-red">${w}</span>`);
   });
   return result;
 }
@@ -13088,15 +13110,16 @@ function getKentaiAspirationFooterImgHtml_() {
 
 /** ①施設FAX日報：処置の下に、診療記録のメモ・所見（報告書向け）を出す */
 function faxDailyTreatCellHtml_(row, rowIndex, forPrint) {
-  const treatTxt = formatTreatmentTextForReport_(row.treatments) || "—";
+  const treatTxt = faxApplyDefaultRedBoxMarkers_(formatTreatmentTextForReport_(row.treatments) || "—");
   let html = forPrint
     ? rptRichPrintHtml_(treatTxt, "fax-cell-rich")
     : rptEditRich_(`rows.${rowIndex}.treatments`, treatTxt);
   const noteRaw = row && row.notes != null ? String(row.notes).trim() : "";
   if (!faxDailyNotesPlain_(noteRaw)) return html;
+  const noteBoxed = faxApplyDefaultRedBoxMarkers_(noteRaw);
   html += forPrint
-    ? `<div class="fax-row-notes">${rptRichPrintHtml_(noteRaw, "fax-notes-body")}</div>`
-    : `<div class="fax-row-notes">${rptEditRich_(`rows.${rowIndex}.notes`, noteRaw, {
+    ? `<div class="fax-row-notes">${rptRichPrintHtml_(noteBoxed, "fax-notes-body")}</div>`
+    : `<div class="fax-row-notes">${rptEditRich_(`rows.${rowIndex}.notes`, noteBoxed, {
         block: true,
         tag: "div",
         cls: "fax-notes-body",
