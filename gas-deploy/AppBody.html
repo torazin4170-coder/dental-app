@@ -689,10 +689,31 @@
       }
       #monthCareModal .modal-actions.report-preview-modal-footer { flex-shrink: 0; }
       #visitTimetableModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
+      #visitTimetableModal .tt-preview-pane {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        min-width: 0;
+        overflow: hidden;
+      }
+      #visitTimetableModal #visitTimetablePreviewScroll.report-preview-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+      }
       @media (min-width: 900px) {
-        #visitTimetableModal .report-preview-split { flex-direction: row; gap: 12px; }
-        #visitTimetableModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
-        #visitTimetableModal .report-preview-scroll { min-height: calc(100dvh - 200px); }
+        #visitTimetableModal .report-preview-split { flex-direction: row; align-items: stretch; gap: 12px; }
+        #visitTimetableModal .report-preview-form-pane {
+          flex: 1 1 42%;
+          max-width: 48%;
+          min-height: 0;
+          max-height: 100%;
+          overflow: auto;
+        }
+        #visitTimetableModal .tt-preview-pane { flex: 1 1 58%; }
       }
       #ofpiModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
       @media (min-width: 900px) {
@@ -916,7 +937,7 @@
       }
       #issPreviewInner .iss-photos {
         position: relative; margin-top: 6px; min-height: 72px; background: #f8fafc;
-        border: 1px dashed #cbd5e1; border-radius: 8px; box-sizing: border-box; overflow: visible; width: 100%;
+        border: 1px dashed #cbd5e1; border-radius: 8px; box-sizing: border-box; overflow: hidden; width: 100%;
       }
       #issPreviewInner .iss-photos-empty { font-size: 11px; color: #94a3b8; padding: 12px; text-align: center; }
       #issPreviewInner .iss-photo-widget { position: absolute; z-index: 2; box-sizing: border-box; touch-action: none; cursor: move; }
@@ -1613,7 +1634,7 @@
         </div>
         <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">患者行の<strong>番号・患者氏名</strong>は<strong>患者リストの最新データ</strong>を自動表示します。患者行の氏名右<strong style="color:#dc2626">×</strong>でその患者を除外、<strong>手書き行</strong>の<strong style="color:#dc2626">×</strong>で行自体を削除できます（下書き消去でリセット）。<strong>＋ 行を追加</strong>で空行を増やせます。<strong>時刻・治療内容</strong>は任意に修正できます。左端の<strong>当月診療回数</strong>も自動（0回は空欄）。稲毛施設は右プレビューで<strong>各行の担当Dr</strong>も変更できます。</p>
       </div>
-      <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+      <div class="tt-preview-pane">
         <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;flex-shrink:0">プレビュー（印刷イメージ）</div>
         <div class="tt-layout-toggle">
           <button type="button" class="tt-layout-btn on" id="visitTtLayoutOne" onclick="setVisitTimetablePageLayout_('one')">📄 1ページに圧縮</button>

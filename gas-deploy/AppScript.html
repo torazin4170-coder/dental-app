@@ -20459,9 +20459,16 @@ function issPullAllPhotosFromPreview_() {
   if (!inner || !ctx) return;
   const fa = issEnsureFreeArea_(ctx);
   fa.photos = issPullPhotosFromCanvas_(inner.querySelector('.iss-photos[data-iss-photo-zone="free_area"]'));
-  inner.querySelectorAll("tbody tr[data-iss-data-row]").forEach((tr, i) => {
+  const byIdx = {};
+  inner.querySelectorAll("tbody tr[data-iss-data-row]").forEach(tr => {
+    const i = issRowIndexFromPreviewTr_(tr);
+    if (i < 0 || !ctx.rows || !ctx.rows[i]) return;
     const canvas = tr.querySelector('.iss-photos[data-iss-photo-zone="row"]');
-    if (ctx.rows && ctx.rows[i]) ctx.rows[i].photos = issPullPhotosFromCanvas_(canvas);
+    if (!canvas) return;
+    byIdx[i] = issPullPhotosFromCanvas_(canvas);
+  });
+  (ctx.rows || []).forEach((r, i) => {
+    if (Object.prototype.hasOwnProperty.call(byIdx, i)) r.photos = byIdx[i];
   });
   ctx.footer_photos = issPullPhotosFromCanvas_(inner.querySelector('.iss-photos[data-iss-photo-zone="footer"]'));
 }
@@ -20598,9 +20605,12 @@ function issBindPhotoManipulators_(container) {
       e.preventDefault();
       e.stopPropagation();
       const pid = del.getAttribute("data-iss-photo-id");
+      issPullAllPhotosFromPreview_();
       if (pid && issRemovePhoto_(pid)) {
         issRefreshPreview(true);
         showToast("写真を削除しました");
+      } else {
+        showToast("この写真は削除できませんでした。もう一度タップしてください");
       }
       return;
     }
@@ -20639,7 +20649,7 @@ function issBindRowToolbarActions_(container) {
     if (photoBtn.classList.contains("iss-footer-photo")) issPickPhotoForZone_("footer");
     else {
       const idx = photoBtn.getAttribute("data-iss-row-idx");
-      issPickPhotoForZone_("row", parseInt(String(idx), 10));
+      issPickPhotoForZone_("row", parseInt(String(idx), 10), photoBtn.getAttribute("data-iss-patient-id") || "");
     }
   };
   container.addEventListener("click", onClick);
@@ -20664,11 +20674,24 @@ function issBindPhotoImageLoads_(container) {
   });
 }
 
-function issPickPhotoForZone_(zone, rowIdx) {
-  issPullPreviewEditsToContext_();
+function issPhotoTargetArray_(ctx, zone, rowIdx, patientId) {
+  if (!ctx) return null;
+  if (zone === "row" && patientId) {
+    const hit = (ctx.rows || []).find(r => String(r.patient_id || "") === String(patientId));
+    if (hit) return issEnsureRowPhotos_(hit);
+  }
+  return issGetPhotosArrayForZone_(ctx, zone, rowIdx);
+}
+
+function issPickPhotoForZone_(zone, rowIdx, patientId) {
+  issPullPreviewEditsToContext_({ skipFormSync: true });
   issCollectFormToContext_();
   issPullAllPhotosFromPreview_();
-  issPhotoPickSession_ = { zone: zone || "free_area", rowIdx: rowIdx != null && !isNaN(rowIdx) ? rowIdx : -1 };
+  issPhotoPickSession_ = {
+    zone: zone || "free_area",
+    rowIdx: rowIdx != null && !isNaN(rowIdx) ? rowIdx : -1,
+    patientId: patientId ? String(patientId) : ""
+  };
   const inp = document.getElementById("issFreePhotoInput");
   if (!inp) {
     showToast("写真の選択画面を開けませんでした");
@@ -20686,14 +20709,15 @@ function issPickPhotoForZone_(zone, rowIdx) {
 function issHandlePhotoUpload(input) {
   const files = input && input.files;
   if (!files || !files.length) return;
-  issPullPreviewEditsToContext_();
+  issPullPreviewEditsToContext_({ skipFormSync: true });
   issCollectFormToContext_();
   issPullAllPhotosFromPreview_();
   const session = issPhotoPickSession_;
   issPhotoPickSession_ = null;
   const zone = session && session.zone ? session.zone : "free_area";
   const rowIdx = session && session.rowIdx != null ? session.rowIdx : -1;
-  const target = issGetPhotosArrayForZone_(lastIssPreviewContext, zone, rowIdx);
+  const patientId = session && session.patientId ? session.patientId : "";
+  const target = issPhotoTargetArray_(lastIssPreviewContext, zone, rowIdx, patientId);
   if (!target) {
     input.value = "";
     showToast("写真を追加する場所が見つかりません");
@@ -20768,7 +20792,7 @@ function buildShareSheetPrintHtmlFromContext_(ctx, opts) {
       const label = `${trimField_(r.room) || "—"} / ${r.name || ""}`.trim();
       bodyRows += `<tr class="iss-toolbar-row"><td colspan="3"><div class="iss-row-toolbar">`;
       bodyRows += `<span class="iss-row-label">${escHtml(label)}</span>`;
-      bodyRows += `<button type="button" class="iss-row-photo" data-iss-row-idx="${i}">📷 写真</button>`;
+      bodyRows += `<button type="button" class="iss-row-photo" data-iss-row-idx="${i}" data-iss-patient-id="${escAttr(r.patient_id || "")}">📷 写真</button>`;
       bodyRows += `</div></td></tr>`;
     }
     bodyRows += `<tr data-iss-data-row="1"><td class="iss-td-room">${forPrint ? escHtml(r.room || "") : rptEdit_(`rows.${i}.room`, r.room)}</td><td class="iss-td-name">${forPrint ? escHtml(r.name || "") : rptEdit_(`rows.${i}.name`, r.name)}</td><td class="iss-td-notes">`;
