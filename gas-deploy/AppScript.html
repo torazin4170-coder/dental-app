@@ -32,6 +32,12 @@ let monthCareActiveCommentPath_ = null;
 let monthCareSavedCommentInsert_ = null;
 /** ④ 月次下書きのサーバー取得中（二重実行防止） */
 let monthCareGasPending = false;
+/** ④ コメント等を手で直したあと、遅れて届く自動読み込みで上書きしない */
+let monthCareIgnoreAutoApply_ = false;
+/** ④ 保存下書きをすでに表示した（自動の再生成で上書きしない） */
+let monthCareDraftApplied_ = false;
+/** ④ 下書き生成の世代。古い通信結果では画面を置き換えない */
+let monthCareGenSeq_ = 0;
 /** 施設月次（医療職向け・印刷用メタ） */
 let lastClinicalMonthlyContext = null;
 /** 無料検診票プレビュー用 */
@@ -1090,7 +1096,7 @@ function renderMcGokanMatrixCell_(root, pathPrefix, pi, si, slot, forPrint) {
   h += `<div class="mc-matrix-section-label mc-matrix-comment-label">コメント</div>`;
   h += `<div class="mc-matrix-comment">${forPrint
     ? `<span class="mc-matrix-comment-print">${rptMultilineTextToHtml_(commentVal)}</span>`
-    : rptEdit_(commentPath, commentVal, { block: true, tag: "div", cls: "mc-matrix-comment-edit rpt-edit-multiline", multiline: true })
+    : rptEditTextarea_(commentPath, commentVal, "mc-matrix-comment-edit")
   }</div>`;
   h += `</div>`;
   return h;
@@ -1636,6 +1642,15 @@ function monthCareSaveCommentInsertSelection_() {
   const ae = document.activeElement;
   let el = ae && inner.contains(ae) ? ae.closest("[data-rpt-path]") : null;
   if (!el || !(el.getAttribute("data-rpt-path") || "").endsWith(".comment")) return;
+  if (el.tagName === "TEXTAREA") {
+    monthCareSavedCommentInsert_ = {
+      path: el.getAttribute("data-rpt-path"),
+      start: el.selectionStart,
+      end: el.selectionEnd
+    };
+    monthCareActiveCommentPath_ = monthCareSavedCommentInsert_.path;
+    return;
+  }
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
   const r = sel.getRangeAt(0);
@@ -1691,6 +1706,29 @@ function insertMonthCareRefToMatrixComment_(ins) {
     } catch (_) {
       el = inner.querySelector('[data-rpt-path="' + path.replace(/"/g, '\\"') + '"]');
     }
+  }
+  if (el && el.tagName === "TEXTAREA") {
+    el.focus();
+    let start = el.value.length;
+    let end = start;
+    if (monthCareSavedCommentInsert_ && monthCareSavedCommentInsert_.path === path
+        && typeof monthCareSavedCommentInsert_.start === "number") {
+      start = monthCareSavedCommentInsert_.start;
+      end = typeof monthCareSavedCommentInsert_.end === "number" ? monthCareSavedCommentInsert_.end : start;
+    } else if (typeof el.selectionStart === "number") {
+      start = el.selectionStart;
+      end = el.selectionEnd;
+    }
+    const v = String(el.value || "");
+    el.value = v.slice(0, start) + ins + v.slice(end);
+    const pos = start + ins.length;
+    try { el.setSelectionRange(pos, pos); } catch (_) {}
+    mcAutosizeCommentTa_(el);
+    monthCareSavedCommentInsert_ = null;
+    monthCareIgnoreAutoApply_ = true;
+    if (inner && lastMonthCareContext) rptPullEdits_(inner, lastMonthCareContext);
+    showToast("挿入しました");
+    return;
   }
   if (el && el.isContentEditable) {
     el.focus();
@@ -10088,6 +10126,38 @@ function rptEdit_(path, text, opts) {
   return `<${tag} class="rpt-edit${block}${ml}${extra}" contenteditable="true" data-rpt-path="${escAttr(path)}" spellcheck="false">${body}</${tag}>`;
 }
 
+/** ④コメント欄：通常の入力欄（削除した文字が元に戻らない） */
+function rptEditTextarea_(path, text, cls) {
+  const extra = cls ? " " + cls : "";
+  const body = escHtml(text != null ? String(text) : "");
+  return `<textarea class="rpt-edit rpt-edit-multiline${extra}" data-rpt-path="${escAttr(path)}" spellcheck="false" rows="3">${body}</textarea>`;
+}
+
+function mcAutosizeCommentTa_(el) {
+  if (!el || el.tagName !== "TEXTAREA") return;
+  el.style.height = "auto";
+  el.style.height = Math.max(64, el.scrollHeight) + "px";
+}
+
+function mcAutosizeCommentTextareas_(container) {
+  if (!container) return;
+  container.querySelectorAll("textarea.mc-matrix-comment-edit").forEach(mcAutosizeCommentTa_);
+}
+
+function mcBindMonthCareLiveSync_(container) {
+  if (!container || container.dataset.mcLiveSync === "1") return;
+  container.dataset.mcLiveSync = "1";
+  container.addEventListener("input", e => {
+    const el = e.target.closest("[data-rpt-path]");
+    if (!el || !container.contains(el) || !lastMonthCareContext) return;
+    monthCareIgnoreAutoApply_ = true;
+    const path = el.getAttribute("data-rpt-path");
+    if (!path) return;
+    rptSetPath_(lastMonthCareContext, path, rptReadPreviewCellValue_(el));
+    if (el.tagName === "TEXTAREA") mcAutosizeCommentTa_(el);
+  });
+}
+
 function rptSetPath_(obj, path, val) {
   if (!obj || !path) return;
   const parts = path.split(".");
@@ -10106,6 +10176,7 @@ function rptSetPath_(obj, path, val) {
 /** プレビュー編集セル1件分の値を読む（改行・リッチ装飾対応） */
 function rptReadPreviewCellValue_(el) {
   if (!el) return "";
+  if (el.tagName === "TEXTAREA") return String(el.value != null ? el.value : "");
   if (el.classList.contains("rpt-edit-multiline")) {
     const html = el.innerHTML || "";
     if (el.getAttribute("data-rpt-rich") === "1" && /<span[^>]*\bfax-em-/i.test(html)) {
@@ -13658,6 +13729,8 @@ function refreshMonthCarePreview(opts) {
       mcGokanBindMatrixChecks_(inner);
       mcGokanTrackCommentFocus_(inner);
       mcGokanBindPatientActions_(inner);
+      mcBindMonthCareLiveSync_(inner);
+      mcAutosizeCommentTextareas_(inner);
     } else if (lastMonthCareContext.batch_mode) {
       mcGokanBindPatientActions_(inner);
     }
@@ -13712,6 +13785,13 @@ function monthCareDraftHasDisplayablePreview_(draft) {
   return !!(c.visits && c.visits.length);
 }
 
+function applyMonthCareAutoDraft_(draft, toastMsg) {
+  if (monthCareIgnoreAutoApply_) return false;
+  const ok = applyMonthCarePreviewDraftIfValid_(draft, toastMsg);
+  if (ok) monthCareDraftApplied_ = true;
+  return ok;
+}
+
 function applyMonthCarePreviewDraftIfValid_(draft, toastMsg) {
   if (!draft || !tryApplyMonthCarePreviewDraft_(draft) || !monthCareDraftHasDisplayablePreview_(draft)) return false;
   ensureMonthCareRefUiInitialized_();
@@ -13742,9 +13822,11 @@ function openMonthCareReportModal() {
     ta.addEventListener("input", refreshMonthCarePreview);
   }
   document.getElementById("monthCareModal")?.classList.add("show");
+  monthCareIgnoreAutoApply_ = false;
+  monthCareDraftApplied_ = false;
   void rptOpenReportPreferCloudDraft_("monthCare", monthCareDraftKey_(), {
-    applyDraft: applyMonthCarePreviewDraftIfValid_,
-    onGenerate: generateMonthCareDraft,
+    applyDraft: applyMonthCareAutoDraft_,
+    onGenerate: () => generateMonthCareDraft({ auto: true }),
     showLoading: showMonthCarePreviewLoading_
   });
 }
@@ -13753,7 +13835,9 @@ function closeMonthCareReportModal() {
   document.getElementById("monthCareModal")?.classList.remove("show");
 }
 
-function generateMonthCareDraft() {
+function generateMonthCareDraft(opts) {
+  const auto = !!(opts && opts.auto);
+  if (auto && (monthCareIgnoreAutoApply_ || monthCareDraftApplied_)) return;
   const facId = getReportFacId_();
   const ym = document.getElementById("monthCareYm")?.value;
   const err = document.getElementById("monthCareModalError");
@@ -13777,6 +13861,7 @@ function generateMonthCareDraft() {
     document.getElementById("monthCareModal")?.classList.add("show");
     return;
   }
+  const seq = ++monthCareGenSeq_;
   if (err) {
     err.style.display = "none";
     err.textContent = "";
@@ -13789,6 +13874,8 @@ function generateMonthCareDraft() {
   document.getElementById("monthCareModal")?.classList.add("show");
   showMonthCarePreviewLoading_();
   loadMonthCareBatchPatients_(facId, ym).then(patients => {
+    if (seq !== monthCareGenSeq_) return;
+    if (auto && (monthCareIgnoreAutoApply_ || monthCareDraftApplied_)) return;
     if (!patients.length) {
       lastMonthCareContext = null;
       if (err) {
