@@ -149,6 +149,8 @@ test.describe('regression smoke — DOM shell', () => {
       const w = window as unknown as {
         rptRichMultilineToMarkers_?: (el: HTMLElement) => string
         faxMarkersToHtml_?: (raw: string) => string
+        buildPersonalSheetPatientBodyFromVisits_?: (p: unknown) => string
+        buildPersonalSheetGridDocumentHtml_?: (ctx: unknown, forPrint: boolean) => string
       }
       if (typeof w.rptRichMultilineToMarkers_ !== 'function' || typeof w.faxMarkersToHtml_ !== 'function') return false
       const div = document.createElement('div')
@@ -156,7 +158,33 @@ test.describe('regression smoke — DOM shell', () => {
       const markers = w.rptRichMultilineToMarkers_(div)
       const html = w.faxMarkersToHtml_(markers)
       const brCount = (html.match(/<br/gi) || []).length
+      const lines = document.createElement('div')
+      lines.innerHTML = '<div>1行目</div><div>2行目</div><div><span class="fax-em-box">枠</span></div>'
+      const packed = w.rptRichMultilineToMarkers_(lines)
+      const shoshin = typeof w.buildPersonalSheetPatientBodyFromVisits_ === 'function'
+        ? w.buildPersonalSheetPatientBodyFromVisits_({
+            patient_id: 'p-shoshin',
+            visits: [{ visit_date: '2026-09-29', treatments: '初診、口腔ケア', notes: '', visit_time_start: '', visit_time_end: '' }],
+          })
+        : ''
+      const shoshinOk = shoshin.includes('《赤》初診《/赤》') && !shoshin.includes('【枠】初診') && (shoshin.match(/初診/g) || []).length === 1
+      const grid = w.buildPersonalSheetGridDocumentHtml_
+      const noteOn = grid ? grid({
+        facility_name: '施設', ym: '2026-09',
+        patients: [{ patient_id: '1', room: '1', name: 'A', body: shoshin }],
+        _show_facility_note: true, facility_note: '連絡です',
+      }, false) : ''
+      const notePrint = grid ? grid({
+        facility_name: '施設', ym: '2026-09',
+        patients: [{ patient_id: '1', room: '1', name: 'A', body: '本文' }],
+        facility_note: '',
+      }, true) : ''
+      const noteOk = noteOn.includes('その他の連絡事項') && noteOn.includes('連絡です') && noteOn.includes('ps-facility-note-del')
+        && noteOn.includes('fax-em-red') && noteOn.includes('初診')
+        && !notePrint.includes('その他の連絡事項')
       return markers.includes('\n\n') && html.includes('fax-em-box-black') && brCount >= 2
+        && packed === '1行目\n2行目\n【枠】枠【/枠】'
+        && shoshinOk && noteOk
     })
     expect(ok).toBe(true)
   })

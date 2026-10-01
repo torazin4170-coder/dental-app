@@ -10085,8 +10085,23 @@ function rptRichMultilineToMarkers_(el) {
     walk(node);
     out.push(close);
   };
+  const isEmptyBlock_ = node => {
+    const nodes = [...node.childNodes];
+    if (!nodes.length) return true;
+    return nodes.every(n => {
+      if (n.nodeType === Node.TEXT_NODE) return !String(n.textContent || "").replace(/\u00a0/g, " ").trim();
+      if (n.nodeType === Node.ELEMENT_NODE && n.tagName === "BR") return true;
+      return false;
+    });
+  };
+  const needsBreakBeforeBlock_ = () => {
+    const s = out.join("");
+    if (!s || s.endsWith("\n")) return false;
+    return !/(?:《赤》|《黄》|【枠】|【黒枠】)$/.test(s);
+  };
   function walk(node) {
-    node.childNodes.forEach(ch => {
+    const children = [...node.childNodes];
+    children.forEach((ch, idx) => {
       if (ch.nodeType === Node.TEXT_NODE) {
         pushText(ch.textContent);
         return;
@@ -10094,6 +10109,12 @@ function rptRichMultilineToMarkers_(el) {
       if (ch.nodeType !== Node.ELEMENT_NODE) return;
       const tag = ch.tagName;
       if (tag === "BR") {
+        const lastInBlock = idx === children.length - 1 && (node === el || node.tagName === "DIV" || node.tagName === "P");
+        const hasEarlier = children.slice(0, idx).some(n => {
+          if (n.nodeType === Node.TEXT_NODE) return !!String(n.textContent || "").replace(/\u00a0/g, " ").trim();
+          return n.nodeType === Node.ELEMENT_NODE && n.tagName !== "BR";
+        });
+        if (lastInBlock && hasEarlier) return;
         pushNl();
       } else if (ch.classList && ch.classList.contains("fax-em-red")) {
         walkEm(ch, "《赤》", "《/赤》");
@@ -10104,9 +10125,11 @@ function rptRichMultilineToMarkers_(el) {
       } else if (ch.classList && ch.classList.contains("fax-em-box")) {
         walkEm(ch, "【枠】", "【/枠】");
       } else if (tag === "DIV" || tag === "P") {
-        pushNl();
-        walk(ch);
-        pushNl();
+        const empty = isEmptyBlock_(ch);
+        if (empty && node === el && idx === children.length - 1) return;
+        if (needsBreakBeforeBlock_()) pushNl();
+        if (empty) pushNl();
+        else walk(ch);
       } else {
         walk(ch);
       }
@@ -10946,23 +10969,9 @@ function rptBindEmphasisBarButtons_() {
 
 /** 保存用：HTML → 《赤》などのマーカー付きテキスト */
 function faxHtmlToMarkers_(html) {
-  let h = String(html || "");
-  h = h.replace(/<span[^>]*\bfax-em-red\b[^>]*>([\s\S]*?)<\/span>/gi, "《赤》$1《/赤》");
-  h = h.replace(/<span[^>]*\bfax-em-hl\b[^>]*>([\s\S]*?)<\/span>/gi, "《黄》$1《/黄》");
-  h = h.replace(/<span[^>]*\bfax-em-box-black\b[^>]*>([\s\S]*?)<\/span>/gi, "【黒枠】$1【/黒枠】");
-  h = h.replace(/<span[^>]*\bfax-em-box\b[^>]*>([\s\S]*?)<\/span>/gi, "【枠】$1【/枠】");
-  h = h.replace(/<br\s*\/?>/gi, "\n");
-  h = h.replace(/<\/div>\s*<div\b[^>]*>/gi, "\n");
-  h = h.replace(/<\/p>\s*<p\b[^>]*>/gi, "\n");
-  h = h.replace(/<div\b[^>]*>/gi, "");
-  h = h.replace(/<\/div>/gi, "\n");
-  h = h.replace(/<p\b[^>]*>/gi, "");
-  h = h.replace(/<\/p>/gi, "\n");
   const d = document.createElement("div");
-  d.innerHTML = h;
-  let s = d.innerText != null ? String(d.innerText) : String(d.textContent || "");
-  s = s.replace(/\u00a0/g, " ");
-  return s;
+  d.innerHTML = String(html || "");
+  return rptRichMultilineToMarkers_(d);
 }
 
 /** ①②：この語は最初から赤枠（長い語を先に） */
@@ -11279,6 +11288,8 @@ const RPT_PRINT_STRIP_SELECTORS_ = [
   ".ps-toolbar-row",
   ".ps-row-toolbar",
   ".ps-grid-hint",
+  ".ps-facility-note-add-wrap",
+  ".ps-facility-note-del",
   ".ps-photo-handles",
   ".ps-photo-actions",
   ".ps-photo-del",
@@ -11290,6 +11301,11 @@ function rptStripPreviewChromeForPrint_(root, extraSelectors) {
   if (!root) return;
   const sels = RPT_PRINT_STRIP_SELECTORS_.concat(extraSelectors || []);
   sels.forEach(sel => root.querySelectorAll(sel).forEach(el => el.remove()));
+  root.querySelectorAll(".ps-facility-note").forEach(block => {
+    const body = block.querySelector(".ps-facility-note-body");
+    const t = body ? String(body.innerText || "").replace(/\u00a0/g, " ").trim() : "";
+    if (!t) block.remove();
+  });
   root.querySelectorAll(".iss-photos").forEach(el => el.classList.add("iss-photos--print"));
   root.querySelectorAll(".ps-photos").forEach(el => el.classList.add("ps-photos--print"));
   root.querySelectorAll(".iss-photo-widget, .ps-photo-widget").forEach(w => {
@@ -14790,7 +14806,7 @@ function buildPersonalSheetPatientBodyFromVisits_(p) {
     const tx = showShoshin
       ? formatTreatmentTextForReportSansShoshin_((v.treatments || "").trim())
       : formatTreatmentTextForReport_((v.treatments || "").trim());
-    const head = `${md}${timePart}${showShoshin ? " 初診" : ""}`.trim();
+    const head = `${md}${timePart}${showShoshin ? " 《赤》初診《/赤》" : ""}`.trim();
     if (head || tx) lines.push(`${head}${tx ? `  ${tx}` : ""}`.trim());
     const nx = notesForPersonalSheetBody_(v.notes);
     if (nx) lines.push(nx);
@@ -15194,6 +15210,38 @@ function psBindPhotoManipulators_(container) {
   container._psPhotoClickHandler = onClick;
 }
 
+function psTakeFacilityNoteFrom_(ctx) {
+  if (!ctx) return null;
+  const text = ctx.facility_note != null ? String(ctx.facility_note) : "";
+  if (!ctx._show_facility_note && !text.trim()) return null;
+  return { text };
+}
+
+function psApplyFacilityNoteTo_(ctx, saved) {
+  if (!ctx || !saved) return;
+  ctx.facility_note = saved.text || "";
+  ctx._show_facility_note = true;
+}
+
+function buildPersonalSheetFacilityNoteHtml_(ctx, forPrint) {
+  const c = ctx || {};
+  const text = c.facility_note != null ? String(c.facility_note) : "";
+  const show = !!c._show_facility_note || !!String(text).trim();
+  if (forPrint) {
+    if (!String(text).trim()) return "";
+    return `<div class="ps-facility-note"><div class="ps-facility-note-title">その他の連絡事項</div><div class="ps-facility-note-body">${faxMarkersToHtml_(text)}</div></div>`;
+  }
+  if (!show) {
+    return `<div class="ps-facility-note-add-wrap"><button type="button" class="ps-facility-note-add">＋ その他の連絡事項</button></div>`;
+  }
+  let h = `<div class="ps-facility-note">`;
+  h += `<div class="ps-facility-note-head"><div class="ps-facility-note-title">その他の連絡事項</div>`;
+  h += `<button type="button" class="ps-facility-note-del">削除</button></div>`;
+  h += rptEditRich_("facility_note", text, { block: true, multiline: true, tag: "div", cls: "ps-facility-note-body" });
+  h += `</div>`;
+  return h;
+}
+
 function buildPersonalSheetGridDocumentHtml_(ctx, forPrint) {
   const c = ctx || {};
   const patients = c.patients || [];
@@ -15252,7 +15300,9 @@ function buildPersonalSheetGridDocumentHtml_(ctx, forPrint) {
     }
     h += `</td></tr>`;
   });
-  h += `</tbody></table></div>`;
+  h += `</tbody></table>`;
+  h += buildPersonalSheetFacilityNoteHtml_(c, forPrint);
+  h += `</div>`;
   return h;
 }
 
@@ -15356,6 +15406,7 @@ function psPullPersonalSheetEdits_() {
   const ctx = lastPersonalSheetContext;
   if (!host || !ctx) return;
   rptPullEdits_(host, ctx);
+  if (host.querySelector("[data-rpt-path='facility_note']")) ctx._show_facility_note = true;
   psReorderPatientsFromDom_(host, ctx);
   const free = document.getElementById("personalSheetClinicFree");
   const sel = document.getElementById("personalSheetClinicSelect");
@@ -15404,15 +15455,23 @@ function psBindPatientToolbarActions_(container) {
     container.removeEventListener("click", container._psToolbarClickHandler);
   }
   const onPreAction = e => {
-    const btn = e.target.closest(".ps-row-del, .ps-row-photo, .ps-row-comment");
+    const btn = e.target.closest(".ps-row-del, .ps-row-photo, .ps-row-comment, .ps-facility-note-add, .ps-facility-note-del");
     if (!btn || !container.contains(btn)) return;
     psPullPersonalSheetEdits_();
   };
   const onClick = e => {
-    const btn = e.target.closest(".ps-row-del, .ps-row-photo, .ps-row-comment");
+    const btn = e.target.closest(".ps-row-del, .ps-row-photo, .ps-row-comment, .ps-facility-note-add, .ps-facility-note-del");
     if (!btn || !container.contains(btn)) return;
     e.preventDefault();
     e.stopPropagation();
+    if (btn.classList.contains("ps-facility-note-add")) {
+      psAddFacilityNote_();
+      return;
+    }
+    if (btn.classList.contains("ps-facility-note-del")) {
+      psRemoveFacilityNote_();
+      return;
+    }
     const idx = btn.getAttribute("data-ps-idx");
     if (idx == null || idx === "") return;
     if (btn.classList.contains("ps-row-del")) psRemovePatientAtIndex_(idx);
@@ -15481,6 +15540,24 @@ function applyPersonalSheetDraftPayload_(draft, toastMsg) {
 function showPersonalSheetPreviewLoading_() {
   const host = document.getElementById("personalSheetPreviewInner");
   if (host) host.innerHTML = '<p style="color:#64748b;font-size:12px;margin:8px;text-align:center">読み込み中…</p>';
+}
+
+function psAddFacilityNote_() {
+  psPullPersonalSheetEdits_();
+  const ctx = lastPersonalSheetContext;
+  if (!ctx) return;
+  ctx._show_facility_note = true;
+  if (ctx.facility_note == null) ctx.facility_note = "";
+  psRefreshPreview_({ skipPull: true });
+}
+
+function psRemoveFacilityNote_() {
+  psPullPersonalSheetEdits_();
+  const ctx = lastPersonalSheetContext;
+  if (!ctx) return;
+  ctx._show_facility_note = false;
+  ctx.facility_note = "";
+  psRefreshPreview_({ skipPull: true });
 }
 
 function psRefreshPreview_(opts) {
@@ -15861,12 +15938,15 @@ function reloadPersonalSheetFromServer_() {
     err.textContent = "";
   }
   personalSheetGasPending = true;
+  psPullPersonalSheetEdits_();
   showPersonalSheetPreviewLoading_();
   return gasCall("getFacilityClinicalMonthlyReportData", facId, ym).then(json => {
     personalSheetGasPending = false;
     const data = JSON.parse(json);
+    const keptNote = psTakeFacilityNoteFrom_(lastPersonalSheetContext);
     if (!data.patient_count) {
       lastPersonalSheetContext = normalizePersonalSheetFromApi_(data);
+      psApplyFacilityNoteTo_(lastPersonalSheetContext, keptNote);
       if (err) {
         err.style.display = "block";
         err.textContent = "この施設・月の診療記録がありません。";
@@ -15876,6 +15956,7 @@ function reloadPersonalSheetFromServer_() {
       return;
     }
     lastPersonalSheetContext = normalizePersonalSheetFromApi_(data);
+    psApplyFacilityNoteTo_(lastPersonalSheetContext, keptNote);
     syncPersonalSheetClinicFields_(lastPersonalSheetContext);
     paintPersonalSheetPreview_(lastPersonalSheetContext);
     showToast(`全${data.patient_count}名を反映しました（居室順）`);
@@ -15990,6 +16071,10 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .ps-text-block { margin-bottom: 0; }
 .ps-body-text, .ps-extra-comment { white-space: pre-wrap; word-break: break-word; line-height: 1.42; }
 .ps-extra-comment { margin-top: 4px; padding-top: 4px; border-top: 1px dashed #94a3b8; }
+.ps-facility-note { margin-top: 10px; border: 1px solid #111; padding: 6px 8px; page-break-inside: avoid; }
+.ps-facility-note-title { font-weight: 800; font-size: 9.5pt; margin-bottom: 4px; }
+.ps-facility-note-body { white-space: pre-wrap; word-break: break-word; line-height: 1.42; }
+.ps-facility-note-add-wrap, .ps-facility-note-del { display: none !important; }
 .ps-content-cell { vertical-align: top; overflow: visible; }
 .ps-photos-wrap { margin-top: 8px; padding-top: 6px; border-top: 1px solid #cbd5e1; clear: both; }
 .ps-photos-caption { font-size: 8pt; color: #64748b; margin-bottom: 4px; }
