@@ -933,10 +933,16 @@ function buildGokanSlotComment_(visit, usedPhrases, teethData) {
   }
   const autoText = parts.join("");
   const noteText = softenNotesForMonthCare_(visit.notes);
-  if (!noteText) return autoText;
-  const notePart = noteText.endsWith("。") ? noteText : noteText + "。";
-  if (!autoText) return notePart;
-  return autoText + "\n\n" + notePart;
+  let body = autoText;
+  if (noteText) {
+    const notePart = noteText.endsWith("。") ? noteText : noteText + "。";
+    body = autoText ? autoText + "\n\n" + notePart : notePart;
+  }
+  if (!recordHasTreatment_(visit, "初診")) return body;
+  const shoshinLine = "本日、初診に入りました。";
+  if (!body) return shoshinLine;
+  if (body.indexOf(shoshinLine) === 0) return body;
+  return shoshinLine + "\n\n" + body;
 }
 
 function pickMonthlyCarePhraseNoDup_(items, usedSet) {
