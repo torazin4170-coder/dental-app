@@ -3234,13 +3234,15 @@ const UNDO_HOOK_ROOTS_ = [
   "screen-record", "patientModal", "teethEditModal", "photoCatModal",
   "screen-settings", "facilityModal", "calFacLabelModal",
   "faxDailyModal", "visitTimetableModal", "monthCareModal", "patientPpsModal",
-  "kentaiReportModal", "svListModal", "shareSheetModal", "personalSheetModal", "ofpiModal", "shindanModal"
+  "kentaiReportModal", "svListModal", "shareSheetModal", "personalSheetModal", "ofpiModal", "shindanModal",
+  "facilityHandoverModal"
 ];
 
 const UNDO_TOOLBAR_MODALS_ = [
   "facilityModal", "calFacLabelModal", "faxDailyModal", "visitTimetableModal",
   "monthCareModal", "patientPpsModal", "kentaiReportModal", "svListModal",
-  "shareSheetModal", "personalSheetModal", "ofpiModal", "shindanModal"
+  "shareSheetModal", "personalSheetModal", "ofpiModal", "shindanModal",
+  "facilityHandoverModal"
 ];
 
 function undoCloneJson_(obj) {
@@ -3254,6 +3256,7 @@ function undoCloneJson_(obj) {
 
 function getUndoContextKey_() {
   const reportModals = [
+    ["facilityHandoverModal", "facilityHandover"],
     ["shindanModal", "shindan"],
     ["ofpiModal", "ofpi"],
     ["kentaiReportModal", "kentai"],
@@ -3410,6 +3413,8 @@ function undoPullActiveEdits_() {
     issCollectFormToContext_();
   } else if (key === "personalSheet") {
     psPullPersonalSheetEdits_();
+  } else if (key === "facilityHandover") {
+    if (typeof fhPullEditsFromDom_ === "function") fhPullEditsFromDom_();
   } else if (key === "patientPps") {
     const host = document.getElementById("patientPpsPreviewInner");
     if (host && lastPatientPpsContext_) {
@@ -3645,6 +3650,9 @@ function captureUndoSnapshot_() {
     snap.shareSheet = undoCloneJson_(lastIssPreviewContext);
   } else if (ctx === "personalSheet") {
     snap.personalSheet = undoCloneJson_(lastPersonalSheetContext);
+  } else if (ctx === "facilityHandover") {
+    if (typeof fhPullEditsFromDom_ === "function") fhPullEditsFromDom_();
+    snap.facilityHandover = undoCloneJson_(lastFacilityHandoverContext_);
   } else if (ctx === "patientPps") {
     snap.patientPps = undoCloneJson_(lastPatientPpsContext_);
   } else if (ctx === "visitTimetable") {
@@ -3786,6 +3794,10 @@ function restoreUndoSnapshot_(snap) {
     if (snap.personalSheet) {
       lastPersonalSheetContext = undoCloneJson_(snap.personalSheet);
       paintPersonalSheetPreview_(lastPersonalSheetContext);
+    }
+    if (snap.facilityHandover) {
+      lastFacilityHandoverContext_ = undoCloneJson_(snap.facilityHandover);
+      paintFacilityHandover_();
     }
     if (snap.patientPps) {
       lastPatientPpsContext_ = undoCloneJson_(snap.patientPps);
@@ -11585,6 +11597,7 @@ const DOC_ARCHIVE_KIND_LABELS = {
   visitTt: "⑧ タイムテーブル",
   ofpi: "⑨ 精密検査",
   shindan: "⑩ 診断書",
+  facilityHandover: "⑪ 施設申し送り",
   clinicalMonthly: "月次（医療職）"
 };
 
@@ -11606,6 +11619,8 @@ function rptArchiveSlotKey_(kind) {
       return patientPpsDraftKey_();
     case "personalSheet":
       return personalSheetDraftKey_();
+    case "facilityHandover":
+      return facilityHandoverDraftKey_();
     case "kentai":
       return kentaiDraftKey_();
     case "visitTt":
@@ -11714,6 +11729,12 @@ function rptCollectArchivePayload_(kind) {
       psPullPersonalSheetEdits_();
       return { context: lastPersonalSheetContext };
     }
+    case "facilityHandover": {
+      if (!lastFacilityHandoverContext_) return null;
+      if (document.getElementById("facilityHandoverModalError")?.style.display === "block") return null;
+      fhPullEditsFromDom_();
+      return { context: lastFacilityHandoverContext_ };
+    }
     case "kentai": {
       const host = document.getElementById("kentai-preview-host");
       if (host && lastKentaiPreviewHdr_) {
@@ -11792,6 +11813,11 @@ function rptBuildArchiveMetaObj_(kind, payload, saveMode, status) {
       facId = payload?.context?.facility_id || getReportFacId_() || "";
       periodKey = payload?.context?.ym || "";
       title = `${label}_${safeName(payload?.context?.facility_name || facId)}_${periodKey}`;
+      break;
+    case "facilityHandover":
+      facId = payload?.context?.facility_id || getReportFacId_() || "";
+      periodKey = facId || "handover";
+      title = `${label}_${safeName(payload?.context?.facility_name || facId)}`;
       break;
     case "kentai": {
       patientId = payload?.pid || kentaiModalPatientId_() || "";
@@ -12114,6 +12140,11 @@ async function rptApplyArchivePayload_(kind, payload) {
       lastPersonalSheetContext = payload.context;
       paintPersonalSheetPreview_(payload.context);
       return true;
+    case "facilityHandover":
+      if (!payload.context) return false;
+      lastFacilityHandoverContext_ = payload.context;
+      paintFacilityHandover_();
+      return true;
     case "kentai":
       if (payload.pid) {
         document.getElementById("kentai-modal-pid").value = payload.pid;
@@ -12230,6 +12261,9 @@ async function rptOpenModalForArchiveKind_(kind) {
       break;
     case "personalSheet":
       document.getElementById("personalSheetModal")?.classList.add("show");
+      break;
+    case "facilityHandover":
+      document.getElementById("facilityHandoverModal")?.classList.add("show");
       break;
     case "kentai":
       document.getElementById("kentaiReportModal")?.classList.add("show");
@@ -16138,6 +16172,729 @@ function printPersonalSheetReport() {
   });
   rptAfterPrintArchiveAndClearDraft_("personalSheet", personalSheetDraftKey_());
 }
+
+// ══════════════════════════════════════════
+//  ⑪ 施設申し送り（次の歯科医院向け）
+// ══════════════════════════════════════════
+
+let lastFacilityHandoverContext_ = null;
+let fhLoadGen_ = 0;
+
+const FH_SPECIAL_TREATMENTS_ = new Set([
+  "虫歯治療", "歯周治療", "抜歯・外科処置",
+  "概形印象", "精密印象", "咬合採得", "試適", "完成セット"
+]);
+
+const FH_EXCLUDED_TREATMENTS_ = new Set([
+  "口腔ケア", "経過チェック", "口腔衛生指導", "フッ素塗布",
+  "フッ素塗布（F局）", "F局",
+  "X線撮影", "歯周検査", "舌圧検査", "口腔粘膜湿潤度検査",
+  "義歯調整",
+  MUSHO_KENSHIN_TREATMENT,
+  "初診", "入院中", "退所", "ご逝去"
+]);
+
+const FH_RX_DRUG_RE_ = /抗菌|抗生|サワシリン|アモキシシリン|オーグメンチン|フロモックス|ジスロマック|クラリス|ロキソニン|カロナール|アセトアミノフェン|ポンタール|ボルタレン|トランサミン|メイアクト|クラリシッド|セファクロル|レボフロキサシン|ジスロ/;
+
+function facilityHandoverDraftKey_() {
+  const facId = getReportFacId_();
+  return facId ? String(facId) : "";
+}
+
+function fhIsSpecialTreatmentCode_(code) {
+  const n = normalizeTreatmentCodeForMatch_(code);
+  if (!n) return false;
+  if (isPatientStatusTreatment_(n)) return false;
+  if (n === MUSHO_KENSHIN_TREATMENT) return false;
+  if (FH_SPECIAL_TREATMENTS_.has(n)) return true;
+  if (FH_EXCLUDED_TREATMENTS_.has(n)) return false;
+  return true;
+}
+
+function fhSpecialTreatmentsFromRecord_(rec) {
+  return recordTreatmentList_(rec)
+    .map(normalizeTreatmentCodeForMatch_)
+    .filter(fhIsSpecialTreatmentCode_);
+}
+
+function fhNotesLooksLikeDentalRx_(notes) {
+  const s = notesPlainText_(notes);
+  if (!s) return false;
+  const withoutShohoI = s.replace(/処方医/g, "");
+  if (/処方|投薬/.test(withoutShohoI)) return true;
+  if (FH_RX_DRUG_RE_.test(s)) return true;
+  return false;
+}
+
+function fhDentureLineForJaw_(data, jaw) {
+  const d = data || {};
+  const noDen = !!d["no_denture_" + jaw];
+  const lost = !!d["denture_lost_" + jaw];
+  const fd = !!d["fd_" + jaw] && !noDen;
+  const pd = !!d["pd_" + jaw] && !noDen;
+  if (!noDen && !lost && !fd && !pd) return "";
+  const label = jaw === "upper" ? "上" : "下";
+  if (noDen) return label + " なし";
+  if (lost) return label + " 紛失";
+  const kinds = [];
+  if (fd) kinds.push("総義歯");
+  if (pd) kinds.push("部分床");
+  if (!kinds.length) return "";
+  return label + " " + kinds.join("・") + "・使用中";
+}
+
+function fhDentureTextFromTeeth_(teethData) {
+  const data = teethData && typeof teethData === "object" ? teethData : {};
+  try {
+    if (typeof migrateLegacyTeethProsthesis === "function") migrateLegacyTeethProsthesis(data);
+  } catch (_) {}
+  return [fhDentureLineForJaw_(data, "upper"), fhDentureLineForJaw_(data, "lower")]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function fhConditionsText_(medical) {
+  const arr = (medical && medical.conditions) || [];
+  return arr.map(medEntryName_).filter(Boolean).join("、");
+}
+
+function fhAllergyText_(medical) {
+  const arr = (medical && medical.allergies) || [];
+  return arr.map(a => (typeof a === "string" ? a.trim() : medEntryName_(a))).filter(Boolean).join("、");
+}
+
+function fhReferenceTextFromMedical_(medical) {
+  const m = medical || {};
+  const lines = [];
+  const care = String(m.care_level || m.careLevel || "").trim();
+  const ind = String(m.independence || "").trim();
+  const dem = String(m.dementia_level || m.dementiaLevel || "").trim();
+  const cond = fhConditionsText_(m);
+  const allergy = fhAllergyText_(m);
+  if (care) lines.push("要介護度：" + care);
+  if (ind) lines.push("日常生活自立度：" + ind);
+  if (dem) lines.push("認知症自立度：" + dem);
+  if (cond) lines.push("全身疾患・既往：" + cond);
+  if (allergy) lines.push("アレルギー：" + allergy);
+  return lines.join("\n");
+}
+
+function fhFindFirstVisitYmd_(records) {
+  const withShoshin = (records || []).filter(r => recordHasTreatment_(r, "初診"));
+  if (!withShoshin.length) return "";
+  const sorted = sortHistoryRecordsChronological_(withShoshin, true);
+  return formatDateInputVal(sorted[0].visit_date) || normalizeVisitDateKey(sorted[0].visit_date) || "";
+}
+
+function fhBuildSpecialRows_(records) {
+  const sorted = sortHistoryRecordsChronological_(records || [], true);
+  const rows = [];
+  sorted.forEach(r => {
+    const treats = fhSpecialTreatmentsFromRecord_(r);
+    if (!treats.length) return;
+    const ymd = formatDateInputVal(r.visit_date) || normalizeVisitDateKey(r.visit_date) || "";
+    rows.push({
+      id: r.id != null ? String(r.id) : (ymd + "_" + treats.join("_")),
+      visit_date: ymd,
+      treatments: treats.join("、"),
+      notes_plain: notesPlainText_(r.notes)
+    });
+  });
+  return rows;
+}
+
+function fhBuildDentalRxText_(records) {
+  const sorted = sortHistoryRecordsChronological_(records || [], true);
+  const lines = [];
+  sorted.forEach(r => {
+    if (!fhNotesLooksLikeDentalRx_(r.notes)) return;
+    const dateDisp = formatVisitDateDisp(r.visit_date) || formatDateInputVal(r.visit_date) || "";
+    const plain = notesPlainText_(r.notes);
+    lines.push(dateDisp + "　" + plain);
+  });
+  return lines.join("\n\n");
+}
+
+function fhBuildCommentDraft_(specialRows) {
+  return (specialRows || [])
+    .filter(r => r.notes_plain)
+    .map(r => {
+      const dateDisp = formatVisitDateDisp(r.visit_date) || r.visit_date;
+      return dateDisp + "　" + r.notes_plain;
+    })
+    .join("\n\n");
+}
+
+function fhActivePatientsForFac_(facId) {
+  return (PATIENTS || [])
+    .filter(p => (p.status || "active") === "active" && String(p.fac) === String(facId))
+    .slice()
+    .sort(comparePatientRoom_);
+}
+
+function fhPatientMetaLine_(p, firstVisitYmd) {
+  const parts = [];
+  if (p.age != null && String(p.age) !== "") parts.push(String(p.age) + "歳");
+  if (p.gender) parts.push(String(p.gender));
+  const bd = p.birth_date ? String(p.birth_date).slice(0, 10) : "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(bd)) parts.push("生年月日 " + bd);
+  if (isPatientInHospital_(p)) parts.push("入院中");
+  if (firstVisitYmd) parts.push("初診日 " + (formatVisitDateDisp(firstVisitYmd) || firstVisitYmd));
+  return parts.join(" ｜ ");
+}
+
+function fhBuildPatientEntryFromChart_(p, bundle) {
+  const records = (bundle && bundle.records) || [];
+  const teeth = (bundle && bundle.teeth) || {};
+  const medical = (bundle && bundle.medical) || {};
+  const specialRows = fhBuildSpecialRows_(records);
+  const firstVisit = fhFindFirstVisitYmd_(records);
+  return {
+    patient_id: String(p.id),
+    included: true,
+    room: p.room != null ? String(p.room) : "",
+    name: p.name || "",
+    furi: p.furi || "",
+    age: p.age != null ? String(p.age) : "",
+    gender: p.gender || "",
+    birth_date: p.birth_date ? String(p.birth_date).slice(0, 10) : "",
+    in_hospital: isPatientInHospital_(p),
+    first_visit_ymd: firstVisit,
+    meta_line: fhPatientMetaLine_(p, firstVisit),
+    denture_text: fhDentureTextFromTeeth_(teeth),
+    reference_text: fhReferenceTextFromMedical_(medical),
+    dental_rx_text: fhBuildDentalRxText_(records),
+    notes_text: p.notes != null ? String(p.notes) : "",
+    special_rows: specialRows,
+    comment_text: fhBuildCommentDraft_(specialRows)
+  };
+}
+
+async function fhFetchPatientBundle_(pid) {
+  const [treatJson, teethJson, medJson] = await Promise.all([
+    gasCall("getTreatmentsByPatient", pid),
+    gasCallPatientRead_("getTeethData", pid),
+    gasCallPatientRead_("getMedicalInfo", pid)
+  ]);
+  let records;
+  let teeth;
+  let medical;
+  try { records = JSON.parse(treatJson || "[]"); } catch (_) { throw new Error("診療記録の解析に失敗"); }
+  try { teeth = JSON.parse(teethJson || "{}"); } catch (_) { throw new Error("歯式の解析に失敗"); }
+  try { medical = JSON.parse(medJson || "{}"); } catch (_) { throw new Error("医療情報の解析に失敗"); }
+  if (!Array.isArray(records)) records = [];
+  if (!teeth || typeof teeth !== "object") teeth = {};
+  if (!medical || typeof medical !== "object") medical = {};
+  return { records, teeth, medical };
+}
+
+function fhShowModalError_(msg) {
+  const err = document.getElementById("facilityHandoverModalError");
+  if (!err) return;
+  if (!msg) {
+    err.style.display = "none";
+    err.textContent = "";
+    return;
+  }
+  err.style.display = "block";
+  err.textContent = msg;
+}
+
+function fhSetListLoading_(text) {
+  const host = document.getElementById("facilityHandoverList");
+  if (host) {
+    host.innerHTML = `<p style="color:#64748b;font-size:13px;padding:12px;text-align:center">${escHtml(text || "読み込み中…")}</p>`;
+  }
+}
+
+function fhOnFacilityNoteInput_() {
+  if (!lastFacilityHandoverContext_) return;
+  lastFacilityHandoverContext_.facility_note = document.getElementById("fhFacilityNote")?.value || "";
+}
+
+function fhPullEditsFromDom_() {
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx) return;
+  ctx.facility_note = document.getElementById("fhFacilityNote")?.value || "";
+  const host = document.getElementById("facilityHandoverList");
+  if (!host) return;
+  (ctx.patients || []).forEach(pt => {
+    const pid = String(pt.patient_id);
+    const card = Array.from(host.querySelectorAll("[data-fh-card]")).find(el => el.getAttribute("data-fh-card") === pid);
+    if (!card) return;
+    const incl = card.querySelector("[data-fh-included]");
+    if (incl) pt.included = !!incl.checked;
+    const dent = card.querySelector("[data-fh-denture]");
+    if (dent) pt.denture_text = dent.value;
+    const ref = card.querySelector("[data-fh-reference]");
+    if (ref) pt.reference_text = ref.value;
+    const rx = card.querySelector("[data-fh-rx]");
+    if (rx) pt.dental_rx_text = rx.value;
+    const notes = card.querySelector("[data-fh-notes]");
+    if (notes) pt.notes_text = notes.value;
+    const comment = card.querySelector("[data-fh-comment]");
+    if (comment) pt.comment_text = comment.value;
+  });
+}
+
+function fhRemovePatient_(pid) {
+  fhPullEditsFromDom_();
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx) return;
+  const pt = (ctx.patients || []).find(p => String(p.patient_id) === String(pid));
+  if (!pt) return;
+  pt.included = false;
+  paintFacilityHandover_();
+}
+
+function fhRemoveSpecialRow_(pid, rowId) {
+  fhPullEditsFromDom_();
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx) return;
+  const pt = (ctx.patients || []).find(p => String(p.patient_id) === String(pid));
+  if (!pt) return;
+  pt.special_rows = (pt.special_rows || []).filter(r => String(r.id) !== String(rowId));
+  paintFacilityHandover_();
+}
+
+function paintFacilityHandover_() {
+  const ctx = lastFacilityHandoverContext_;
+  const host = document.getElementById("facilityHandoverList");
+  const noteEl = document.getElementById("fhFacilityNote");
+  if (noteEl && ctx) noteEl.value = ctx.facility_note || "";
+  if (!host) return;
+  if (!ctx) {
+    host.innerHTML = `<p style="color:#64748b;font-size:13px;padding:12px">施設を選んで開き直してください。</p>`;
+    return;
+  }
+  const patients = ctx.patients || [];
+  if (!patients.length) {
+    host.innerHTML = `<p style="color:#64748b;font-size:13px;padding:12px">この施設に有効な患者がいません。</p>`;
+    return;
+  }
+  host.innerHTML = patients.map(pt => {
+    const pid = escAttr(String(pt.patient_id));
+    const excludedCls = pt.included === false ? " opacity:.55" : "";
+    const special = (pt.special_rows || []).map(r => {
+      const dateDisp = escHtml(formatVisitDateDisp(r.visit_date) || r.visit_date || "");
+      return `<div class="fh-special-row" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px dashed #e2e8f0">
+        <div style="flex:1;min-width:0;font-size:13px;line-height:1.4">
+          <strong>${dateDisp}</strong>　${escHtml(r.treatments || "")}
+        </div>
+        <button type="button" class="btn btn-secondary" style="padding:2px 8px;font-size:12px;flex-shrink:0"
+          onclick="fhRemoveSpecialRow_('${pid}','${escAttr(String(r.id))}')" title="この紙から外す">×</button>
+      </div>`;
+    }).join("");
+    const headBits = [
+      pt.room ? ("部屋 " + pt.room) : "",
+      pt.name || "",
+      pt.furi ? ("（" + pt.furi + "）") : ""
+    ].filter(Boolean).join(" ");
+    return `<div class="card fh-patient-card${excludedCls}" data-fh-card="${pid}" style="margin-bottom:12px;padding:12px">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;margin-top:2px">
+          <input type="checkbox" data-fh-included ${pt.included === false ? "" : "checked"} onchange="fhPullEditsFromDom_();paintFacilityHandover_()">
+          印刷
+        </label>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:16px;font-weight:800;line-height:1.3">${escHtml(headBits)}</div>
+          ${pt.meta_line ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4">${escHtml(pt.meta_line)}</div>` : ""}
+        </div>
+        <button type="button" class="btn btn-secondary" style="padding:4px 10px;font-size:12px;flex-shrink:0"
+          onclick="fhRemovePatient_('${pid}')">外す</button>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label style="font-size:11px;font-weight:800;color:var(--muted)">義歯</label>
+        <textarea data-fh-denture rows="2" placeholder="上・下の義歯（空なら印刷しない）"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;line-height:1.4">${escHtml(pt.denture_text || "")}</textarea>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label style="font-size:11px;font-weight:800;color:var(--muted)">参考（要介護・既往・アレルギー）</label>
+        <textarea data-fh-reference rows="3" placeholder="空なら印刷しない"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;line-height:1.4">${escHtml(pt.reference_text || "")}</textarea>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label style="font-size:11px;font-weight:800;color:var(--muted)">歯科の投薬</label>
+        <textarea data-fh-rx rows="2" placeholder="日付とコメント（空なら印刷しない）"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;line-height:1.4">${escHtml(pt.dental_rx_text || "")}</textarea>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label style="font-size:11px;font-weight:800;color:var(--muted)">注意事項</label>
+        <textarea data-fh-notes rows="2" placeholder="患者メモ（空なら印刷しない）"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;line-height:1.4">${escHtml(pt.notes_text || "")}</textarea>
+      </div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:4px">特別な治療</div>
+        ${special || `<p style="font-size:12px;color:var(--muted);margin:0">（なし）</p>`}
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label style="font-size:11px;font-weight:800;color:var(--muted)">コメント</label>
+        <textarea data-fh-comment rows="3" placeholder="自由記入（空なら印刷しない）"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;line-height:1.4">${escHtml(pt.comment_text || "")}</textarea>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function fhBuildContextFromChart_(facId, opts) {
+  opts = opts || {};
+  const keepNote = opts.keepFacilityNote != null ? opts.keepFacilityNote : "";
+  const fac = (FACILITIES || []).find(f => String(f.id) === String(facId));
+  const patients = fhActivePatientsForFac_(facId);
+  const failures = [];
+  const entries = [];
+  const results = await Promise.all(patients.map(async p => {
+    try {
+      const bundle = await fhFetchPatientBundle_(p.id);
+      return { ok: true, p, bundle };
+    } catch (e) {
+      return { ok: false, p, error: e && e.message ? e.message : String(e) };
+    }
+  }));
+  results.forEach(r => {
+    if (!r.ok) {
+      failures.push((r.p.name || r.p.id) + "（" + r.error + "）");
+      return;
+    }
+    entries.push(fhBuildPatientEntryFromChart_(r.p, r.bundle));
+    try { mergeTreatmentRecordsIntoLocal_(r.bundle.records); } catch (_) {}
+  });
+  if (failures.length) {
+    const err = new Error("読み込みに失敗した患者があります：\n" + failures.join("\n"));
+    err.fhFailures = failures;
+    throw err;
+  }
+  return {
+    facility_id: String(facId),
+    facility_name: fac?.name || "",
+    facility_note: keepNote || "",
+    patients: entries,
+    generated_at: Date.now()
+  };
+}
+
+async function reloadFacilityHandoverFromServer_() {
+  const facId = getReportFacId_();
+  if (!facId) {
+    showToast("施設を選んでください");
+    return;
+  }
+  const gen = ++fhLoadGen_;
+  fhShowModalError_("");
+  fhSetListLoading_("診療・歯式・医療情報を読み込んでいます…");
+  try {
+    const keepNote = lastFacilityHandoverContext_ && String(lastFacilityHandoverContext_.facility_id) === String(facId)
+      ? (lastFacilityHandoverContext_.facility_note || "")
+      : (document.getElementById("fhFacilityNote")?.value || "");
+    const ctx = await fhBuildContextFromChart_(facId, { keepFacilityNote: keepNote });
+    if (gen !== fhLoadGen_) return;
+    lastFacilityHandoverContext_ = ctx;
+    paintFacilityHandover_();
+    showToast(`申し送り下書きを作成しました（${ctx.patients.length}名）`);
+  } catch (e) {
+    if (gen !== fhLoadGen_) return;
+    const msg = e && e.message ? e.message : String(e);
+    fhShowModalError_(msg);
+    fhSetListLoading_("読み込みに失敗しました。もう一度開いてください。");
+    lastFacilityHandoverContext_ = null;
+    showToast("読み込みに失敗したため、印刷・保存はできません");
+  }
+}
+
+async function fhUpdateRosterFromChart_() {
+  const ctx = lastFacilityHandoverContext_;
+  const facId = (ctx && ctx.facility_id) || getReportFacId_();
+  if (!facId) {
+    showToast("施設を選んでください");
+    return;
+  }
+  fhPullEditsFromDom_();
+  const gen = ++fhLoadGen_;
+  fhShowModalError_("");
+  showToast("名簿を更新しています…");
+  fhSetListLoading_("名簿を更新しています…");
+  try {
+    const active = fhActivePatientsForFac_(facId);
+    const activeIds = new Set(active.map(p => String(p.id)));
+    const prevById = {};
+    ((ctx && ctx.patients) || []).forEach(p => { prevById[String(p.patient_id)] = p; });
+    const kept = ((ctx && ctx.patients) || []).filter(p => activeIds.has(String(p.patient_id)));
+    const keptIds = new Set(kept.map(p => String(p.patient_id)));
+    const toAdd = active.filter(p => !keptIds.has(String(p.id)));
+    const failures = [];
+    const added = [];
+    const results = await Promise.all(toAdd.map(async p => {
+      try {
+        const bundle = await fhFetchPatientBundle_(p.id);
+        return { ok: true, p, bundle };
+      } catch (e) {
+        return { ok: false, p, error: e && e.message ? e.message : String(e) };
+      }
+    }));
+    results.forEach(r => {
+      if (!r.ok) {
+        failures.push((r.p.name || r.p.id) + "（" + r.error + "）");
+        return;
+      }
+      added.push(fhBuildPatientEntryFromChart_(r.p, r.bundle));
+    });
+    if (gen !== fhLoadGen_) return;
+    if (failures.length) {
+      fhShowModalError_("読み込みに失敗した患者があります：\n" + failures.join("\n"));
+      paintFacilityHandover_();
+      showToast("名簿更新を中断しました（読み込み失敗）");
+      return;
+    }
+    const fac = (FACILITIES || []).find(f => String(f.id) === String(facId));
+    const merged = kept.concat(added);
+    merged.sort((a, b) => {
+      const pa = { room: a.room, name: a.name };
+      const pb = { room: b.room, name: b.name };
+      return comparePatientRoom_(pa, pb);
+    });
+    // refresh room/name/meta from PATIENT master for kept
+    merged.forEach(pt => {
+      const p = PATIENTS.find(x => String(x.id) === String(pt.patient_id));
+      if (!p) return;
+      pt.room = p.room != null ? String(p.room) : pt.room;
+      pt.name = p.name || pt.name;
+      pt.furi = p.furi || pt.furi;
+      pt.age = p.age != null ? String(p.age) : pt.age;
+      pt.gender = p.gender || pt.gender;
+      pt.birth_date = p.birth_date ? String(p.birth_date).slice(0, 10) : pt.birth_date;
+      pt.in_hospital = isPatientInHospital_(p);
+      pt.meta_line = fhPatientMetaLine_(p, pt.first_visit_ymd);
+    });
+    lastFacilityHandoverContext_ = {
+      facility_id: String(facId),
+      facility_name: fac?.name || (ctx && ctx.facility_name) || "",
+      facility_note: (ctx && ctx.facility_note) || "",
+      patients: merged,
+      generated_at: Date.now()
+    };
+    paintFacilityHandover_();
+    const removed = Object.keys(prevById).filter(id => !activeIds.has(id)).length;
+    showToast(`名簿を更新しました（追加 ${added.length}・除外 ${removed}）`);
+  } catch (e) {
+    if (gen !== fhLoadGen_) return;
+    fhShowModalError_(e && e.message ? e.message : String(e));
+    paintFacilityHandover_();
+    showToast("名簿の更新に失敗しました");
+  }
+}
+
+async function fhRegenerateFromChart_() {
+  const ctx = lastFacilityHandoverContext_;
+  const facId = (ctx && ctx.facility_id) || getReportFacId_();
+  if (!facId) {
+    showToast("施設を選んでください");
+    return;
+  }
+  if (!window.confirm("義歯・参考・歯科の投薬・注意事項・コメント・特別な治療を、今のカルテの内容に戻します。手で直した文も戻ります。施設のひとことは残します。よろしいですか？")) {
+    return;
+  }
+  fhPullEditsFromDom_();
+  const gen = ++fhLoadGen_;
+  const keepNote = (ctx && ctx.facility_note) || "";
+  const includeMap = {};
+  ((ctx && ctx.patients) || []).forEach(p => {
+    includeMap[String(p.patient_id)] = p.included !== false;
+  });
+  fhShowModalError_("");
+  fhSetListLoading_("カルテから作り直しています…");
+  try {
+    const fresh = await fhBuildContextFromChart_(facId, { keepFacilityNote: keepNote });
+    if (gen !== fhLoadGen_) return;
+    // If previous list had excluded patients still active, keep them with included=false
+    const byId = {};
+    fresh.patients.forEach(p => { byId[String(p.patient_id)] = p; });
+    Object.keys(includeMap).forEach(pid => {
+      if (byId[pid]) byId[pid].included = includeMap[pid];
+    });
+    lastFacilityHandoverContext_ = fresh;
+    paintFacilityHandover_();
+    showToast("カルテから作り直しました");
+  } catch (e) {
+    if (gen !== fhLoadGen_) return;
+    fhShowModalError_(e && e.message ? e.message : String(e));
+    paintFacilityHandover_();
+    showToast("作り直しに失敗しました");
+  }
+}
+
+function applyFacilityHandoverDraftPayload_(draft, toastMsg) {
+  if (!draft || !draft.context) return false;
+  const c = draft.context;
+  if (!c.facility_id || !Array.isArray(c.patients)) return false;
+  const wantFac = getReportFacId_();
+  if (wantFac && String(c.facility_id) !== String(wantFac)) return false;
+  lastFacilityHandoverContext_ = undoCloneJson_(c);
+  fhShowModalError_("");
+  paintFacilityHandover_();
+  if (toastMsg) showToast(toastMsg);
+  return true;
+}
+
+function openFacilityHandoverModal() {
+  clearUndoStack_();
+  if (!document.getElementById("facilityHandoverModal")) {
+    showToast("⑪の画面がありません。ページを再読み込みしてください");
+    return;
+  }
+  populateMonthCareFacSelect();
+  const facId = getReportFacId_();
+  document.getElementById("facilityHandoverModal")?.classList.add("show");
+  fhShowModalError_("");
+  if (!facId) {
+    showToast("施設を選んでください");
+    fhSetListLoading_("上の「施設」を選んでから、もう一度⑪を押してください。");
+    lastFacilityHandoverContext_ = null;
+    return;
+  }
+  void rptOpenReportPreferCloudDraft_("facilityHandover", facilityHandoverDraftKey_(), {
+    applyDraft: applyFacilityHandoverDraftPayload_,
+    onGenerate: () => { void reloadFacilityHandoverFromServer_(); },
+    showLoading: () => fhSetListLoading_("読み込み中…")
+  });
+}
+
+function closeFacilityHandoverModal() {
+  document.getElementById("facilityHandoverModal")?.classList.remove("show");
+}
+
+function saveFacilityHandoverDraft_() {
+  rptDraftSavingToast_();
+  fhPullEditsFromDom_();
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx) {
+    showToast("プレビューがありません");
+    return;
+  }
+  if (document.getElementById("facilityHandoverModalError")?.style.display === "block") {
+    showToast("読み込みエラーがあるため保存できません");
+    return;
+  }
+  const key = facilityHandoverDraftKey_();
+  if (!key) {
+    showToast("施設を選んでください");
+    return;
+  }
+  rptDraftSavePromise_(rptSaveDraftAsync_("facilityHandover", key, { context: ctx }));
+}
+
+function clearFacilityHandoverDraft_() {
+  rptDraftClearingToast_();
+  const key = facilityHandoverDraftKey_();
+  if (!key) {
+    showToast("施設を選んでください");
+    return;
+  }
+  rptClearDraftAsync_("facilityHandover", key).then(() => {
+    showToast("下書きを消去しました");
+    void reloadFacilityHandoverFromServer_();
+  }).catch(() => showToast("下書きの消去に失敗しました"));
+}
+
+function fhPrintSection_(title, body) {
+  const t = String(body || "").trim();
+  if (!t) return "";
+  return `<div class="fh-sec"><div class="fh-sec-title">${escHtml(title)}</div><div class="fh-sec-body">${escHtml(t).replace(/\n/g, "<br>")}</div></div>`;
+}
+
+function buildFacilityHandoverPrintHtml_(ctx) {
+  const patients = (ctx.patients || []).filter(p => p.included !== false);
+  const note = String(ctx.facility_note || "").trim();
+  const today = getTodayYmdJstForRecord_();
+  let body = `<div class="fh-doc">
+    <h1 class="fh-title">施設申し送り（歯科）</h1>
+    <div class="fh-meta">${escHtml(ctx.facility_name || "—")}　印刷日：${escHtml(formatVisitDateDisp(today) || today)}　対象 ${patients.length} 名</div>`;
+  if (note) {
+    body += `<div class="fh-facility-note"><div class="fh-sec-title">ひとこと</div><div class="fh-sec-body">${escHtml(note).replace(/\n/g, "<br>")}</div></div>`;
+  }
+  if (!patients.length) {
+    body += `<p>印刷する患者がいません。</p></div>`;
+    return body;
+  }
+  patients.forEach((pt, idx) => {
+    const headBits = [
+      pt.room ? ("部屋 " + pt.room) : "",
+      pt.name || "",
+      pt.furi ? ("（" + pt.furi + "）") : ""
+    ].filter(Boolean).join(" ");
+    body += `<section class="fh-patient">
+      <h2 class="fh-pname">${idx + 1}. ${escHtml(headBits)}</h2>
+      ${pt.meta_line ? `<div class="fh-pmeta">${escHtml(pt.meta_line)}</div>` : ""}
+      ${fhPrintSection_("義歯", pt.denture_text)}
+      ${fhPrintSection_("参考", pt.reference_text)}
+      ${fhPrintSection_("歯科の投薬", pt.dental_rx_text)}
+      ${fhPrintSection_("注意事項", pt.notes_text)}`;
+    const rows = pt.special_rows || [];
+    if (rows.length) {
+      body += `<div class="fh-sec"><div class="fh-sec-title">特別な治療</div><ul class="fh-treat-list">`;
+      rows.forEach(r => {
+        const dateDisp = formatVisitDateDisp(r.visit_date) || r.visit_date || "";
+        body += `<li><strong>${escHtml(dateDisp)}</strong>　${escHtml(r.treatments || "")}</li>`;
+      });
+      body += `</ul></div>`;
+    }
+    body += fhPrintSection_("コメント", pt.comment_text);
+    body += `</section>`;
+  });
+  body += `</div>`;
+  return body;
+}
+
+function getFacilityHandoverPrintCss_() {
+  return `
+@page { size: A4 portrait; margin: 12mm; }
+body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif; font-size: 10.5pt; color: #111; margin: 0; }
+.fh-title { font-size: 16pt; font-weight: 800; margin: 0 0 6px; text-align: center; }
+.fh-meta { font-size: 10pt; color: #334155; margin-bottom: 12px; text-align: center; }
+.fh-facility-note { border: 1px solid #111; padding: 8px 10px; margin-bottom: 14px; }
+.fh-patient { border-top: 2px solid #111; padding: 10px 0 12px; page-break-inside: avoid; }
+.fh-pname { font-size: 12.5pt; font-weight: 800; margin: 0 0 4px; }
+.fh-pmeta { font-size: 9.5pt; color: #475569; margin-bottom: 6px; }
+.fh-sec { margin-top: 6px; }
+.fh-sec-title { font-size: 9.5pt; font-weight: 800; margin-bottom: 2px; }
+.fh-sec-body { white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+.fh-treat-list { margin: 2px 0 0; padding-left: 1.2em; }
+.fh-treat-list li { margin: 2px 0; }
+${getRptPrintWhitespaceCss_()}
+`;
+}
+
+function printFacilityHandoverReport() {
+  fhPullEditsFromDom_();
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx) {
+    showToast("印刷する内容がありません");
+    return;
+  }
+  if (document.getElementById("facilityHandoverModalError")?.style.display === "block") {
+    showToast("読み込みエラーがあるため印刷できません");
+    return;
+  }
+  const included = (ctx.patients || []).filter(p => p.included !== false);
+  if (!included.length) {
+    showToast("印刷する患者がいません");
+    return;
+  }
+  const inner = buildFacilityHandoverPrintHtml_(ctx);
+  const fac = String(ctx.facility_name || "施設").replace(/\s+/g, "").replace(/[\\/:*?"<>|]/g, "_");
+  const title = `施設申し送り_${fac}_全${included.length}名`.replace(/[\\/:*?"<>|]/g, "_");
+  const doc = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${escHtml(title)}</title><style>${getFacilityHandoverPrintCss_()}</style></head><body>${inner}</body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) {
+    showToast("ポップアップがブロックされています。許可してから再度お試しください。");
+    return;
+  }
+  w.document.open();
+  w.document.write(doc);
+  w.document.close();
+  rptTriggerPrintWhenReady_(w);
+  rptAfterPrintArchiveAndClearDraft_("facilityHandover", facilityHandoverDraftKey_());
+}
+
 
 function renderReportsTab() {
   migrateLegacyReportButton6_();

@@ -1137,7 +1137,7 @@
       </div>
 
       <div class="card" style="margin-bottom:10px">
-        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:10px">施設（①③④⑤⑥⑦⑧⑨⑩ 共通）</div>
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:10px">施設（①③④⑤⑥⑦⑧⑨⑩⑪ 共通）</div>
         <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">施設</label>
         <select id="reportFac" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit"></select>
       </div>
@@ -1213,6 +1213,11 @@
           <span class="rob-num">⑩</span>
           <span class="rob-title">診断書</span>
           <span class="rob-sub">患者・記載日 → 病名テンプレから選択 → プレビュー編集 → 印刷</span>
+        </button>
+        <button type="button" class="report-out-btn report-out-btn-accent" onclick="reportOutTap(event, () => openFacilityHandoverModal(), '⑪ 施設申し送りを開いています…')">
+          <span class="rob-num">⑪</span>
+          <span class="rob-title">施設申し送り（次の歯科医院向け）</span>
+          <span class="rob-sub">施設 → 有効患者の概要・特別な治療・コメント → 保存・印刷</span>
         </button>
       </div>
       <p class="report-hub-tone-hint" style="font-size:11px;color:var(--muted);margin:10px 0 0;line-height:1.55">青い枠（①④⑤⑥⑧）は<strong>よく使う出力を目立たせたデザイン</strong>です。選択中・ロックなどの状態表示ではありません。</p>
@@ -2076,6 +2081,40 @@
   </div>
 </div>
 
+<!-- ⑪ 施設申し送り（次の歯科医院向け） -->
+<div class="modal-overlay" id="facilityHandoverModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="facilityHandoverModalTitle">
+    <div class="modal-handle"></div>
+    <div class="fax-daily-modal-scroll-body">
+      <div class="modal-title" id="facilityHandoverModalTitle">施設申し送り（次の歯科医院向け）</div>
+      <div id="facilityHandoverModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設</strong>から、退去・逝去を除く有効な患者を居室順でまとめます。義歯・参考・歯科の投薬・注意事項・コメントはこの画面で自由に直せます（カルテ本体には戻りません）。保存すると書類履歴に残ります。</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="fhUpdateRosterFromChart_()">🔄 名簿を更新</button>
+        <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="fhRegenerateFromChart_()">↺ カルテから作り直す</button>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label for="fhFacilityNote" style="font-size:12px;font-weight:700;color:var(--muted)">施設全体のひとこと（任意）</label>
+        <textarea id="fhFacilityNote" rows="2" placeholder="例：令和○年○月をもって訪問歯科を終了します。申し送りをお願いします。"
+          style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;line-height:1.45"
+          oninput="fhOnFacilityNoteInput_()"></textarea>
+      </div>
+      <div id="facilityHandoverList"></div>
+    </div>
+    <div class="fax-daily-modal-foot">
+      <div class="modal-actions report-preview-modal-footer" style="margin-top:0">
+        <button type="button" class="btn btn-secondary" onclick="saveFacilityHandoverDraft_()">💾 下書き保存</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('facilityHandover','overwrite')">📁 保存（書類履歴）</button>
+        <button type="button" class="btn btn-secondary" onclick="saveReportArchiveForModal_('facilityHandover','new')">📁 別名</button>
+        <button type="button" class="btn btn-secondary" onclick="openDocumentArchiveForCurrentReport_()">📂 履歴</button>
+        <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearFacilityHandoverDraft_()">🗑 下書き消去</button>
+        <button type="button" class="btn-cancel" onclick="closeFacilityHandoverModal()">閉じる</button>
+        <button type="button" class="btn-ok" onclick="printFacilityHandoverReport()">🖨 印刷 / PDFに保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- 写真トリミング（⑥施設月次・③情報共有シート 共通） -->
 <div class="modal-overlay" id="psPhotoCropModal" aria-hidden="true">
   <div class="modal-sheet ps-crop-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="psPhotoCropModalTitle">
@@ -2121,6 +2160,7 @@
             <option value="visitTt">⑧ タイムテーブル</option>
             <option value="ofpi">⑨ 精密検査</option>
             <option value="shindan">⑩ 診断書</option>
+            <option value="facilityHandover">⑪ 施設申し送り</option>
           </select>
         </div>
         <div>
