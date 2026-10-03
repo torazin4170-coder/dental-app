@@ -2094,6 +2094,12 @@
         <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="fhRegenerateFromChart_()">↺ カルテから作り直す</button>
       </div>
       <div class="form-group" style="margin-bottom:12px">
+        <label for="fhReportTitle" style="font-size:12px;font-weight:700;color:var(--muted)">印刷タイトル（ヘッダー・任意編集）</label>
+        <input type="text" id="fhReportTitle" placeholder="施設申し送り（歯科）"
+          style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit;font-weight:800"
+          oninput="fhOnReportTitleInput_()">
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
         <label for="fhFacilityNote" style="font-size:12px;font-weight:700;color:var(--muted)">施設全体のひとこと（任意）</label>
         <textarea id="fhFacilityNote" rows="2" placeholder="例：令和○年○月をもって訪問歯科を終了します。申し送りをお願いします。"
           style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;line-height:1.45"

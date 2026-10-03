@@ -16181,7 +16181,7 @@ let lastFacilityHandoverContext_ = null;
 let fhLoadGen_ = 0;
 
 const FH_SPECIAL_TREATMENTS_ = new Set([
-  "虫歯治療", "歯周治療", "抜歯・外科処置",
+  "虫歯治療", "歯周治療", "抜歯・外科処置", "義歯調整",
   "概形印象", "精密印象", "咬合採得", "試適", "完成セット"
 ]);
 
@@ -16189,7 +16189,6 @@ const FH_EXCLUDED_TREATMENTS_ = new Set([
   "口腔ケア", "経過チェック", "口腔衛生指導", "フッ素塗布",
   "フッ素塗布（F局）", "F局",
   "X線撮影", "歯周検査", "舌圧検査", "口腔粘膜湿潤度検査",
-  "義歯調整",
   MUSHO_KENSHIN_TREATMENT,
   "初診", "入院中", "退所", "ご逝去"
 ]);
@@ -16286,6 +16285,18 @@ function fhFindFirstVisitYmd_(records) {
   return formatDateInputVal(sorted[0].visit_date) || normalizeVisitDateKey(sorted[0].visit_date) || "";
 }
 
+function fhHospitalStayYmds_(records) {
+  const sorted = sortHistoryRecordsChronological_(records || [], true);
+  const out = [];
+  sorted.forEach(r => {
+    if (!recordHasTreatment_(r, "入院中")) return;
+    const ymd = formatDateInputVal(r.visit_date) || normalizeVisitDateKey(r.visit_date) || "";
+    if (ymd && !out.includes(ymd)) out.push(ymd);
+  });
+  return out;
+}
+
+
 function fhBuildSpecialRows_(records) {
   const sorted = sortHistoryRecordsChronological_(records || [], true);
   const rows = [];
@@ -16332,7 +16343,7 @@ function fhActivePatientsForFac_(facId) {
     .sort(comparePatientRoom_);
 }
 
-function fhPatientMetaLine_(p, firstVisitYmd) {
+function fhPatientMetaLine_(p, firstVisitYmd, hospitalYmds) {
   const parts = [];
   if (p.age != null && String(p.age) !== "") parts.push(String(p.age) + "歳");
   if (p.gender) parts.push(String(p.gender));
@@ -16340,6 +16351,10 @@ function fhPatientMetaLine_(p, firstVisitYmd) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(bd)) parts.push("生年月日 " + bd);
   if (isPatientInHospital_(p)) parts.push("入院中");
   if (firstVisitYmd) parts.push("初診日 " + (formatVisitDateDisp(firstVisitYmd) || firstVisitYmd));
+  const hosp = (hospitalYmds || []).filter(Boolean);
+  if (hosp.length) {
+    parts.push("入院日 " + hosp.map(d => formatVisitDateDisp(d) || d).join("、"));
+  }
   return parts.join(" ｜ ");
 }
 
@@ -16349,6 +16364,7 @@ function fhBuildPatientEntryFromChart_(p, bundle) {
   const medical = (bundle && bundle.medical) || {};
   const specialRows = fhBuildSpecialRows_(records);
   const firstVisit = fhFindFirstVisitYmd_(records);
+  const hospitalYmds = fhHospitalStayYmds_(records);
   return {
     patient_id: String(p.id),
     included: true,
@@ -16360,7 +16376,8 @@ function fhBuildPatientEntryFromChart_(p, bundle) {
     birth_date: p.birth_date ? String(p.birth_date).slice(0, 10) : "",
     in_hospital: isPatientInHospital_(p),
     first_visit_ymd: firstVisit,
-    meta_line: fhPatientMetaLine_(p, firstVisit),
+    hospital_ymds: hospitalYmds,
+    meta_line: fhPatientMetaLine_(p, firstVisit, hospitalYmds),
     denture_text: fhDentureTextFromTeeth_(teeth),
     reference_text: fhReferenceTextFromMedical_(medical),
     dental_rx_text: fhBuildDentalRxText_(records),
@@ -16407,14 +16424,24 @@ function fhSetListLoading_(text) {
   }
 }
 
+function fhDefaultReportTitle_() {
+  return "施設申し送り（歯科）";
+}
+
 function fhOnFacilityNoteInput_() {
   if (!lastFacilityHandoverContext_) return;
   lastFacilityHandoverContext_.facility_note = document.getElementById("fhFacilityNote")?.value || "";
 }
 
+function fhOnReportTitleInput_() {
+  if (!lastFacilityHandoverContext_) return;
+  lastFacilityHandoverContext_.report_title = document.getElementById("fhReportTitle")?.value || "";
+}
+
 function fhPullEditsFromDom_() {
   const ctx = lastFacilityHandoverContext_;
   if (!ctx) return;
+  ctx.report_title = document.getElementById("fhReportTitle")?.value || "";
   ctx.facility_note = document.getElementById("fhFacilityNote")?.value || "";
   const host = document.getElementById("facilityHandoverList");
   if (!host) return;
@@ -16460,6 +16487,8 @@ function fhRemoveSpecialRow_(pid, rowId) {
 function paintFacilityHandover_() {
   const ctx = lastFacilityHandoverContext_;
   const host = document.getElementById("facilityHandoverList");
+  const titleEl = document.getElementById("fhReportTitle");
+  if (titleEl && ctx) titleEl.value = ctx.report_title || fhDefaultReportTitle_();
   const noteEl = document.getElementById("fhFacilityNote");
   if (noteEl && ctx) noteEl.value = ctx.facility_note || "";
   if (!host) return;
@@ -16539,6 +16568,9 @@ function paintFacilityHandover_() {
 async function fhBuildContextFromChart_(facId, opts) {
   opts = opts || {};
   const keepNote = opts.keepFacilityNote != null ? opts.keepFacilityNote : "";
+  const keepTitle = opts.keepReportTitle != null && String(opts.keepReportTitle).trim()
+    ? String(opts.keepReportTitle).trim()
+    : fhDefaultReportTitle_();
   const fac = (FACILITIES || []).find(f => String(f.id) === String(facId));
   const patients = fhActivePatientsForFac_(facId);
   const failures = [];
@@ -16567,6 +16599,7 @@ async function fhBuildContextFromChart_(facId, opts) {
   return {
     facility_id: String(facId),
     facility_name: fac?.name || "",
+    report_title: keepTitle,
     facility_note: keepNote || "",
     patients: entries,
     generated_at: Date.now()
@@ -16583,10 +16616,14 @@ async function reloadFacilityHandoverFromServer_() {
   fhShowModalError_("");
   fhSetListLoading_("診療・歯式・医療情報を読み込んでいます…");
   try {
-    const keepNote = lastFacilityHandoverContext_ && String(lastFacilityHandoverContext_.facility_id) === String(facId)
+    const sameFac = lastFacilityHandoverContext_ && String(lastFacilityHandoverContext_.facility_id) === String(facId);
+    const keepNote = sameFac
       ? (lastFacilityHandoverContext_.facility_note || "")
       : (document.getElementById("fhFacilityNote")?.value || "");
-    const ctx = await fhBuildContextFromChart_(facId, { keepFacilityNote: keepNote });
+    const keepTitle = sameFac
+      ? (lastFacilityHandoverContext_.report_title || fhDefaultReportTitle_())
+      : (document.getElementById("fhReportTitle")?.value || fhDefaultReportTitle_());
+    const ctx = await fhBuildContextFromChart_(facId, { keepFacilityNote: keepNote, keepReportTitle: keepTitle });
     if (gen !== fhLoadGen_) return;
     lastFacilityHandoverContext_ = ctx;
     paintFacilityHandover_();
@@ -16663,11 +16700,12 @@ async function fhUpdateRosterFromChart_() {
       pt.gender = p.gender || pt.gender;
       pt.birth_date = p.birth_date ? String(p.birth_date).slice(0, 10) : pt.birth_date;
       pt.in_hospital = isPatientInHospital_(p);
-      pt.meta_line = fhPatientMetaLine_(p, pt.first_visit_ymd);
+      pt.meta_line = fhPatientMetaLine_(p, pt.first_visit_ymd, pt.hospital_ymds || []);
     });
     lastFacilityHandoverContext_ = {
       facility_id: String(facId),
       facility_name: fac?.name || (ctx && ctx.facility_name) || "",
+      report_title: (ctx && ctx.report_title) || fhDefaultReportTitle_(),
       facility_note: (ctx && ctx.facility_note) || "",
       patients: merged,
       generated_at: Date.now()
@@ -16696,6 +16734,7 @@ async function fhRegenerateFromChart_() {
   fhPullEditsFromDom_();
   const gen = ++fhLoadGen_;
   const keepNote = (ctx && ctx.facility_note) || "";
+  const keepTitle = (ctx && ctx.report_title) || fhDefaultReportTitle_();
   const includeMap = {};
   ((ctx && ctx.patients) || []).forEach(p => {
     includeMap[String(p.patient_id)] = p.included !== false;
@@ -16703,7 +16742,7 @@ async function fhRegenerateFromChart_() {
   fhShowModalError_("");
   fhSetListLoading_("カルテから作り直しています…");
   try {
-    const fresh = await fhBuildContextFromChart_(facId, { keepFacilityNote: keepNote });
+    const fresh = await fhBuildContextFromChart_(facId, { keepFacilityNote: keepNote, keepReportTitle: keepTitle });
     if (gen !== fhLoadGen_) return;
     // If previous list had excluded patients still active, keep them with included=false
     const byId = {};
@@ -16804,9 +16843,10 @@ function fhPrintSection_(title, body) {
 function buildFacilityHandoverPrintHtml_(ctx) {
   const patients = (ctx.patients || []).filter(p => p.included !== false);
   const note = String(ctx.facility_note || "").trim();
+  const title = String(ctx.report_title || "").trim() || fhDefaultReportTitle_();
   const today = getTodayYmdJstForRecord_();
   let body = `<div class="fh-doc">
-    <h1 class="fh-title">施設申し送り（歯科）</h1>
+    <h1 class="fh-title">${escHtml(title)}</h1>
     <div class="fh-meta">${escHtml(ctx.facility_name || "—")}　印刷日：${escHtml(formatVisitDateDisp(today) || today)}　対象 ${patients.length} 名</div>`;
   if (note) {
     body += `<div class="fh-facility-note"><div class="fh-sec-title">ひとこと</div><div class="fh-sec-body">${escHtml(note).replace(/\n/g, "<br>")}</div></div>`;
