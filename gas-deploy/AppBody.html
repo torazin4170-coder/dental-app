@@ -1012,13 +1012,19 @@
       .qo-fac-block { margin-bottom: 18px; }
       .qo-fac-title { font-size: 13px; font-weight: 800; color: #334155; margin: 0 0 8px; padding: 8px 10px; background: #f1f5f9; border-radius: 8px; }
       .qo-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-      .qo-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 520px; table-layout: fixed; }
+      .qo-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; table-layout: fixed; }
       .qo-table th, .qo-table td { border-bottom: 1px solid #e2e8f0; padding: 8px 6px; vertical-align: middle; }
       .qo-table th { background: #f8fafc; font-weight: 800; color: #475569; font-size: 11px; position: sticky; top: 0; z-index: 1; }
       .qo-table .qo-col-no { width: 52px; }
       .qo-table .qo-col-name { width: 34%; }
       .qo-table .qo-col-dr { width: 72px; }
       .qo-table .qo-col-exam { width: auto; }
+      .qo-table .qo-col-ofpi { width: 92px; }
+      .qo-table th.qo-th-ofpi, .qo-table td.qo-ofpi { text-align: center; padding: 6px 4px; }
+      .qo-ofpi-cell { display: flex; align-items: center; justify-content: center; gap: 4px; }
+      .qo-ofpi-mark { font-size: 15px; font-weight: 800; color: #94a3b8; min-width: 1.1em; line-height: 1; }
+      .qo-ofpi-mark-on { color: #15803d; }
+      .qo-ofpi-btn { border: 1.5px solid #2563eb; background: #eff6ff; color: #1d4ed8; border-radius: 8px; font-weight: 800; font-size: 12px; padding: 6px 8px; min-height: 32px; cursor: pointer; font-family: inherit; touch-action: manipulation; }
       .qo-table th.qo-th-no, .qo-table td.qo-no { text-align: center; white-space: nowrap; }
       .qo-table th.qo-th-name, .qo-table td.qo-name { text-align: left; font-weight: 700; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .qo-table th.qo-th-dr, .qo-table td.qo-dr { text-align: center; font-size: 10px; padding: 6px 4px; }
@@ -1251,6 +1257,8 @@
         <span><i class="qo-swatch qo-ok"></i>可＝前回から3か月経過</span>
         <span><i class="qo-swatch qo-wait"></i>日付〜＝その日まで不可</span>
         <span><i class="qo-swatch qo-block"></i>不可＝無歯顎または残根のみ（F局）</span>
+        <span>☑＝初診の日以降に、舌圧と湿潤度をそれぞれ初めて行った人</span>
+        <span>⑨＝その患者の口腔機能精密検査を開く</span>
       </div>
       <div id="quarterlyOverviewHost" class="qo-host">
         <p style="padding:16px;color:var(--muted);text-align:center;line-height:1.55">「一覧を更新」を押すと、施設ごとの表を表示します。</p>

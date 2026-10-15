@@ -5074,6 +5074,110 @@ function quarterlyOverviewCellHtml_(info) {
 
 /** 定期検査一覧用。患者ID → 最新歯式JSON文字列。未取得は null */
 let quarterlyTeethByPid_ = null;
+/** 初回チェック用。全期間の診療記録。未取得は null（そのときは直近18か月に戻す） */
+let quarterlyLifetimeRecords_ = null;
+/** 患者ID → { shoshin, tongue, moisture, ready } */
+let quarterlyOfpiFirstByPid_ = {};
+
+function earliestYmdOnOrAfter_(ymds, fromYmd) {
+  let best = "";
+  (ymds || []).forEach(ymd => {
+    if (!ymd || ymd < fromYmd) return;
+    if (!best || ymd < best) best = ymd;
+  });
+  return best;
+}
+
+/** 初診チップの日以降で、舌圧と湿潤度がそれぞれ初めてあるか */
+function rebuildQuarterlyOfpiFirstIndex_() {
+  const src = Array.isArray(quarterlyLifetimeRecords_)
+    ? quarterlyLifetimeRecords_
+    : (quarterlyOverviewRecords_ || []);
+  const acc = {};
+  src.forEach(r => {
+    const pid = String(r.patient_id || "");
+    if (!pid) return;
+    const ymd = formatDateInputVal(r.visit_date) || "";
+    if (!ymd) return;
+    if (!acc[pid]) acc[pid] = { shoshin: "", tongues: [], moistures: [] };
+    if (recordHasTreatment_(r, "初診") && (!acc[pid].shoshin || ymd < acc[pid].shoshin)) {
+      acc[pid].shoshin = ymd;
+    }
+    if (recordHasTreatment_(r, PERIODIC_EXAM_TONGUE_)) acc[pid].tongues.push(ymd);
+    if (recordHasTreatment_(r, PERIODIC_EXAM_MOISTURE_)) acc[pid].moistures.push(ymd);
+  });
+  const out = {};
+  Object.keys(acc).forEach(pid => {
+    const a = acc[pid];
+    const tongue = a.shoshin ? earliestYmdOnOrAfter_(a.tongues, a.shoshin) : "";
+    const moisture = a.shoshin ? earliestYmdOnOrAfter_(a.moistures, a.shoshin) : "";
+    out[pid] = {
+      shoshin: a.shoshin,
+      tongue,
+      moisture,
+      ready: !!(a.shoshin && tongue && moisture)
+    };
+  });
+  quarterlyOfpiFirstByPid_ = out;
+}
+
+function quarterlyOfpiFirstHint_(info) {
+  if (!info || !info.shoshin) return "初診の記録がないため、チェックは付きません";
+  if (info.ready) {
+    return `初診 ${formatMdJpShort_(info.shoshin)} 以降の初回：舌圧 ${formatMdJpShort_(info.tongue)}、湿潤度 ${formatMdJpShort_(info.moisture)}`;
+  }
+  if (info.tongue && !info.moisture) return "舌圧は初診のあとにあります。湿潤度はまだです";
+  if (info.moisture && !info.tongue) return "湿潤度は初診のあとにあります。舌圧はまだです";
+  return "初診のあとの舌圧・湿潤度はまだありません";
+}
+
+function quarterlyOfpiCellHtml_(pid) {
+  const info = quarterlyOfpiFirstByPid_[String(pid)] || null;
+  const mark = info && info.ready
+    ? `<span class="qo-ofpi-mark qo-ofpi-mark-on" title="${escAttr(quarterlyOfpiFirstHint_(info))}">☑</span>`
+    : `<span class="qo-ofpi-mark" title="${escAttr(quarterlyOfpiFirstHint_(info))}">—</span>`;
+  const btn = `<button type="button" class="qo-ofpi-btn" data-qo-ofpi="${escAttr(String(pid))}" title="この患者の口腔機能精密検査を開く">⑨</button>`;
+  return `<div class="qo-ofpi-cell">${mark}${btn}</div>`;
+}
+
+function ensureQuarterlyOverviewClicks_() {
+  const host = document.getElementById("quarterlyOverviewHost");
+  if (!host || host.dataset.qoOfpiBound === "1") return;
+  host.dataset.qoOfpiBound = "1";
+  host.addEventListener("click", e => {
+    const btn = e.target.closest("[data-qo-ofpi]");
+    if (!btn) return;
+    const pid = btn.getAttribute("data-qo-ofpi");
+    if (pid) openOfpiFromQuarterly_(pid);
+  });
+}
+
+async function openOfpiFromQuarterly_(pid) {
+  const id = String(pid || "").trim();
+  if (!id) return;
+  const p = (PATIENTS || []).find(x => String(x.id) === id);
+  if (!p) {
+    showToast("患者が見つかりません");
+    return;
+  }
+  ofpiPinnedPatientId_ = id;
+  clearUndoStack_();
+  document.getElementById("ofpiModal")?.classList.add("show");
+  showReportPreviewLoading_("ofpiPreviewInner", "読み込んでいます…");
+  showToast((p.name || "患者") + "の精密検査を開いています…");
+  try {
+    await loadOfpiFormDataForPatient_(id, null, { toastDraft: true, pickExamDateFromRecords: true });
+  } catch (e) {
+    showToast("精密検査を開けませんでした");
+  }
+}
+
+async function fetchQuarterlyLifetimeRecords_() {
+  const json = await gasCall("getMonthlyRecords", "*");
+  const arr = JSON.parse(json || "[]");
+  quarterlyLifetimeRecords_ = Array.isArray(arr) ? arr : [];
+  return quarterlyLifetimeRecords_;
+}
 
 function parseQuarterlyTeethJson_(raw) {
   if (raw && typeof raw === "object") return raw;
@@ -5228,13 +5332,17 @@ function renderQuarterlyOverviewTable_() {
     `<col class="qo-col-name">` +
     (showDrCol ? `<col class="qo-col-dr">` : "") +
     QUARTERLY_OVERVIEW_CODES_.map(() => `<col class="qo-col-exam">`).join("") +
+    `<col class="qo-col-ofpi">` +
     `</colgroup>`;
   const headDr = showDrCol ? `<th class="qo-th-dr">担当Dr</th>` : "";
-  let html = `<p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.45">基準日: <strong>${escHtml(getQuarterlyOverviewRefYmd_())}</strong> ／ 直近18か月の記録を参照（${quarterlyOverviewRecords_.length}件）</p>`;
+  rebuildQuarterlyOfpiFirstIndex_();
+  ensureQuarterlyOverviewClicks_();
+  const lifeNote = Array.isArray(quarterlyLifetimeRecords_) ? "初回チェックは全期間" : "初回チェックは直近18か月";
+  let html = `<p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.45">基準日: <strong>${escHtml(getQuarterlyOverviewRefYmd_())}</strong> ／ 3か月の可否は直近18か月（${quarterlyOverviewRecords_.length}件）／ ${escHtml(lifeNote)}</p>`;
   groups.forEach(g => {
     const facName = (g.facility && g.facility.name) ? String(g.facility.name) : "施設";
     html += `<div class="qo-fac-block"><div class="qo-fac-title">${escHtml(facName)}（${g.rows.length}名）</div>`;
-    html += `<div class="qo-scroll"><table class="qo-table">${colgroup}<thead><tr><th class="qo-th-no">番号</th><th class="qo-th-name">氏名</th>${headDr}${headCols}</tr></thead><tbody>`;
+    html += `<div class="qo-scroll"><table class="qo-table">${colgroup}<thead><tr><th class="qo-th-no">番号</th><th class="qo-th-name">氏名</th>${headDr}${headCols}<th class="qo-th-ofpi">精密</th></tr></thead><tbody>`;
     g.rows.forEach(({ patient: p, cols }) => {
       html += `<tr><td class="qo-no">${escHtml(visitTimetablePatientNo_(p) || "—")}</td>`;
       html += `<td class="qo-name">${escHtml(p.name || p.id || "")}</td>`;
@@ -5250,6 +5358,7 @@ function renderQuarterlyOverviewTable_() {
           : quarterlyOverviewCellHtml_(cols[code]);
         html += `<td>${cell}</td>`;
       });
+      html += `<td class="qo-ofpi">${quarterlyOfpiCellHtml_(p.id)}</td>`;
       html += "</tr>";
     });
     html += "</tbody></table></div></div>";
@@ -5289,23 +5398,31 @@ async function refreshQuarterlyOverview_() {
   quarterlyOverviewLoading_ = true;
   if (host) {
     host.innerHTML =
-      '<div class="fax-loading-wrap"><div class="fax-loading-dots">…</div><div class="fax-loading-msg">直近18か月の診療記録を取得しています…</div></div>';
+      '<div class="fax-loading-wrap"><div class="fax-loading-dots">…</div><div class="fax-loading-msg">診療記録と歯式を取得しています…</div></div>';
   }
   try {
-    await fetchQuarterlyOverviewRecords_();
-    let teethOk = true;
-    try {
-      await fetchQuarterlyTeethMap_();
-    } catch (teethErr) {
-      teethOk = false;
+    const teethPromise = fetchQuarterlyTeethMap_().catch(() => {
       quarterlyTeethByPid_ = null;
-    }
+      return null;
+    });
+    const lifePromise = fetchQuarterlyLifetimeRecords_().catch(() => {
+      quarterlyLifetimeRecords_ = null;
+      return null;
+    });
+    await fetchQuarterlyOverviewRecords_();
+    const [, life] = await Promise.all([teethPromise, lifePromise]);
+    const teethOk = quarterlyTeethByPid_ != null;
+    const lifeOk = life != null;
     renderQuarterlyOverviewTable_();
-    showToast(
-      teethOk
-        ? "定期検査一覧を更新しました"
-        : "一覧は更新しましたが、歯式の判定は取れなかったため F局の「不可」は出ていません"
-    );
+    let msg = "定期検査一覧を更新しました";
+    if (!teethOk && !lifeOk) {
+      msg = "一覧は更新しました。歯式と全期間の記録は取れなかったため、F局の不可と初回チェックは一部だけです";
+    } else if (!teethOk) {
+      msg = "一覧は更新しました。歯式が取れなかったため、F局の「不可」は出ていません";
+    } else if (!lifeOk) {
+      msg = "一覧は更新しました。全期間は取れなかったため、初回チェックは直近18か月だけです";
+    }
+    showToast(msg);
   } catch (e) {
     if (host) {
       host.innerHTML = `<p style="padding:16px;color:#dc2626;text-align:center;line-height:1.55">取得に失敗しました: ${escHtml(e && e.message ? e.message : String(e))}</p>`;
@@ -19228,6 +19345,8 @@ const DENTAL_DIAGNOSIS_TEMPLATES_={"title":"歯科病名テンプレート集","
 
 /** ── ⑨ 口腔機能精密検査 ── */
 let lastOfpiContext_ = null;
+/** 定期検査一覧から⑨を開いた患者。出力帳票の患者欄とは別に保持する */
+let ofpiPinnedPatientId_ = "";
 let ofpiDraftSaveTimer_ = null;
 let ofpiTeethDataCache_ = null;
 let ofpiTciChartBound_ = false;
@@ -19463,7 +19582,7 @@ function enrichOfpiContext_(ctx) {
 }
 
 function collectOfpiForm_() {
-  const pid = getReportPatientId_() || lastOfpiContext_?.patientId || "";
+  const pid = ofpiPinnedPatientId_ || getReportPatientId_() || lastOfpiContext_?.patientId || "";
   const examDate = document.getElementById("ofpiExamDate")?.value || lastOfpiContext_?.examDate || "";
   const p = (PATIENTS || []).find(x => String(x.id) === String(pid));
   const fac = p ? (FACILITIES || []).find(f => String(f.id) === String(p.fac)) : null;
@@ -19738,6 +19857,7 @@ function closeOralFunctionPrecisionModal() {
     ofpiDraftSaveTimer_ = null;
   }
   flushOfpiDraft_();
+  ofpiPinnedPatientId_ = "";
   document.getElementById("ofpiModal")?.classList.remove("show");
 }
 
@@ -20263,6 +20383,7 @@ async function reloadOfpiFormForPatient_() {
 }
 
 async function openOralFunctionPrecisionModal() {
+  ofpiPinnedPatientId_ = "";
   clearUndoStack_();
   repopulateKentaiReportPatients_();
   const sel = document.getElementById("reportPatient");
