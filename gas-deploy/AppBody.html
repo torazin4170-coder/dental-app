@@ -1027,6 +1027,8 @@
       .qo-cell.qo-never { background: #f1f5f9; color: #64748b; }
       .qo-cell.qo-ok { background: #dcfce7; color: #166534; }
       .qo-cell.qo-wait { background: #fef3c7; color: #92400e; }
+      .qo-cell.qo-block { background: #fee2e2; color: #991b1b; }
+      .qo-swatch.qo-block { background: #fca5a5; }
       #spanel-quarterly select, #spanel-quarterly input { touch-action: manipulation; }
       .rpt-edit { outline: none; border-radius: 3px; min-width: 0.4em; cursor: text; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; touch-action: manipulation; }
       .rpt-edit:hover { background: rgba(37, 99, 235, 0.07); }
@@ -1054,6 +1056,7 @@
       .tt-doc .tt-meta { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: 10.5pt; font-weight: 700; }
       .tt-doc .tt-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; }
       .tt-doc .tt-table th, .tt-doc .tt-table td { border: 1px solid #000; padding: 0; vertical-align: middle; }
+      .tt-doc tr.tt-row-limit td { background-color: #eef2f6; background-image: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(100,116,139,0.16) 3px, rgba(100,116,139,0.16) 4px); }
       .tt-doc .tt-table th { background: #fff; font-size: 9.5pt; font-weight: 800; text-align: center; height: 7mm; }
       .tt-doc .tt-cell-inner { display: flex; align-items: center; justify-content: center; padding: 1px 4px; box-sizing: border-box; text-align: center; line-height: 1.2; }
       .tt-doc .tt-col-mark .tt-cell-inner { font-size: 10pt; }
@@ -1086,6 +1089,7 @@
       .tt-edit-table input.tt-inp-treat { text-align: left; padding-left: 10px; padding-right: 6px; }
       .tt-edit-table input.tt-inp-name { text-align: left; padding-left: 10px; padding-right: 6px; }
       .tt-edit-table input.tt-inp:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: #fff; }
+      .tt-edit-table tr.tt-row-limit td { background-color: #eef2f6; background-image: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(100,116,139,0.18) 3px, rgba(100,116,139,0.18) 4px); }
       .tt-edit-table input.tt-inp-left { text-align: center; }
       .tt-edit-table .tt-name-readonly { display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 6px; text-align: center; font-size: 13px; line-height: 1.25; }
     </style>
@@ -1246,6 +1250,7 @@
         <span><i class="qo-swatch qo-never"></i>未＝記録なし（選択可）</span>
         <span><i class="qo-swatch qo-ok"></i>可＝前回から3か月経過</span>
         <span><i class="qo-swatch qo-wait"></i>日付〜＝その日まで不可</span>
+        <span><i class="qo-swatch qo-block"></i>不可＝無歯顎または残根のみ（F局）</span>
       </div>
       <div id="quarterlyOverviewHost" class="qo-host">
         <p style="padding:16px;color:var(--muted);text-align:center;line-height:1.55">「一覧を更新」を押すと、施設ごとの表を表示します。</p>
@@ -1637,7 +1642,7 @@
         <div class="tt-edit-row-actions">
           <button type="button" class="btn btn-secondary tt-add-row-btn" onclick="addVisitTimetableManualRow_()">＋ 行を追加</button>
         </div>
-        <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">患者行の<strong>番号・患者氏名</strong>は<strong>患者リストの最新データ</strong>を自動表示します。患者行の氏名右<strong style="color:#dc2626">×</strong>でその患者を除外、<strong>手書き行</strong>の<strong style="color:#dc2626">×</strong>で行自体を削除できます（下書き消去でリセット）。<strong>＋ 行を追加</strong>で空行を増やせます。<strong>時刻・治療内容</strong>は任意に修正できます。左端の<strong>当月診療回数</strong>も自動（0回は空欄）。稲毛施設は右プレビューで<strong>各行の担当Dr</strong>も変更できます。</p>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.45">患者行の<strong>番号・患者氏名</strong>は<strong>患者リストの最新データ</strong>を自動表示します。患者行の氏名右<strong style="color:#dc2626">×</strong>でその患者を除外、<strong>手書き行</strong>の<strong style="color:#dc2626">×</strong>で行自体を削除できます（下書き消去でリセット）。<strong>＋ 行を追加</strong>で空行を増やせます。<strong>時刻・治療内容</strong>は任意に修正できます。左端の<strong>当月診療回数</strong>も自動（0回は空欄）。患者の「月の受診回数上限」に達している行は薄い網掛けです（入力や印刷はそのままできます）。稲毛施設は右プレビューで<strong>各行の担当Dr</strong>も変更できます。</p>
       </div>
       <div class="tt-preview-pane">
         <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;flex-shrink:0">プレビュー（印刷イメージ）</div>

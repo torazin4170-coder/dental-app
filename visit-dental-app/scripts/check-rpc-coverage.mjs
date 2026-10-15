@@ -1,5 +1,5 @@
 /**
- * RPC 実装数の静的確認（54 件の allowlist と照合）
+ * RPC 実装数の静的確認（55 件の allowlist と照合）
  */
 import { IMPLEMENTED_RPC } from '../lib/rpc-handlers.js'
 
@@ -26,6 +26,7 @@ const EXPECTED = [
   'getPatientPersonalSheetData',
   'getTeethData',
   'saveTeethData',
+  'getLatestTeethDataMap',
   'getTeethDataHistory',
   'getFacilityDailyReportData',
   'getFaxDailyBatchData',
@@ -72,4 +73,4 @@ if (missing.length) {
 if (extra.length) {
   console.warn('EXTRA (ok):', extra.join(', '))
 }
-console.log('OK: GAS allowlist 54 RPC すべて実装済み')
+console.log('OK: GAS allowlist 55 RPC すべて実装済み')

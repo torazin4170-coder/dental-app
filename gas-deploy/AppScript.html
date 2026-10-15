@@ -2068,6 +2068,70 @@ function toothKeyToShortLabel_(key) {
   return jaw + side + m[3];
 }
 
+/**
+ * F局（フッ素）を算定できない歯式か。
+ * 残っている歯が1本もない＝無歯顎。残っている歯がすべて C4・根C・「残根」＝残根のみ。
+ * 印のない歯は「歯がある」扱いで、空の歯式は算定可。義歯ボタンだけでは止めない。
+ * 算定できる歯が1本でもあれば null。
+ */
+function fkyokuBillingBlockFromTeeth_(data) {
+  if (!data || typeof data !== "object") return null;
+  const upper = [8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 5, 6, 7, 8];
+  const lower = [8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 5, 6, 7, 8];
+  const keys = buildToothKeys("upper", upper).concat(buildToothKeys("lower", lower));
+  let present = 0;
+  let root = 0;
+  keys.forEach(key => {
+    const missed = !!data[key + "_miss"];
+    const cond = data[key] ? String(data[key]) : "";
+    const known = parseTeethCondParts(cond).known;
+    if (missed || known.includes("EXT")) return;
+    if (known.includes("C4") || known.includes("根C") || cond.indexOf("残根") !== -1) {
+      root += 1;
+      return;
+    }
+    present += 1;
+  });
+  if (present > 0) return null;
+  if (root > 0) {
+    return {
+      kind: "root",
+      title: "残っている歯が残根（C4）のみのため、F局は算定できません"
+    };
+  }
+  return {
+    kind: "edentulous",
+    title: "無歯顎（残っている歯がない）ため、F局は算定できません"
+  };
+}
+
+/** 診療記録のいまの歯式で F局を選べないか。過去の記録を開き直しているときは消さない */
+function fkyokuChartBlockForRecord_(opts) {
+  const block = fkyokuBillingBlockFromTeeth_(currentTeethData);
+  if (!block) return null;
+  opts = opts || {};
+  if (opts.editingTreatmentId && selectedPatient) {
+    const rec = (localRecords || []).find(r => String(r.id) === String(opts.editingTreatmentId));
+    if (
+      rec &&
+      String(rec.patient_id) === String(selectedPatient.id) &&
+      recordHasTreatment_(rec, PERIODIC_EXAM_FKYOKU_)
+    ) {
+      return null;
+    }
+  }
+  return block;
+}
+
+function onFkyokuChartBlockedTap_() {
+  const block = fkyokuBillingBlockFromTeeth_(currentTeethData);
+  showToast(block ? block.title : "この歯式ではF局を選べません");
+}
+
+function refreshTreatmentChipsIfRecord_() {
+  if (currentScreen === "record" && selectedPatient) renderTreatmentChips_();
+}
+
 function extractFkyokuTeethFromTeethData_(teethData) {
   const teeth = [];
   const labels = [];
@@ -5008,6 +5072,68 @@ function quarterlyOverviewCellHtml_(info) {
   return `<span class="qo-cell ${m.cls}" title="${escAttr(m.title)}">${escHtml(m.text)}</span>`;
 }
 
+/** 定期検査一覧用。患者ID → 最新歯式JSON文字列。未取得は null */
+let quarterlyTeethByPid_ = null;
+
+function parseQuarterlyTeethJson_(raw) {
+  if (raw && typeof raw === "object") return raw;
+  try {
+    const o = JSON.parse(raw || "{}");
+    return o && typeof o === "object" ? o : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function quarterlyFkyokuBlockForPatient_(pid) {
+  if (!quarterlyTeethByPid_) return null;
+  const raw = quarterlyTeethByPid_[String(pid)];
+  return fkyokuBillingBlockFromTeeth_(parseQuarterlyTeethJson_(raw));
+}
+
+function quarterlyOverviewFkyokuCellHtml_(patientId, info) {
+  const block = quarterlyFkyokuBlockForPatient_(patientId);
+  if (block) {
+    return `<span class="qo-cell qo-block" title="${escAttr(block.title)}">不可</span>`;
+  }
+  return quarterlyOverviewCellHtml_(info);
+}
+
+async function fetchQuarterlyTeethMapLegacy_() {
+  const patients = (PATIENTS || []).filter(p => (p.status || "active") === "active");
+  const map = {};
+  const CONC = 4;
+  for (let i = 0; i < patients.length; i += CONC) {
+    const chunk = patients.slice(i, i + CONC);
+    const parts = await Promise.all(
+      chunk.map(async p => {
+        try {
+          const json = await gasCall("getTeethData", p.id);
+          return { id: String(p.id), json: json || "{}" };
+        } catch (_) {
+          return { id: String(p.id), json: "{}" };
+        }
+      })
+    );
+    parts.forEach(x => {
+      map[x.id] = x.json;
+    });
+  }
+  return map;
+}
+
+async function fetchQuarterlyTeethMap_() {
+  try {
+    const json = await gasCall("getLatestTeethDataMap");
+    const map = JSON.parse(json || "{}");
+    quarterlyTeethByPid_ = map && typeof map === "object" ? map : {};
+  } catch (e) {
+    if (!isUnknownRpcError_(e)) throw e;
+    quarterlyTeethByPid_ = await fetchQuarterlyTeethMapLegacy_();
+  }
+  return quarterlyTeethByPid_;
+}
+
 function getQuarterlyOverviewInageDoctorFilter_() {
   const facId = String((document.getElementById("quarterlyOverviewFac") || {}).value || "all");
   const sel = document.getElementById("quarterlyOverviewInageDoctor");
@@ -5119,7 +5245,10 @@ function renderQuarterlyOverviewTable_() {
         html += `<td class="qo-dr">${drCell}</td>`;
       }
       QUARTERLY_OVERVIEW_CODES_.forEach(code => {
-        html += `<td>${quarterlyOverviewCellHtml_(cols[code])}</td>`;
+        const cell = code === PERIODIC_EXAM_FKYOKU_
+          ? quarterlyOverviewFkyokuCellHtml_(p.id, cols[code])
+          : quarterlyOverviewCellHtml_(cols[code]);
+        html += `<td>${cell}</td>`;
       });
       html += "</tr>";
     });
@@ -5164,8 +5293,19 @@ async function refreshQuarterlyOverview_() {
   }
   try {
     await fetchQuarterlyOverviewRecords_();
+    let teethOk = true;
+    try {
+      await fetchQuarterlyTeethMap_();
+    } catch (teethErr) {
+      teethOk = false;
+      quarterlyTeethByPid_ = null;
+    }
     renderQuarterlyOverviewTable_();
-    showToast("定期検査一覧を更新しました");
+    showToast(
+      teethOk
+        ? "定期検査一覧を更新しました"
+        : "一覧は更新しましたが、歯式の判定は取れなかったため F局の「不可」は出ていません"
+    );
   } catch (e) {
     if (host) {
       host.innerHTML = `<p style="padding:16px;color:#dc2626;text-align:center;line-height:1.55">取得に失敗しました: ${escHtml(e && e.message ? e.message : String(e))}</p>`;
@@ -5215,7 +5355,12 @@ function renderTreatmentChips_() {
   const pid = selectedPatient.id;
   const chipOpts = getTreatmentChipRenderOptions_();
 
+  const fkyokuBlock = fkyokuChartBlockForRecord_(chipOpts);
   [...selectedTreatments].forEach(c => {
+    if (c === PERIODIC_EXAM_FKYOKU_ && fkyokuBlock) {
+      selectedTreatments.delete(c);
+      return;
+    }
     if (QUARTERLY_RESTRICTED_TREATMENTS[c] && isRestricted(pid, c, chipOpts)) {
       selectedTreatments.delete(c);
     }
@@ -5243,16 +5388,22 @@ function renderTreatmentChips_() {
         ${g.items
           .map(c => {
             const isMkChip = c === MUSHO_KENSHIN_TREATMENT;
+            const isFkyokuBlocked = c === PERIODIC_EXAM_FKYOKU_ && !!fkyokuBlock;
             const isQr = !!QUARTERLY_RESTRICTED_TREATMENTS[c];
             const info = isQr ? getQuarterlyRestrictionInfo_(pid, c, chipOpts) : null;
-            const restr = !isMkChip && isRestricted(pid, c, chipOpts);
+            const restr = !isMkChip && (isFkyokuBlocked || isRestricted(pid, c, chipOpts));
             const mkCls = isMkChip ? " chip-musho-kenshin" : "";
             const eligibleCls = isQr && !restr ? " chip-quarterly-eligible" : "";
             const qmetaCls = isQr ? " chip-has-qmeta" : "";
             const lastRec = isQr && info && info.lastYmd ? getLastRestrictedTreatmentRecord_(pid, c, chipOpts) : null;
             const prevDetail = lastRec ? formatQuarterlyChipPrevDetail_(c, lastRec) : "";
             let metaHtml = "";
-            if (isQr && info) {
+            if (isFkyokuBlocked) {
+              if (info && info.lastYmd) {
+                metaHtml += `<span class="chip-q-meta">前回 ${formatMdJpShort_(info.lastYmd)}</span>`;
+              }
+              metaHtml += `<span class="chip-q-meta chip-q-wait">不可</span>`;
+            } else if (isQr && info) {
               if (info.lastYmd) {
                 metaHtml += `<span class="chip-q-meta">前回 ${formatMdJpShort_(info.lastYmd)}</span>`;
                 if (prevDetail) metaHtml += `<span class="chip-q-meta chip-q-val">${escHtml(prevDetail)}</span>`;
@@ -5264,15 +5415,23 @@ function renderTreatmentChips_() {
               }
             }
             const prevDetailTitle = prevDetail ? ` / ${prevDetail}` : "";
-            const title = restr
+            const chipCodeEsc = String(c).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+            const title = isFkyokuBlocked
+              ? fkyokuBlock.title
+              : restr
               ? `${c}：前回 ${formatMdJpShort_(info.lastYmd)}${prevDetailTitle}（${formatMdJpShort_(info.eligibleFromYmd)}から選択可）`
               : isQr && info && info.lastYmd
                 ? `${c}：前回 ${formatMdJpShort_(info.lastYmd)}${prevDetailTitle} — 今回選択可`
                 : c;
+            const chipClick = isFkyokuBlocked
+              ? "onFkyokuChartBlockedTap_()"
+              : restr
+                ? `onRestrictedTreatmentChipTap_('${chipCodeEsc}')`
+                : `toggleChip('${chipCodeEsc}')`;
             return `<div class="chip${mkCls}${qmetaCls}${eligibleCls}${restr ? " restricted" : ""}"
             id="chip-${encodeId(c)}"
             data-treat-code="${escAttr(c)}"
-            onclick="${restr ? `onRestrictedTreatmentChipTap_('${String(c).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}')` : `toggleChip('${String(c).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}')`}"
+            onclick="${chipClick}"
             title="${escAttr(title)}">
             <span class="chip-q-label">${escHtml(c)}</span>${metaHtml}
           </div>`;
@@ -6115,6 +6274,7 @@ function onTeethChartPointerDown(e) {
     st.longPressTimer = null;
     paintTeethChart();
     scheduleDraftHudUpdate();
+    refreshTreatmentChipsIfRecord_();
     try {
       if (navigator.vibrate) navigator.vibrate(12);
     } catch (_) {}
@@ -6171,7 +6331,10 @@ function onTeethChartPointerEnd(e) {
   try {
     block.releasePointerCapture(e.pointerId);
   } catch (_) {}
-  if (st.isDrag) return;
+  if (st.isDrag) {
+    refreshTreatmentChipsIfRecord_();
+    return;
+  }
   if (st.longPressHandled) return;
   if (st.downKey) openTeethEditModal(st.downKey);
 }
@@ -6826,6 +6989,7 @@ function renderTeethSummary(pid) {
     migrateLegacyTeethProsthesis(currentTeethData);
     paintTeethChart();
     refreshTeethBaseline();
+    refreshTreatmentChipsIfRecord_();
     if (host) {
       host.removeAttribute("aria-busy");
       delete host.dataset.teethLoading;
@@ -7015,6 +7179,7 @@ function applyTeethEditModal() {
   teethEditRedSet = new Set();
   paintTeethChart();
   scheduleDraftHudUpdate();
+  refreshTreatmentChipsIfRecord_();
 }
 
 function clearCurrentToothAndClose() {
@@ -7027,6 +7192,7 @@ function clearCurrentToothAndClose() {
   teethEditRedSet = new Set();
   paintTeethChart();
   scheduleDraftHudUpdate();
+  refreshTreatmentChipsIfRecord_();
 }
 
 function getDefaultSaveRecordBtnLabel_() {
@@ -18467,9 +18633,34 @@ function visitTimetableDefaultTreat_(p) {
   return parts.join("、");
 }
 
+/** ⑧の回数。開いたときに取った診療記録と、画面に残っている記録の多い方を使う */
+function visitTimetableMonthlyVisitCount_(patientId, refYmd) {
+  const ymd = refYmd || getTodayYmdJstForRecord_();
+  const fromLocal = getPatientMonthlyVisitCount_(patientId, ymd);
+  const cache = visitTimetablePatientRecordsCache_ || {};
+  const key = String(patientId || "");
+  if (!key || !Object.prototype.hasOwnProperty.call(cache, key)) return fromLocal;
+  const d = parseYmdNoon_(ymd) || new Date();
+  const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  let fromCache = 0;
+  (cache[key] || []).forEach(r => {
+    if (isCountableVisitRecord_(r, ym)) fromCache += 1;
+  });
+  return Math.max(fromCache, fromLocal);
+}
+
+function visitTimetableLimitReached_(patientId, refYmd, count) {
+  if (!patientId) return false;
+  const p = (PATIENTS || []).find(x => String(x.id) === String(patientId));
+  const lim = parseMonthlyVisitLimit_(p);
+  if (!lim) return false;
+  const n = count != null ? count : visitTimetableMonthlyVisitCount_(patientId, refYmd);
+  return n >= lim;
+}
+
 function visitTimetableAutoM0_(patientId, refYmd) {
   if (!patientId) return "";
-  const n = getPatientMonthlyVisitCount_(patientId, refYmd || getTodayYmdJstForRecord_());
+  const n = visitTimetableMonthlyVisitCount_(patientId, refYmd || getTodayYmdJstForRecord_());
   return n > 0 ? String(n) : "";
 }
 
@@ -18477,8 +18668,12 @@ function visitTimetableAutoM0_(patientId, refYmd) {
 function visitTimetableApplyAutoM0ToRows_(rows, refYmd) {
   const ymd = refYmd || getTodayYmdJstForRecord_();
   return (rows || []).map(r => {
-    if (!r.patientId) return r;
-    return Object.assign({}, r, { m0: visitTimetableAutoM0_(r.patientId, ymd) });
+    if (!r.patientId) return Object.assign({}, r, { limitReached: false });
+    const n = visitTimetableMonthlyVisitCount_(r.patientId, ymd);
+    return Object.assign({}, r, {
+      m0: n > 0 ? String(n) : "",
+      limitReached: visitTimetableLimitReached_(r.patientId, ymd, n)
+    });
   });
 }
 
@@ -18613,7 +18808,9 @@ function renderVisitTimetableEditor_() {
       const nameCell = r.patientId
         ? visitTimetableMasterFieldCellHtml_("name", r)
         : visitTimetableManualNameCellHtml_(r);
-      return `<tr data-tt-key="${escAttr(r.key)}"${pidAttr}>
+      const limitCls = r.limitReached ? " tt-row-limit" : "";
+      const limitTitle = r.limitReached ? ` title="今月の診療回数が上限に達しています"` : "";
+      return `<tr class="${limitCls.trim()}"${limitTitle} data-tt-key="${escAttr(r.key)}"${pidAttr}>
       <td>${visitTimetableM0CellHtml_(r)}</td>
       <td>${r.patientId ? visitTimetableMasterFieldCellHtml_("no", r) : visitTimetableInpHtml_("no", r.no)}</td>
       <td>${nameCell}</td>
@@ -18890,6 +19087,7 @@ body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .tt-doc .tt-col-time .tt-cell-inner { font-size: 10pt; letter-spacing: 0.06em; padding: 0 6px; }
 .tt-doc .tt-col-treat .tt-cell-inner { font-size: 9pt; }
 .tt-doc .tt-dr-sel { font-size: 8pt; max-width: 100%; border: 1px solid #64748b; border-radius: 3px; padding: 1px 2px; background: #fff; }
+.tt-doc tr.tt-row-limit td { background-color: #eef2f6; background-image: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(100,116,139,0.16) 3px, rgba(100,116,139,0.16) 4px); }
 ${perSheet}
 ${pageBreak}
 ${getRptPrintWhitespaceCss_()}
@@ -18933,7 +19131,8 @@ function buildVisitTimetablePageHtml_(opts) {
       const p = PATIENTS.find(x => String(x.id) === String(r.patientId));
       nameInner = `<span>${escHtml(r.name || "")}</span>${visitTimetableRowDoctorSelectHtml_(r.patientId, p ? p.assigned_doctor : r.assignedDoctor)}`;
     }
-    h += `<tr>`;
+    const limitCls = r.limitReached ? ` class="tt-row-limit"` : "";
+    h += `<tr${limitCls}>`;
     h += `<td class="tt-col-mark">${cellBody(r.m0)}</td>`;
     h += `<td class="tt-col-mark">${cellBody(r.no)}</td>`;
     h += `<td class="tt-col-name"><span class="tt-cell-inner">${nameInner}</span></td>`;

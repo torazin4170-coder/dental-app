@@ -409,6 +409,51 @@ const HANDLERS = {
     return 'ok'
   },
 
+  async getLatestTeethDataMap() {
+    const supabase = getSupabaseAdmin()
+    const { data: patients, error: pErr } = await supabase.from('patients').select('id')
+    if (pErr) throw new Error(pErr.message)
+    const need = new Set((patients || []).map((p) => String(p.id || '')).filter(Boolean))
+    const map = {}
+    const seen = {}
+    const pageSize = 1000
+    let from = 0
+    for (;;) {
+      const { data, error } = await supabase
+        .from('teeth_data')
+        .select('id, patient_id, json')
+        .order('id', { ascending: false })
+        .range(from, from + pageSize - 1)
+      if (error) throw new Error(error.message)
+      const rows = data || []
+      for (const row of rows) {
+        const pid = String(row.patient_id || '')
+        if (!pid || !need.has(pid) || map[pid] != null) continue
+        seen[pid] = (seen[pid] || 0) + 1
+        if (seen[pid] > 30) {
+          map[pid] = '{}'
+          continue
+        }
+        const raw =
+          row.json != null && typeof row.json === 'object'
+            ? JSON.stringify(row.json)
+            : row.json != null
+              ? String(row.json).trim()
+              : ''
+        if (!raw || raw === '{}' || raw === 'null') continue
+        map[pid] = raw
+      }
+      const done = [...need].every((id) => map[id] != null)
+      if (done || rows.length < pageSize) break
+      from += pageSize
+      if (from > 50000) break
+    }
+    need.forEach((id) => {
+      if (map[id] == null) map[id] = '{}'
+    })
+    return JSON.stringify(map)
+  },
+
   async getTeethDataHistory([patientId]) {
     const pid = String(patientId || '').trim()
     if (!pid) return '[]'
