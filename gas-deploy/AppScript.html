@@ -16797,6 +16797,24 @@ function fhRemovePatient_(pid) {
   paintFacilityHandover_();
 }
 
+function fhRestorePatient_(pid) {
+  fhPullEditsFromDom_();
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx) return;
+  const pt = (ctx.patients || []).find(p => String(p.patient_id) === String(pid));
+  if (!pt) return;
+  pt.included = true;
+  paintFacilityHandover_();
+}
+
+function fhPatientHeadBits_(pt) {
+  return [
+    pt.room ? ("部屋 " + pt.room) : "",
+    pt.name || "",
+    pt.furi ? ("（" + pt.furi + "）") : ""
+  ].filter(Boolean).join(" ");
+}
+
 function fhClearCourse_(pid) {
   fhPullEditsFromDom_();
   const ctx = lastFacilityHandoverContext_;
@@ -16895,13 +16913,13 @@ function paintFacilityHandover_() {
     return;
   }
   const patients = ctx.patients || [];
-  if (!patients.length) {
-    host.innerHTML = `<p style="color:#64748b;font-size:13px;padding:12px">この施設に有効な患者がいません。</p>`;
-    return;
-  }
-  host.innerHTML = patients.map(pt => {
+  host.innerHTML = fhFacilityHandoverListHtml_(patients);
+}
+
+function fhFacilityHandoverListHtml_(patients) {
+  const shown = (patients || []).filter(pt => pt.included !== false);
+  const cards = shown.map(pt => {
     const pid = escAttr(String(pt.patient_id));
-    const excludedCls = pt.included === false ? " opacity:.55" : "";
     const special = (pt.special_rows || []).map(r => {
       const dateDisp = escHtml(formatVisitDateDisp(r.visit_date) || r.visit_date || "");
       return `<div class="fh-special-row" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px dashed #e2e8f0">
@@ -16912,12 +16930,8 @@ function paintFacilityHandover_() {
           onclick="fhRemoveSpecialRow_('${pid}','${escAttr(String(r.id))}')" title="この紙から外す">×</button>
       </div>`;
     }).join("");
-    const headBits = [
-      pt.room ? ("部屋 " + pt.room) : "",
-      pt.name || "",
-      pt.furi ? ("（" + pt.furi + "）") : ""
-    ].filter(Boolean).join(" ");
-    return `<div class="card fh-patient-card${excludedCls}" data-fh-card="${pid}" style="margin-bottom:12px;padding:12px">
+    const headBits = fhPatientHeadBits_(pt);
+    return `<div class="card fh-patient-card" data-fh-card="${pid}" style="margin-bottom:12px;padding:12px">
       <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;margin-top:2px">
           <input type="checkbox" data-fh-included ${pt.included === false ? "" : "checked"} onchange="fhPullEditsFromDom_();paintFacilityHandover_()">
@@ -16972,6 +16986,29 @@ function paintFacilityHandover_() {
       </div>
     </div>`;
   }).join("");
+  const hiddenHtml = fhExcludedPatientsHtml_(patients);
+  if (!cards && !hiddenHtml) {
+    return `<p style="color:#64748b;font-size:13px;padding:12px">この施設に有効な患者がいません。</p>`;
+  }
+  const emptyNote = cards ? "" : `<p style="color:#64748b;font-size:13px;padding:12px">印刷する患者がいません。下の「戻す」で画面に戻せます。</p>`;
+  return emptyNote + cards + hiddenHtml;
+}
+
+function fhExcludedPatientsHtml_(patients) {
+  const hidden = (patients || []).filter(pt => pt.included === false);
+  if (!hidden.length) return "";
+  const rows = hidden.map(pt => {
+    const pid = escAttr(String(pt.patient_id));
+    const head = escHtml(fhPatientHeadBits_(pt) || "（氏名なし）");
+    return `<div data-fh-hidden="${pid}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 2px;border-bottom:1px dashed #e2e8f0">
+      <span style="font-size:13px;color:var(--muted)">${head}</span>
+      <button type="button" class="btn btn-secondary" style="padding:4px 10px;font-size:12px;flex-shrink:0" onclick="fhRestorePatient_('${pid}')">戻す</button>
+    </div>`;
+  }).join("");
+  return `<div class="fh-excluded-list" style="margin-top:14px;padding-top:8px;border-top:1px solid var(--border)">
+    <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:4px">印刷しない ${hidden.length} 名（この画面の本文と紙には出しません）</div>
+    ${rows}
+  </div>`;
 }
 
 async function fhBuildContextFromChart_(facId, opts) {

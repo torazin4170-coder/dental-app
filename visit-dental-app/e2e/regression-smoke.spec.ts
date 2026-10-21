@@ -345,4 +345,49 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('facility handover hides excluded patient body on the screen', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        fhFacilityHandoverListHtml_?: (patients: unknown[]) => string
+        buildFacilityHandoverPrintHtml_?: (ctx: unknown) => string
+      }
+      if (typeof w.fhFacilityHandoverListHtml_ !== 'function' || typeof w.buildFacilityHandoverPrintHtml_ !== 'function') return false
+      const html = w.fhFacilityHandoverListHtml_([
+        { patient_id: 'a', included: true, room: '1', name: '印刷する人', denture_text: '上 総義歯', course_text: '', comment_text: '', special_rows: [] },
+        { patient_id: 'b', included: false, room: '2', name: '外した人', denture_text: '下の義歯だけ', course_text: '秘密の経過', comment_text: 'まとめコメント', special_rows: [] },
+      ])
+      const cardCount = (html.match(/data-fh-card=/g) || []).length
+      const screenOk = cardCount === 1
+        && html.includes('data-fh-card="a"')
+        && !html.includes('data-fh-card="b"')
+        && html.includes('印刷する人')
+        && html.includes('上 総義歯')
+        && html.includes('data-fh-hidden="b"')
+        && html.includes('外した人')
+        && html.includes('戻す')
+        && !html.includes('下の義歯だけ')
+        && !html.includes('秘密の経過')
+        && !html.includes('まとめコメント')
+      const print = w.buildFacilityHandoverPrintHtml_({
+        facility_name: '施設',
+        facility_note: '',
+        patients: [
+          { included: true, name: '印刷する人', room: '1', course_text: '', comment_text: '', special_rows: [] },
+          { included: false, name: '外した人', room: '2', denture_text: '下の義歯だけ', course_text: '秘密の経過', comment_text: 'まとめコメント', special_rows: [] },
+        ],
+      })
+      const printOk = print.includes('印刷する人') && !print.includes('外した人') && !print.includes('秘密の経過')
+      return screenOk && printOk
+    })
+    expect(ok).toBe(true)
+  })
 })
