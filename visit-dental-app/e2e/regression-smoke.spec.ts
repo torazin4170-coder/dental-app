@@ -288,4 +288,61 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(fns.every(Boolean)).toBe(true)
   })
+
+  test('facility handover course starts at first visit and omits hitokoto heading', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        fhBuildCourseText_?: (records: unknown[], firstVisitYmd: string) => string
+        buildFacilityHandoverPrintHtml_?: (ctx: unknown) => string
+      }
+      if (typeof w.fhBuildCourseText_ !== 'function' || typeof w.buildFacilityHandoverPrintHtml_ !== 'function') return false
+      const course = w.fhBuildCourseText_([
+        { visit_date: '2024-01-10', treatments: '口腔ケア', notes: '初診より前' },
+        { visit_date: '2024-04-01', treatments: '初診、口腔ケア', notes: '《赤》初診メモ《/赤》' },
+        { visit_date: '2024-05-01', treatments: '義歯調整', notes: '' },
+      ], '2024-04-01')
+      const courseOk = course.includes('2024年4月1日') && course.includes('初診、口腔ケア')
+        && course.includes('初診メモ') && !course.includes('《赤》')
+        && course.includes('2024年5月1日') && course.includes('義歯調整')
+        && !course.includes('初診より前') && !course.includes('2024年1月10日')
+      const all = w.fhBuildCourseText_([
+        { visit_date: '2024-01-10', treatments: '口腔ケア', notes: '' },
+      ], '')
+      const html = w.buildFacilityHandoverPrintHtml_({
+        facility_name: 'ペルソレイユ市川',
+        report_title: '施設申し送り（歯科）',
+        facility_note: '令和8年10月30日をもって訪問診療を終了します。',
+        patients: [{
+          included: true,
+          room: '101',
+          name: '山田',
+          course_text: '2024年4月1日　初診',
+          comment_text: 'まとめ',
+          special_rows: [],
+        }],
+      })
+      const emptyCourse = w.buildFacilityHandoverPrintHtml_({
+        facility_name: '施設',
+        facility_note: '',
+        patients: [{ included: true, name: '山田', course_text: '   ', comment_text: '' }],
+      })
+      const printOk = html.includes('令和8年10月30日をもって訪問診療を終了します。')
+        && !html.includes('ひとこと')
+        && html.includes('治療経過')
+        && html.includes('2024年4月1日　初診')
+        && html.includes('コメント')
+        && html.includes('まとめ')
+        && !emptyCourse.includes('治療経過')
+      return courseOk && all.includes('2024年1月10日') && printOk
+    })
+    expect(ok).toBe(true)
+  })
 })

@@ -16568,6 +16568,40 @@ function fhFindFirstVisitYmd_(records) {
   return formatDateInputVal(sorted[0].visit_date) || normalizeVisitDateKey(sorted[0].visit_date) || "";
 }
 
+function fhRecordYmd_(rec) {
+  return formatDateInputVal(rec && rec.visit_date) || normalizeVisitDateKey(rec && rec.visit_date) || "";
+}
+
+function fhPlainCourseNotes_(raw) {
+  return notesPlainText_(raw)
+    .replace(/《\/?赤》/g, "")
+    .replace(/《\/?黄》/g, "")
+    .replace(/【\/?黒枠】/g, "")
+    .replace(/【\/?枠】/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** 初診日以降の診療を、日付の古い順でプレーンテキストにする。初診が無い人は全期間。 */
+function fhBuildCourseText_(records, firstVisitYmd) {
+  const sorted = sortHistoryRecordsChronological_(records || [], true);
+  const start = String(firstVisitYmd || "").trim();
+  const blocks = [];
+  sorted.forEach(r => {
+    const ymd = fhRecordYmd_(r);
+    if (start && ymd && ymd < start) return;
+    const treats = recordTreatmentList_(r);
+    const notes = fhPlainCourseNotes_(r && r.notes);
+    if (!treats.length && !notes) return;
+    const dateDisp = (ymd && formatVisitDateDisp(ymd)) || "日付不明";
+    let block = dateDisp;
+    if (treats.length) block += "　" + treats.join("、");
+    if (notes) block += "\n" + notes;
+    blocks.push(block);
+  });
+  return blocks.join("\n\n");
+}
+
 function fhHospitalStayYmds_(records) {
   const sorted = sortHistoryRecordsChronological_(records || [], true);
   const out = [];
@@ -16666,6 +16700,7 @@ function fhBuildPatientEntryFromChart_(p, bundle) {
     dental_rx_text: fhBuildDentalRxText_(records),
     notes_text: p.notes != null ? String(p.notes) : "",
     special_rows: specialRows,
+    course_text: fhBuildCourseText_(records, firstVisit),
     comment_text: fhBuildCommentDraft_(specialRows)
   };
 }
@@ -16742,6 +16777,11 @@ function fhPullEditsFromDom_() {
     if (rx) pt.dental_rx_text = rx.value;
     const notes = card.querySelector("[data-fh-notes]");
     if (notes) pt.notes_text = notes.value;
+    const course = card.querySelector("[data-fh-course]");
+    if (course) {
+      const pending = course.getAttribute("data-fh-course-pending") === "1";
+      if (!(pending && !String(course.value || "").trim())) pt.course_text = course.value;
+    }
     const comment = card.querySelector("[data-fh-comment]");
     if (comment) pt.comment_text = comment.value;
   });
@@ -16755,6 +16795,81 @@ function fhRemovePatient_(pid) {
   if (!pt) return;
   pt.included = false;
   paintFacilityHandover_();
+}
+
+function fhClearCourse_(pid) {
+  fhPullEditsFromDom_();
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx) return;
+  const pt = (ctx.patients || []).find(p => String(p.patient_id) === String(pid));
+  if (!pt) return;
+  pt.course_text = "";
+  paintFacilityHandover_();
+}
+
+async function fhRefillCourse_(pid) {
+  fhPullEditsFromDom_();
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx) return;
+  const pt = (ctx.patients || []).find(p => String(p.patient_id) === String(pid));
+  if (!pt) return;
+  if (String(pt.course_text || "").trim()) {
+    if (!window.confirm("この患者の治療経過を、カルテの初診日からの内容に戻します。この欄で消したり直した文も戻ります。よろしいですか？")) return;
+  }
+  const stamp = ctx.generated_at;
+  showToast("治療経過を読み込んでいます…");
+  try {
+    const bundle = await fhFetchPatientBundle_(pid);
+    const cur = lastFacilityHandoverContext_;
+    if (!cur || cur.generated_at !== stamp) return;
+    fhPullEditsFromDom_();
+    const target = (cur.patients || []).find(p => String(p.patient_id) === String(pid));
+    if (!target) return;
+    target.course_text = fhBuildCourseText_(bundle.records, fhFindFirstVisitYmd_(bundle.records));
+    paintFacilityHandover_();
+    showToast("治療経過を入れ直しました");
+  } catch (e) {
+    showToast("治療経過の読み込みに失敗しました");
+  }
+}
+
+let fhCourseBackfillGen_ = 0;
+
+async function fhBackfillMissingCourse_() {
+  const ctx = lastFacilityHandoverContext_;
+  if (!ctx || !Array.isArray(ctx.patients)) return;
+  const missing = ctx.patients.filter(pt => pt && !Object.prototype.hasOwnProperty.call(pt, "course_text"));
+  if (!missing.length) return;
+  const gen = ++fhCourseBackfillGen_;
+  const stamp = ctx.generated_at;
+  const facId = String(ctx.facility_id || "");
+  try {
+    const results = await Promise.all(missing.map(async pt => {
+      const pid = String(pt.patient_id);
+      try {
+        const bundle = await fhFetchPatientBundle_(pid);
+        return { ok: true, pid, text: fhBuildCourseText_(bundle.records, fhFindFirstVisitYmd_(bundle.records)) };
+      } catch (e) {
+        return { ok: false, pid, error: e && e.message ? e.message : String(e) };
+      }
+    }));
+    if (gen !== fhCourseBackfillGen_) return;
+    const cur = lastFacilityHandoverContext_;
+    if (!cur || String(cur.facility_id || "") !== facId || cur.generated_at !== stamp) return;
+    fhPullEditsFromDom_();
+    let filled = 0;
+    let failed = 0;
+    results.forEach(r => {
+      const pt = (cur.patients || []).find(p => String(p.patient_id) === r.pid);
+      if (!pt || Object.prototype.hasOwnProperty.call(pt, "course_text")) return;
+      pt.course_text = r.ok ? (r.text || "") : "";
+      if (r.ok) filled += 1;
+      else failed += 1;
+    });
+    paintFacilityHandover_();
+    if (failed) showToast("治療経過を読めなかった患者がいます。その患者の「入れ直す」でやり直せます");
+    else if (filled) showToast("初診日からの治療経過を足しました");
+  } catch (_) {}
 }
 
 function fhRemoveSpecialRow_(pid, rowId) {
@@ -16839,8 +16954,19 @@ function paintFacilityHandover_() {
         <div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:4px">特別な治療</div>
         ${special || `<p style="font-size:12px;color:var(--muted);margin:0">（なし）</p>`}
       </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
+          <label style="font-size:11px;font-weight:800;color:var(--muted)">治療経過（初診日から）</label>
+          <span style="display:flex;gap:6px;flex-shrink:0">
+            <button type="button" class="btn btn-secondary" style="padding:2px 8px;font-size:12px" onclick="fhRefillCourse_('${pid}')">入れ直す</button>
+            <button type="button" class="btn btn-secondary" style="padding:2px 8px;font-size:12px" onclick="fhClearCourse_('${pid}')">消す</button>
+          </span>
+        </div>
+        <textarea data-fh-course ${!Object.prototype.hasOwnProperty.call(pt, "course_text") ? "data-fh-course-pending=\"1\"" : ""} rows="6" placeholder="初診日以降の診療。行を消すか「消す」で印刷から外せます（空なら印刷しない）"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;line-height:1.4">${escHtml(pt.course_text || "")}</textarea>
+      </div>
       <div class="form-group" style="margin-bottom:0">
-        <label style="font-size:11px;font-weight:800;color:var(--muted)">コメント</label>
+        <label style="font-size:11px;font-weight:800;color:var(--muted)">コメント（経過を見てまとめる）</label>
         <textarea data-fh-comment rows="3" placeholder="自由記入（空なら印刷しない）"
           style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;line-height:1.4">${escHtml(pt.comment_text || "")}</textarea>
       </div>
@@ -16994,6 +17120,7 @@ async function fhUpdateRosterFromChart_() {
       generated_at: Date.now()
     };
     paintFacilityHandover_();
+    void fhBackfillMissingCourse_();
     const removed = Object.keys(prevById).filter(id => !activeIds.has(id)).length;
     showToast(`名簿を更新しました（追加 ${added.length}・除外 ${removed}）`);
   } catch (e) {
@@ -17011,7 +17138,7 @@ async function fhRegenerateFromChart_() {
     showToast("施設を選んでください");
     return;
   }
-  if (!window.confirm("義歯・参考・歯科の投薬・注意事項・コメント・特別な治療を、今のカルテの内容に戻します。手で直した文も戻ります。施設のひとことは残します。よろしいですか？")) {
+  if (!window.confirm("義歯・参考・歯科の投薬・注意事項・治療経過・コメント・特別な治療を、今のカルテの内容に戻します。手で直した文も戻ります。施設全体の文章は残します。よろしいですか？")) {
     return;
   }
   fhPullEditsFromDom_();
@@ -17054,6 +17181,7 @@ function applyFacilityHandoverDraftPayload_(draft, toastMsg) {
   fhShowModalError_("");
   paintFacilityHandover_();
   if (toastMsg) showToast(toastMsg);
+  void fhBackfillMissingCourse_();
   return true;
 }
 
@@ -17132,7 +17260,7 @@ function buildFacilityHandoverPrintHtml_(ctx) {
     <h1 class="fh-title">${escHtml(title)}</h1>
     <div class="fh-meta">${escHtml(ctx.facility_name || "—")}　印刷日：${escHtml(formatVisitDateDisp(today) || today)}　対象 ${patients.length} 名</div>`;
   if (note) {
-    body += `<div class="fh-facility-note"><div class="fh-sec-title">ひとこと</div><div class="fh-sec-body">${escHtml(note).replace(/\n/g, "<br>")}</div></div>`;
+    body += `<div class="fh-facility-note"><div class="fh-sec-body">${escHtml(note).replace(/\n/g, "<br>")}</div></div>`;
   }
   if (!patients.length) {
     body += `<p>印刷する患者がいません。</p></div>`;
@@ -17160,6 +17288,7 @@ function buildFacilityHandoverPrintHtml_(ctx) {
       });
       body += `</ul></div>`;
     }
+    body += fhPrintSection_("治療経過", pt.course_text);
     body += fhPrintSection_("コメント", pt.comment_text);
     body += `</section>`;
   });
@@ -17174,11 +17303,11 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .fh-title { font-size: 16pt; font-weight: 800; margin: 0 0 6px; text-align: center; }
 .fh-meta { font-size: 10pt; color: #334155; margin-bottom: 12px; text-align: center; }
 .fh-facility-note { border: 1px solid #111; padding: 8px 10px; margin-bottom: 14px; }
-.fh-patient { border-top: 2px solid #111; padding: 10px 0 12px; page-break-inside: avoid; }
-.fh-pname { font-size: 12.5pt; font-weight: 800; margin: 0 0 4px; }
-.fh-pmeta { font-size: 9.5pt; color: #475569; margin-bottom: 6px; }
+.fh-patient { border-top: 2px solid #111; padding: 10px 0 12px; page-break-inside: auto; }
+.fh-pname { font-size: 12.5pt; font-weight: 800; margin: 0 0 4px; page-break-after: avoid; }
+.fh-pmeta { font-size: 9.5pt; color: #475569; margin-bottom: 6px; page-break-after: avoid; }
 .fh-sec { margin-top: 6px; }
-.fh-sec-title { font-size: 9.5pt; font-weight: 800; margin-bottom: 2px; }
+.fh-sec-title { font-size: 9.5pt; font-weight: 800; margin-bottom: 2px; page-break-after: avoid; }
 .fh-sec-body { white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
 .fh-treat-list { margin: 2px 0 0; padding-left: 1.2em; }
 .fh-treat-list li { margin: 2px 0; }
