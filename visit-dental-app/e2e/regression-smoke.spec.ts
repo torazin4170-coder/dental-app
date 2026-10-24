@@ -390,4 +390,58 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('visit timetable keeps screening patients and labels 無料検診', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        visitTimetablePatientOnRoster_?: (p: { status?: string; fac?: string; intake_stage?: string }, facId: string) => boolean
+        visitTimetablePatientNeedsMushoLabel_?: (p: { intake_stage?: string }, records: { treatments?: string }[]) => boolean
+        visitTimetableDefaultTreat_?: (p: { id?: string; intake_stage?: string; in_hospital?: string }) => string
+      }
+      if (
+        typeof w.visitTimetablePatientOnRoster_ !== 'function' ||
+        typeof w.visitTimetablePatientNeedsMushoLabel_ !== 'function' ||
+        typeof w.visitTimetableDefaultTreat_ !== 'function'
+      ) return false
+      const onList = w.visitTimetablePatientOnRoster_(
+        { status: 'active', fac: 'f1', intake_stage: 'musho_kenshin' },
+        'f1',
+      )
+      const offList = w.visitTimetablePatientOnRoster_(
+        { status: 'left', fac: 'f1', intake_stage: 'musho_kenshin' },
+        'f1',
+      )
+      const tagOnly = w.visitTimetablePatientNeedsMushoLabel_({ intake_stage: 'musho_kenshin' }, [])
+      const recordOnly = w.visitTimetablePatientNeedsMushoLabel_(
+        { intake_stage: '' },
+        [{ treatments: '無料検診' }],
+      )
+      const afterShoshin = w.visitTimetablePatientNeedsMushoLabel_(
+        { intake_stage: 'musho_kenshin' },
+        [{ treatments: '初診、口腔ケア' }],
+      )
+      const regular = w.visitTimetablePatientNeedsMushoLabel_(
+        { intake_stage: '' },
+        [{ treatments: '口腔ケア' }],
+      )
+      const treat = w.visitTimetableDefaultTreat_({ id: 'e2e-musho-only', intake_stage: 'musho_kenshin' })
+      const treatHosp = w.visitTimetableDefaultTreat_({
+        id: 'e2e-musho-hosp',
+        intake_stage: 'musho_kenshin',
+        in_hospital: '1',
+      })
+      return onList && !offList && tagOnly && recordOnly && !afterShoshin && !regular
+        && treat === '無料検診'
+        && treatHosp === '無料検診、入院中'
+    })
+    expect(ok).toBe(true)
+  })
 })

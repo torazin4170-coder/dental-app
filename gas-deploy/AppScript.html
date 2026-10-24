@@ -18491,22 +18491,28 @@ function recordsForVisitTimetableLookup_(pid) {
   return out;
 }
 
-/** 患者に「初診」処置の記録があるか（当月以外も含めて判定） */
-function patientHasShoshinRecord_(pid) {
-  return recordsForVisitTimetableLookup_(pid).some(r => recordHasTreatment_(r, "初診"));
+/** 初診前の無料検診の人か。治療内容に「無料検診」と出す判定（一覧からは外さない） */
+function visitTimetablePatientNeedsMushoLabel_(p, records) {
+  if (!p) return false;
+  const list = Array.isArray(records) ? records : [];
+  if (list.some(r => recordHasTreatment_(r, "初診"))) return false;
+  if (isMushoKenshinIntake_(p.intake_stage)) return true;
+  return list.some(r => recordHasTreatment_(r, MUSHO_KENSHIN_TREATMENT));
 }
 
-/** 無料検診済みだが初診前 → タイムテーブル対象外 */
 function isMushoKenshinAwaitingShoshin_(p) {
   if (!p) return false;
-  if (patientHasShoshinRecord_(p.id)) return false;
-  if (isMushoKenshinIntake_(p.intake_stage)) return true;
-  return (localRecords || []).some(r =>
-    String(r.patient_id || "") === String(p.id || "") && recordHasTreatment_(r, MUSHO_KENSHIN_TREATMENT)
-  );
+  return visitTimetablePatientNeedsMushoLabel_(p, recordsForVisitTimetableLookup_(p.id));
 }
 
-/** ⑧ 初診判定のため、無料検診タグ付き患者の全履歴を先読み */
+/** ⑧ 名簿に載せる患者か。無料検診（初診前）も載せる */
+function visitTimetablePatientOnRoster_(p, facId) {
+  if (!p) return false;
+  if ((p.status || "active") !== "active") return false;
+  return String(p.fac) === String(facId);
+}
+
+/** ⑧ 初診の有無を見て、治療内容の「無料検診」と初診後のタグ解除に使う */
 function visitTimetablePrefetchCandidateIds_(facId) {
   const ids = new Set();
   (PATIENTS || []).forEach(p => {
@@ -18544,11 +18550,10 @@ async function prefetchVisitTimetablePatientRecords_(facId) {
   });
 }
 
-/** ⑧ 施設の有効患者（居室順・担当Dr絞り込み前） */
+/** ⑧ 施設の有効患者（居室順・担当Dr絞り込み前）。無料検診の人も含む */
 function getVisitTimetablePatientsAll_(facId) {
   return (PATIENTS || [])
-    .filter(p => (p.status || "active") === "active" && String(p.fac) === String(facId))
-    .filter(p => !isMushoKenshinAwaitingShoshin_(p))
+    .filter(p => visitTimetablePatientOnRoster_(p, facId))
     .slice()
     .sort(comparePatientRoom_);
 }
@@ -18702,14 +18707,16 @@ function visitTimetableNormalizeName_(name) {
 /** ⑧ 下書きから無効・重複行を除去（番号変更後の手書き行、退所患者など） */
 function pruneVisitTimetableDraft_(draft, facId) {
   const norm = normalizeVisitTimetableDraft_(draft);
-  const activeIds = new Set(getVisitTimetablePatientsAll_(facId).map(p => String(p.id)));
+  const active = getVisitTimetablePatientsAll_(facId);
+  const activeIds = new Set(active.map(p => String(p.id)));
   const excluded = new Set((norm.excludedPatientIds || []).map(String));
-  const activeNames = new Set();
-  getVisitTimetablePatientsAll_(facId).forEach(p => {
+  const idByName = {};
+  active.forEach(p => {
     const nm = visitTimetableNormalizeName_(p.name);
-    if (nm) activeNames.add(nm);
+    if (nm && !idByName[nm]) idByName[nm] = String(p.id);
   });
   const rows = {};
+  const manualDupes = [];
   Object.keys(norm.rows || {}).forEach(key => {
     const saved = norm.rows[key];
     const pm = /^p:(.+)$/.exec(key);
@@ -18720,10 +18727,45 @@ function pruneVisitTimetableDraft_(draft, facId) {
     }
     if (!saved || typeof saved !== "object") return;
     const sn = visitTimetableNormalizeName_(saved.name);
-    if (sn && activeNames.has(sn)) return;
+    if (sn && idByName[sn]) {
+      manualDupes.push(saved);
+      return;
+    }
     rows[key] = saved;
   });
-  const manualRowKeys = visitTimetableResolveManualRowKeys_({ ...norm, rows });
+  manualDupes.forEach(saved => {
+    const pid = idByName[visitTimetableNormalizeName_(saved.name)];
+    if (!pid || excluded.has(pid)) return;
+    const pkey = `p:${pid}`;
+    const had = rows[pkey] && typeof rows[pkey] === "object";
+    const prev = had ? Object.assign({}, rows[pkey]) : {};
+    const prevTime = prev.time != null ? String(prev.time) : "";
+    const prevTreat = prev.treat != null ? String(prev.treat) : "";
+    const savedTime = saved.time != null ? String(saved.time) : "";
+    const savedTreat = saved.treat != null ? String(saved.treat) : "";
+    let copied = false;
+    let copiedTreat = false;
+    if ((!prevTime || prevTime === "～") && savedTime && savedTime !== "～") {
+      prev.time = savedTime;
+      copied = true;
+    }
+    if (!prevTreat.trim() && savedTreat.trim()) {
+      prev.treat = savedTreat.trim();
+      copied = true;
+      copiedTreat = true;
+    }
+    if (!had && !copied) return;
+    const patient = active.find(p => String(p.id) === pid);
+    if (copiedTreat && patient && isMushoKenshinAwaitingShoshin_(patient)) {
+      const parts = String(prev.treat).split(/[、,]/).map(s => s.trim()).filter(Boolean);
+      if (!parts.includes(MUSHO_KENSHIN_TREATMENT)) {
+        prev.treat = [MUSHO_KENSHIN_TREATMENT].concat(parts).join("、");
+      }
+    }
+    rows[pkey] = prev;
+  });
+  const keptManual = (norm.manualRowKeys || []).filter(k => rows[String(k)]);
+  const manualRowKeys = visitTimetableResolveManualRowKeys_({ ...norm, rows, manualRowKeys: keptManual });
   return Object.assign({}, norm, { rows, manualRowKeys });
 }
 
@@ -18907,11 +18949,11 @@ function visitTimetableRowDoctorSelectHtml_(patientId, assignedDoctor) {
   return h;
 }
 
-/** ⑧ 患者タグ（無料検診・入院中）→ 治療内容欄の初期値 */
+/** ⑧ 患者タグ（無料検診・入院中）→ 治療内容欄の初期値。初診前の無料検診は「無料検診」 */
 function visitTimetableDefaultTreat_(p) {
   if (!p) return "";
   const parts = [];
-  if (isMushoKenshinIntake_(p.intake_stage)) parts.push(MUSHO_KENSHIN_TREATMENT);
+  if (isMushoKenshinAwaitingShoshin_(p)) parts.push(MUSHO_KENSHIN_TREATMENT);
   if (isPatientInHospital_(p)) parts.push("入院中");
   return parts.join("、");
 }
