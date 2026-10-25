@@ -9887,6 +9887,29 @@ function renderDashboard() {
 /* ═══════════════════════════════════════
    CALENDAR
 ═══════════════════════════════════════ */
+/** その日の記録が無料検診だけか（初診・口腔ケアなどがあれば通常の診療） */
+function calDayPatientIsMusho_(recs) {
+  const codes = [];
+  (recs || []).forEach(r => {
+    recordTreatmentList_(r).forEach(t => {
+      const s = String(t || "").trim();
+      if (s) codes.push(s);
+    });
+  });
+  if (!codes.includes(MUSHO_KENSHIN_TREATMENT)) return false;
+  if (codes.includes("初診")) return false;
+  if (codes.some(t => t !== MUSHO_KENSHIN_TREATMENT && !isPatientStatusTreatment_(t))) return false;
+  return true;
+}
+
+/** 無料検診がいる日は「19+1」（通常＋無料検診）。いない日は合計だけ */
+function calFacCountLabel_(regular, musho) {
+  const r = Math.max(0, Number(regular) || 0);
+  const m = Math.max(0, Number(musho) || 0);
+  if (m > 0) return r + "+" + m;
+  return String(r);
+}
+
 function paintCalGrid() {
   const title = `${calYear}年${calMonth + 1}月`;
   document.getElementById("calTitle").textContent = title;
@@ -9902,10 +9925,13 @@ function paintCalGrid() {
     const d = parseInt(ymd.slice(8, 10), 10);
     if (isNaN(d)) return;
     dayCount[d] = (dayCount[d] || 0) + 1;
+    if (!r.patient_id) return;
     const fid = String(r.fac_id || "_unknown");
     if (!dayByFac[d]) dayByFac[d] = {};
-    if (!dayByFac[d][fid]) dayByFac[d][fid] = new Set();
-    if (r.patient_id) dayByFac[d][fid].add(String(r.patient_id));
+    if (!dayByFac[d][fid]) dayByFac[d][fid] = {};
+    const pid = String(r.patient_id);
+    if (!dayByFac[d][fid][pid]) dayByFac[d][fid][pid] = [];
+    dayByFac[d][fid][pid].push(r);
   });
   let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:6px">`;
   ["日", "月", "火", "水", "木", "金", "土"].forEach((d, i) => {
@@ -9930,8 +9956,18 @@ function paintCalGrid() {
         const fac = FACILITIES.find(x => x.id === fid);
         const short = getFacilityCalLabel_(fac);
         const col = (fac && fac.color) ? fac.color : "#64748b";
-        const n = facMap[fid].size;
-        facChips += `<button type="button" class="cal-fac-chip cal-fac-chip-btn" style="color:${col}" title="タップで略称を変更" onclick="event.stopPropagation();openCalFacLabelModal('${escAttr(fid)}')">${escHtml(short)} ${n}</button>`;
+        const pmap = facMap[fid];
+        let reg = 0;
+        let mk = 0;
+        Object.keys(pmap).forEach(pid => {
+          if (calDayPatientIsMusho_(pmap[pid])) mk += 1;
+          else reg += 1;
+        });
+        const nLabel = calFacCountLabel_(reg, mk);
+        const tip = mk > 0
+          ? `${short} 診療${reg}名＋無料検診${mk}名。タップで略称を変更`
+          : "タップで略称を変更";
+        facChips += `<button type="button" class="cal-fac-chip cal-fac-chip-btn" style="color:${col}" title="${escAttr(tip)}" onclick="event.stopPropagation();openCalFacLabelModal('${escAttr(fid)}')">${escHtml(short)} ${escHtml(nLabel)}</button>`;
       });
     }
     html += `<div onclick="showDayRecords('${dateStr}',${d})" style="min-height:56px;background:white;border-radius:8px;border:${isToday ? "2px solid var(--accent)" : "1.5px solid var(--border)"};padding:5px 4px;font-size:13px;font-weight:${isToday ? "800" : "600"};color:${isToday ? "var(--accent)" : "#1e293b"};cursor:pointer;position:relative">

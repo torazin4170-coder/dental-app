@@ -474,4 +474,32 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('calendar count splits free screening as regular+musho', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        calFacCountLabel_?: (regular: number, musho: number) => string
+        calDayPatientIsMusho_?: (recs: { treatments?: string }[]) => boolean
+      }
+      if (typeof w.calFacCountLabel_ !== 'function' || typeof w.calDayPatientIsMusho_ !== 'function') return false
+      const label = w.calFacCountLabel_(19, 1) === '19+1'
+        && w.calFacCountLabel_(20, 0) === '20'
+        && w.calFacCountLabel_(0, 2) === '0+2'
+      const musho = w.calDayPatientIsMusho_([{ treatments: '無料検診' }])
+      const withStatus = w.calDayPatientIsMusho_([{ treatments: '無料検診、入院中' }])
+      const withCare = !w.calDayPatientIsMusho_([{ treatments: '無料検診、口腔ケア' }])
+      const withShoshin = !w.calDayPatientIsMusho_([{ treatments: '初診、無料検診' }])
+      const regular = !w.calDayPatientIsMusho_([{ treatments: '口腔ケア' }])
+      return label && musho && withStatus && withCare && withShoshin && regular
+    })
+    expect(ok).toBe(true)
+  })
 })
