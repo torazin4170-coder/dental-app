@@ -7176,7 +7176,7 @@ function renderTeethChartHtml_(data, opts) {
           : `${extTag}${numWrap}${blackRow}${redRow}`;
         const lineCount = estimateTeethCellLineCount_(blackText, redText, hasExt);
         const minH = teethCellMinHeightPx_(lineCount);
-        return `<div class="teeth-cell${missCls}" data-tooth="${key}" style="width:${TEETH_CHART_CELL}px;min-height:${minH}px;text-align:center;font-size:12px;padding:4px 3px;border:1.5px solid ${borderCol};border-radius:6px;${bgInline}flex-shrink:0;${sep};user-select:none;touch-action:manipulation;display:flex;align-items:center;justify-content:center"><div class="teeth-cell-stack">${core}</div></div>`;
+        return `<div class="teeth-cell${missCls}" data-tooth="${key}" style="box-sizing:border-box;width:${TEETH_CHART_CELL}px;min-height:${minH}px;text-align:center;font-size:12px;padding:4px 3px;border:1.5px solid ${borderCol};border-radius:6px;${bgInline}flex-shrink:0;${sep};user-select:none;touch-action:manipulation;display:flex;align-items:center;justify-content:center"><div class="teeth-cell-stack">${core}</div></div>`;
       }).join("") + "</div>";
   };
 
@@ -14874,6 +14874,7 @@ function clearPatientPpsPreviewDraft_() {
 
 function getTeethChartPrintCss_() {
   return `
+.teeth-chart-root, .teeth-chart-root * { box-sizing: border-box; }
 .teeth-cell-stack { display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;gap:3px; }
 .teeth-cell-line--red { font-size:9px;font-weight:800;color:#dc2626;text-align:center;word-break:break-word; }
 .teeth-cell-line--blk { font-size:10px;font-weight:700;color:#1e293b;text-align:center;word-break:break-word; }
@@ -14894,6 +14895,7 @@ function getTeethChartPrintCss_() {
 function getPatientPpsPrintCss_() {
   return `
 @page { size: A4 portrait; margin: 12mm 14mm; }
+*, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; color: #111; }
 body, body * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif; }

@@ -444,4 +444,34 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('personal sheet print uses the same tooth box width as the bridge lines', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        renderTeethChartHtml_?: (data: unknown, opts: unknown) => string
+        getPatientPpsPrintCss_?: () => string
+        getTeethChartPrintCss_?: () => string
+      }
+      if (
+        typeof w.renderTeethChartHtml_ !== 'function' ||
+        typeof w.getPatientPpsPrintCss_ !== 'function' ||
+        typeof w.getTeethChartPrintCss_ !== 'function'
+      ) return false
+      const html = w.renderTeethChartHtml_({ upper_L8: 'Br', upper_L7: 'C2' }, { readOnly: true })
+      const css = w.getPatientPpsPrintCss_() + w.getTeethChartPrintCss_()
+      const cellBox = html.includes('box-sizing:border-box;width:44px')
+      const bridgeWidth = html.includes('width="749"')
+      const printBox = css.includes('box-sizing: border-box')
+      return cellBox && bridgeWidth && printBox
+    })
+    expect(ok).toBe(true)
+  })
 })
