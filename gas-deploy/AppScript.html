@@ -13072,6 +13072,7 @@ let kentaiSelectedBridgeId_ = null;
 let kentaiBridgeAddModeActive_ = false;
 let kentaiBridgeAddAnchorKey_ = null;
 let kentaiBridgeDrag_ = null;
+let kentaiBridgeIgnoreClickUntil_ = 0;
 let kentaiToothPopoverKey_ = null;
 let kentaiPreviewBindAbort_ = null;
 let kentaiAnnotPromptBusy_ = false;
@@ -13131,16 +13132,40 @@ function familyToothSymbolsFromChart_(key, data) {
     if (!s || s === "normal" || out.includes(s) || out.length >= FAMILY_TOOTH_MAX_SYMBOLS_) return;
     out.push(s);
   };
+  const hasBr = known.includes("Br");
   known.forEach(tok => {
     if (tok === "Br" || tok === "EXT") return;
     if (tok === "C4" || tok === "根C") add("root");
     else if (["Co", "C1", "C2", "C3", "Pul"].includes(tok)) add("cavity");
-    else if (["CR", "FMC", "MB", "Cop", "CAD", "TEK", "セラCr", "金Cr", "P-cap", "CR'", "HR", "IMP", "On"].includes(tok)) add("crown");
+    else if (["CR", "FMC", "MB", "Cop", "CAD", "TEK", "セラCr", "ゴールドCr", "P-cap", "CR'", "HR", "IMP", "On"].includes(tok)) add("crown");
     else if (["GI", "AF", "In", "コア", "Fix"].includes(tok)) add("filling");
-    else add("resin");
+    else if (!hasBr) add("resin");
   });
+  if (hasBr) {
+    const kept = out.filter(s => s !== "resin");
+    if (!kept.includes("crown")) kept.unshift("crown");
+    return kept.slice(0, FAMILY_TOOTH_MAX_SYMBOLS_);
+  }
   if (!out.length && cond.trim()) add("resin");
   return out;
+}
+
+/** ブリッジの反対側で、記号が樹脂だけの支台を冠にする（空欄の歯はそのまま） */
+function kentaiCrownResinOnlyBridgeEnds_(ft) {
+  if (!ft || !ft.teeth) return;
+  [FAMILY_TEETH_UPPER_KEYS_, FAMILY_TEETH_LOWER_KEYS_].forEach(keys => {
+    findFamilyBridgeSpans_(keys, ft.teeth).forEach(span => {
+      [span[0], span[1]].forEach(i => {
+        const key = keys[i];
+        const t = ft.teeth[key];
+        if (!t) return;
+        const syms = normalizeToothSymbols_(t);
+        if (syms.length === 1 && syms[0] === "resin") {
+          ft.teeth[key] = familyToothRecord_(["crown"], !!t.bridge);
+        }
+      });
+    });
+  });
 }
 
 function mapTeethDataToFamilyTeeth_(data) {
@@ -13159,6 +13184,7 @@ function mapTeethDataToFamilyTeeth_(data) {
   const legacyNote = data && data.kentai_center_note ? String(data.kentai_center_note).trim() : "";
   if (legacyNote) annotations.push({ id: "a0", text: legacyNote, x: 152, y: 112 });
   const ft = { teeth, upperDenture, lowerDenture, centerNote: "", annotations, bridgeLines: [] };
+  kentaiCrownResinOnlyBridgeEnds_(ft);
   ft.bridgeLines = buildFamilyBridgeLinesFromTeeth_(ft);
   return ft;
 }
@@ -13275,6 +13301,9 @@ function familyToothGlyphGroup_(pt, tooth, editable) {
   let inner = `<circle cx="0" cy="0" r="${r}" fill="#fff" stroke="#333" stroke-width="0.9"/>`;
   if (innerSym) inner += familyToothInnerSymbolSvg_(innerSym);
   if (outerSyms.length) inner += familyToothExternalSymbolsSvg_(outerSyms, pt.jaw);
+  if (editable && kentaiBridgeAddAnchorKey_ && kentaiBridgeAddAnchorKey_ === pt.key) {
+    inner += `<circle cx="0" cy="0" r="12.5" fill="none" stroke="#2563eb" stroke-width="1.8" pointer-events="none"/>`;
+  }
   inner += `<text x="0" y="${numY}" text-anchor="middle" font-size="7" fill="#334155" font-weight="700">${num}</text>`;
   return `<g${editAttr} transform="translate(${pt.x.toFixed(1)},${pt.y.toFixed(1)})">${inner}</g>`;
 }
@@ -13340,6 +13369,23 @@ function normalizeFamilyBridgeLine_(ln, i) {
   };
 }
 
+function familyBridgeLineFromToothPoints_(jaw, pa, pb, id) {
+  const leftPt = pa.x <= pb.x ? pa : pb;
+  const rightPt = pa.x <= pb.x ? pb : pa;
+  const gap = 22;
+  const leg = 8.5;
+  const upper = jaw === "upper";
+  return {
+    id,
+    jaw: upper ? "upper" : "lower",
+    leftX: leftPt.x,
+    rightX: rightPt.x,
+    barY: upper ? Math.min(leftPt.y, rightPt.y) - gap : Math.max(leftPt.y, rightPt.y) + gap,
+    leftLegY: upper ? leftPt.y - leg : leftPt.y + leg,
+    rightLegY: upper ? rightPt.y - leg : rightPt.y + leg
+  };
+}
+
 function buildFamilyBridgeLinesFromTeeth_(ft) {
   const teeth = {};
   ALL_FAMILY_TEETH_KEYS_.forEach(k => {
@@ -13359,30 +13405,30 @@ function buildFamilyBridgeLinesFromTeeth_(ft) {
       const pa = pts.find(p => p.key === keys[ia]);
       const pb = pts.find(p => p.key === keys[ib]);
       if (!pa || !pb) return;
-      const leftX = Math.min(pa.x, pb.x);
-      const rightX = Math.max(pa.x, pb.x);
-      const barY = jaw === "upper" ? Math.min(pa.y, pb.y) - 13 : Math.max(pa.y, pb.y) + 13;
-      lines.push({
-        id: "br_" + jaw + "_" + i + "_" + leftX.toFixed(0),
-        jaw,
-        leftX,
-        rightX,
-        barY,
-        leftLegY: jaw === "upper" ? pa.y - 8.5 : pa.y + 8.5,
-        rightLegY: jaw === "upper" ? pb.y - 8.5 : pb.y + 8.5
-      });
+      lines.push(familyBridgeLineFromToothPoints_(jaw, pa, pb, "br_" + jaw + "_" + i + "_" + Math.round(Math.min(pa.x, pb.x))));
     });
   });
   return lines;
 }
 
+function familyBridgeSeg_(cls, seg, x1, y1, x2, y2, sw, hit) {
+  const pe = hit ? ` pointer-events="stroke" stroke="#000" stroke-opacity="0"` : "";
+  return `<line class="${cls}" data-seg="${seg}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${sw}"${pe}/>`;
+}
+
 function familyBridgeLineSvg_(line, editable, selected) {
-  const { id, leftX, rightX, barY, leftLegY, rightLegY } = line;
-  const selCls = selected ? " kentai-bridge-line--sel" : "";
+  const { id, jaw, leftX, rightX, barY, leftLegY, rightLegY } = line;
+  const selCls = editable && selected ? " kentai-bridge-line--sel" : "";
   const gid = escAttr(id);
-  let inner = `<line x1="${leftX}" y1="${leftLegY}" x2="${leftX}" y2="${barY}" stroke-width="1.2"/>
-    <line x1="${rightX}" y1="${rightLegY}" x2="${rightX}" y2="${barY}" stroke-width="1.2"/>
-    <line x1="${leftX}" y1="${barY}" x2="${rightX}" y2="${barY}" stroke-width="1.5"/>`;
+  let inner = "";
+  if (editable) {
+    inner += familyBridgeSeg_("kentai-bridge-hit", "legL", leftX, leftLegY, leftX, barY, 16, true);
+    inner += familyBridgeSeg_("kentai-bridge-hit", "legR", rightX, rightLegY, rightX, barY, 16, true);
+    inner += familyBridgeSeg_("kentai-bridge-hit", "bar", leftX, barY, rightX, barY, 18, true);
+  }
+  inner += familyBridgeSeg_("kentai-bridge-seg", "legL", leftX, leftLegY, leftX, barY, 1.2, false);
+  inner += familyBridgeSeg_("kentai-bridge-seg", "legR", rightX, rightLegY, rightX, barY, 1.2, false);
+  inner += familyBridgeSeg_("kentai-bridge-seg", "bar", leftX, barY, rightX, barY, 1.6, false);
   if (editable && selected) {
     [
       ["lt", leftX, leftLegY],
@@ -13390,8 +13436,15 @@ function familyBridgeLineSvg_(line, editable, selected) {
       ["rb", rightX, barY],
       ["rt", rightX, rightLegY]
     ].forEach(([h, x, y]) => {
-      inner += `<circle class="kentai-bridge-handle" data-kentai-bridge-id="${gid}" data-kentai-bridge-handle="${h}" cx="${x}" cy="${y}" r="5" fill="#2563eb" stroke="#fff" stroke-width="1.2"/>`;
+      inner += `<circle class="kentai-bridge-handle" data-kentai-bridge-id="${gid}" data-kentai-bridge-handle="${h}" cx="${x}" cy="${y}" r="12" fill="transparent"/>`;
+      inner += `<circle class="kentai-bridge-handle-dot" data-kentai-bridge-handle="${h}" cx="${x}" cy="${y}" r="5.5" fill="#2563eb" stroke="#fff" stroke-width="1.2" pointer-events="none"/>`;
     });
+    const mx = (Number(leftX) + Number(rightX)) / 2;
+    const my = Number(barY) + (jaw === "lower" ? 12 : -12);
+    inner += `<g class="kentai-bridge-delete" data-kentai-bridge-id="${gid}">
+      <circle cx="${mx}" cy="${my}" r="7" fill="#dc2626" stroke="#fff" stroke-width="1"/>
+      <text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="800" fill="#fff" pointer-events="none">×</text>
+    </g>`;
   }
   return `<g class="kentai-bridge-line${selCls}" data-kentai-bridge-id="${gid}" stroke="#111" fill="none">${inner}</g>`;
 }
@@ -13491,8 +13544,8 @@ function buildKentaiFamilyTeethSvg_(familyTeeth, opts) {
     + dentureRow("下の入れ歯", ft.lowerDenture, H - 16)
     + chartFrame
     + chartBg
-    + bridges
     + teethSvg
+    + bridges
     + annots;
   const editCls = editable ? " kentai-family-teeth--edit" : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" class="kentai-family-teeth${editCls}" viewBox="0 0 ${W} ${H}" width="100%" height="auto" style="max-width:100%;display:block;overflow:visible">
@@ -17569,7 +17622,7 @@ function buildKentaiPreviewInnerHtml_(p, ctx) {
       </tr></tbody>
     </table>
     <div class="kentai-main-split">
-      <div class="kentai-teeth-col">${teethSvg}${forPrint ? "" : `<p class="kentai-annot-hint">歯をタップ→記号を最大3つ（上顎は上、下顎は下）。<strong>＋ブリッジ線</strong>→歯2本、●ドラッグで伸縮、線ダブルタップで削除。注記は<strong>ドラッグ</strong>／空きダブルタップ。</p>`}</div>
+      <div class="kentai-teeth-col">${teethSvg}${forPrint ? "" : `<p class="kentai-annot-hint">歯の丸をタップ→記号は最大3つ（上の歯は上、下の歯は下）。<strong>＋ブリッジ線</strong>で歯を2本選ぶと線が足ります。線をドラッグで移動、青い●で長さ、赤い×で削除。注記は<strong>ドラッグ</strong>／空きをダブルタップ。</p>`}</div>
       <div class="kentai-assess-col">${assessHtml}</div>
     </div>
     <div class="kentai-summary-box">${overallInner}</div>
@@ -17686,22 +17739,62 @@ function showKentaiToothSymbolPopover_(key, clientX, clientY) {
   pop.style.top = Math.max(pad, top) + "px";
 }
 
+function kentaiSetBridgeAddMode_(on) {
+  kentaiBridgeAddModeActive_ = !!on;
+  if (!on) kentaiBridgeAddAnchorKey_ = null;
+  document.querySelectorAll("[data-kentai-bridge-add]").forEach(btn => {
+    const active = kentaiBridgeAddModeActive_;
+    btn.textContent = active ? "追加をやめる" : "＋ ブリッジ線";
+    btn.style.background = active ? "#dbeafe" : "";
+    btn.style.color = active ? "#1e40af" : "";
+  });
+}
+
 function kentaiBridgeAddModeStart_() {
   closeKentaiToothSymbolPopover_();
-  kentaiBridgeAddModeActive_ = true;
+  if (kentaiBridgeAddModeActive_) {
+    kentaiSetBridgeAddMode_(false);
+    refreshKentaiPreviewDom();
+    showToast("ブリッジ線の追加をやめました");
+    return;
+  }
   kentaiBridgeAddAnchorKey_ = null;
+  kentaiSetBridgeAddMode_(true);
   showToast("ブリッジ線：始点の歯をタップ → 終点の歯をタップ");
 }
 
+function kentaiDeleteBridgeLine_(id) {
+  if (!lastKentaiFamilyTeeth_ || !id) return false;
+  const lines = lastKentaiFamilyTeeth_.bridgeLines || [];
+  const next = lines.filter(ln => ln.id !== id);
+  if (next.length === lines.length) return false;
+  lastKentaiFamilyTeeth_.bridgeLines = next;
+  if (kentaiSelectedBridgeId_ === id) kentaiSelectedBridgeId_ = null;
+  return true;
+}
+
 function kentaiBridgeDeleteSelected_() {
-  if (!lastKentaiFamilyTeeth_ || !kentaiSelectedBridgeId_) {
+  if (!kentaiDeleteBridgeLine_(kentaiSelectedBridgeId_)) {
     showToast("削除するブリッジ線をタップして選択してください");
     return;
   }
-  lastKentaiFamilyTeeth_.bridgeLines = (lastKentaiFamilyTeeth_.bridgeLines || []).filter(ln => ln.id !== kentaiSelectedBridgeId_);
-  kentaiSelectedBridgeId_ = null;
   refreshKentaiPreviewDom();
-  showToast("ブリッジ線を削除しました");
+  showToast("ブリッジ線を削除しました（歯の記号はそのままです）");
+}
+
+/** 線を足した両端を支台にする。欠損はそのまま。空欄・樹脂は冠。虫歯などは残す */
+function kentaiMarkBridgeAbutments_(keyA, keyB) {
+  let crowned = false;
+  [keyA, keyB].forEach(key => {
+    const tooth = lastKentaiFamilyTeeth_.teeth[key] || familyToothRecord_([]);
+    const syms = normalizeToothSymbols_(tooth);
+    if (syms.includes("missing")) return;
+    const kept = syms.filter(s => s !== "resin");
+    if (!kept.includes("crown")) kept.unshift("crown");
+    lastKentaiFamilyTeeth_.teeth[key] = familyToothRecord_(kept.slice(0, FAMILY_TOOTH_MAX_SYMBOLS_), true);
+    crowned = true;
+  });
+  return crowned;
 }
 
 function kentaiBridgeFromTwoTeeth_(keyA, keyB) {
@@ -17718,29 +17811,110 @@ function kentaiBridgeFromTwoTeeth_(keyA, keyB) {
   const pa = pts.find(p => p.key === keyA);
   const pb = pts.find(p => p.key === keyB);
   if (!pa || !pb) return;
-  const leftX = Math.min(pa.x, pb.x);
-  const rightX = Math.max(pa.x, pb.x);
-  const barY = jawA === "upper" ? Math.min(pa.y, pb.y) - 13 : Math.max(pa.y, pb.y) + 13;
-  const line = {
-    id: "br" + Date.now(),
-    jaw: jawA,
-    leftX,
-    rightX,
-    barY,
-    leftLegY: jawA === "upper" ? pa.y - 8.5 : pa.y + 8.5,
-    rightLegY: jawA === "upper" ? pb.y - 8.5 : pb.y + 8.5
-  };
+  const line = familyBridgeLineFromToothPoints_(jawA, pa, pb, "br" + Date.now());
   if (!Array.isArray(lastKentaiFamilyTeeth_.bridgeLines)) lastKentaiFamilyTeeth_.bridgeLines = [];
   lastKentaiFamilyTeeth_.bridgeLines.push(line);
+  const crowned = kentaiMarkBridgeAbutments_(keyA, keyB);
   kentaiSelectedBridgeId_ = line.id;
-  kentaiBridgeAddModeActive_ = false;
-  kentaiBridgeAddAnchorKey_ = null;
-  showToast("ブリッジ線を追加しました（●をドラッグで調整）");
+  kentaiSetBridgeAddMode_(false);
+  showToast(crowned
+    ? "ブリッジ線を追加しました。支台に冠を入れました。線をドラッグ、青い●で長さを変えられます"
+    : "ブリッジ線を追加しました。線をドラッグ、青い●で長さを変えられます");
 }
 
 function kentaiFamilyBridgeById_(id) {
   if (!lastKentaiFamilyTeeth_ || !id) return null;
   return (lastKentaiFamilyTeeth_.bridgeLines || []).find(ln => ln.id === id) || null;
+}
+
+function kentaiToothElAtPoint_(host, target, clientX, clientY) {
+  const direct = target && target.closest ? target.closest("[data-ft-key]") : null;
+  if (direct && host.contains(direct)) return direct;
+  if (typeof document.elementsFromPoint !== "function") return null;
+  const stack = document.elementsFromPoint(clientX, clientY) || [];
+  for (let i = 0; i < stack.length; i++) {
+    const el = stack[i];
+    const tooth = el && el.closest ? el.closest("[data-ft-key]") : null;
+    if (tooth && host.contains(tooth)) return tooth;
+  }
+  return null;
+}
+
+function kentaiPaintBridgeLineDom_(svg, ln) {
+  if (!svg || !ln) return;
+  const g = svg.querySelector('g.kentai-bridge-line[data-kentai-bridge-id="' + String(ln.id).replace(/"/g, "") + '"]');
+  if (!g) return;
+  const applySeg = (seg, x1, y1, x2, y2) => {
+    g.querySelectorAll('[data-seg="' + seg + '"]').forEach(el => {
+      el.setAttribute("x1", x1);
+      el.setAttribute("y1", y1);
+      el.setAttribute("x2", x2);
+      el.setAttribute("y2", y2);
+    });
+  };
+  applySeg("legL", ln.leftX, ln.leftLegY, ln.leftX, ln.barY);
+  applySeg("legR", ln.rightX, ln.rightLegY, ln.rightX, ln.barY);
+  applySeg("bar", ln.leftX, ln.barY, ln.rightX, ln.barY);
+  const place = (h, x, y) => {
+    g.querySelectorAll('[data-kentai-bridge-handle="' + h + '"]').forEach(el => {
+      el.setAttribute("cx", x);
+      el.setAttribute("cy", y);
+    });
+  };
+  place("lt", ln.leftX, ln.leftLegY);
+  place("lb", ln.leftX, ln.barY);
+  place("rb", ln.rightX, ln.barY);
+  place("rt", ln.rightX, ln.rightLegY);
+  const del = g.querySelector(".kentai-bridge-delete");
+  if (del) {
+    const mx = (Number(ln.leftX) + Number(ln.rightX)) / 2;
+    const my = Number(ln.barY) + (ln.jaw === "lower" ? 12 : -12);
+    const c = del.querySelector("circle");
+    const t = del.querySelector("text");
+    if (c) { c.setAttribute("cx", mx); c.setAttribute("cy", my); }
+    if (t) { t.setAttribute("x", mx); t.setAttribute("y", my); }
+  }
+}
+
+function kentaiClampBridgeNum_(v, a, b) {
+  return Math.min(b, Math.max(a, v));
+}
+
+function kentaiFinishBridgeLineGeom_(ln, mode) {
+  const minX = 16;
+  const maxX = 288;
+  const minY = 20;
+  const maxY = 174;
+  if (mode === "move") {
+    let shiftX = 0;
+    let shiftY = 0;
+    if (ln.leftX < minX) shiftX = minX - ln.leftX;
+    else if (ln.rightX > maxX) shiftX = maxX - ln.rightX;
+    const yMin = Math.min(ln.barY, ln.leftLegY, ln.rightLegY);
+    const yMax = Math.max(ln.barY, ln.leftLegY, ln.rightLegY);
+    if (yMin < minY) shiftY = minY - yMin;
+    else if (yMax > maxY) shiftY = maxY - yMax;
+    ln.leftX += shiftX;
+    ln.rightX += shiftX;
+    ln.barY += shiftY;
+    ln.leftLegY += shiftY;
+    ln.rightLegY += shiftY;
+    return;
+  }
+  ln.leftX = kentaiClampBridgeNum_(ln.leftX, minX, maxX);
+  ln.rightX = kentaiClampBridgeNum_(ln.rightX, minX, maxX);
+  ln.barY = kentaiClampBridgeNum_(ln.barY, minY, maxY);
+  ln.leftLegY = kentaiClampBridgeNum_(ln.leftLegY, minY, maxY);
+  ln.rightLegY = kentaiClampBridgeNum_(ln.rightLegY, minY, maxY);
+  if (ln.leftX > ln.rightX) {
+    const tx = ln.leftX;
+    ln.leftX = ln.rightX;
+    ln.rightX = tx;
+    const ty = ln.leftLegY;
+    ln.leftLegY = ln.rightLegY;
+    ln.rightLegY = ty;
+  }
+  if (ln.rightX - ln.leftX < 8) ln.rightX = Math.min(maxX, ln.leftX + 8);
 }
 
 function kentaiSvgPointFromClient_(svg, clientX, clientY) {
@@ -17808,7 +17982,41 @@ function bindKentaiPreviewInteractions_(host) {
       refreshKentaiPreviewDom();
       return;
     }
-    const bridgeLine = e.target.closest("[data-kentai-bridge-id]");
+    if (Date.now() < kentaiBridgeIgnoreClickUntil_) {
+      e.preventDefault();
+      return;
+    }
+    const bridgeDel = e.target.closest(".kentai-bridge-delete");
+    if (bridgeDel && host.contains(bridgeDel)) {
+      e.preventDefault();
+      const id = bridgeDel.getAttribute("data-kentai-bridge-id");
+      if (kentaiDeleteBridgeLine_(id)) {
+        refreshKentaiPreviewDom();
+        showToast("ブリッジ線を削除しました（歯の記号はそのままです）");
+      }
+      return;
+    }
+    if (kentaiBridgeAddModeActive_) {
+      const tooth = kentaiToothElAtPoint_(host, e.target, e.clientX, e.clientY);
+      if (tooth) {
+        e.preventDefault();
+        const key = tooth.getAttribute("data-ft-key");
+        if (!key) return;
+        if (!lastKentaiFamilyTeeth_) lastKentaiFamilyTeeth_ = defaultFamilyTeeth_();
+        if (!kentaiBridgeAddAnchorKey_) {
+          kentaiBridgeAddAnchorKey_ = key;
+          showToast("終点の歯をタップしてください（青枠が始点です）");
+          refreshKentaiPreviewDom();
+        } else if (kentaiBridgeAddAnchorKey_ === key) {
+          showToast("別の歯を終点に選んでください");
+        } else {
+          kentaiBridgeFromTwoTeeth_(kentaiBridgeAddAnchorKey_, key);
+          refreshKentaiPreviewDom();
+        }
+      }
+      return;
+    }
+    const bridgeLine = e.target.closest(".kentai-bridge-line");
     if (bridgeLine && host.contains(bridgeLine) && !e.target.closest(".kentai-bridge-handle")) {
       e.preventDefault();
       closeKentaiToothSymbolPopover_();
@@ -17822,18 +18030,6 @@ function bindKentaiPreviewInteractions_(host) {
       const key = tooth.getAttribute("data-ft-key");
       if (!key) return;
       if (!lastKentaiFamilyTeeth_) lastKentaiFamilyTeeth_ = defaultFamilyTeeth_();
-      if (kentaiBridgeAddModeActive_) {
-        if (!kentaiBridgeAddAnchorKey_) {
-          kentaiBridgeAddAnchorKey_ = key;
-          showToast("終点の歯をタップしてください");
-        } else if (kentaiBridgeAddAnchorKey_ === key) {
-          showToast("別の歯を終点に選んでください");
-        } else {
-          kentaiBridgeFromTwoTeeth_(kentaiBridgeAddAnchorKey_, key);
-          refreshKentaiPreviewDom();
-        }
-        return;
-      }
       closeKentaiToothSymbolPopover_();
       showKentaiToothSymbolPopover_(key, e.clientX, e.clientY);
       return;
@@ -17851,18 +18047,6 @@ function bindKentaiPreviewInteractions_(host) {
     }
   }, bindOpts);
   host.addEventListener("dblclick", e => {
-    const bridgeLine = e.target.closest("[data-kentai-bridge-id]");
-    if (bridgeLine && host.contains(bridgeLine) && !e.target.closest(".kentai-bridge-handle")) {
-      e.preventDefault();
-      const id = bridgeLine.getAttribute("data-kentai-bridge-id");
-      if (id && lastKentaiFamilyTeeth_) {
-        lastKentaiFamilyTeeth_.bridgeLines = (lastKentaiFamilyTeeth_.bridgeLines || []).filter(ln => ln.id !== id);
-        if (kentaiSelectedBridgeId_ === id) kentaiSelectedBridgeId_ = null;
-        refreshKentaiPreviewDom();
-        showToast("ブリッジ線を削除しました");
-      }
-      return;
-    }
     const ann = e.target.closest("[data-kentai-annot]");
     if (ann && host.contains(ann)) {
       e.preventDefault();
@@ -17876,7 +18060,7 @@ function bindKentaiPreviewInteractions_(host) {
       return;
     }
     const svg = host.querySelector("svg.kentai-family-teeth");
-    if (svg && host.contains(e.target) && !e.target.closest("[data-ft-key],[data-kentai-denture-val],[data-kentai-annot]")) {
+    if (svg && host.contains(e.target) && !e.target.closest("[data-ft-key],[data-kentai-denture-val],[data-kentai-annot],[data-kentai-bridge-id],.kentai-bridge-delete")) {
       if (typeof svg.createSVGPoint !== "function") return;
       const pt = svg.createSVGPoint();
       pt.x = e.clientX;
@@ -17914,13 +18098,34 @@ function bindKentaiPreviewInteractions_(host) {
     annotDrag.el.setAttribute("y", loc.y.toFixed(1));
   }
   function endAnnotDrag_() { annotDrag = null; }
+  function startBridgeMove_(id, clientX, clientY) {
+    const svg = svgEl_();
+    const ln = kentaiFamilyBridgeById_(id);
+    const loc = kentaiSvgPointFromClient_(svg, clientX, clientY);
+    if (!id || !svg || !ln || !loc) return;
+    kentaiSelectedBridgeId_ = id;
+    kentaiBridgeDrag_ = {
+      id,
+      h: "move",
+      svg,
+      armed: false,
+      origin: loc,
+      base: {
+        leftX: ln.leftX,
+        rightX: ln.rightX,
+        barY: ln.barY,
+        leftLegY: ln.leftLegY,
+        rightLegY: ln.rightLegY
+      }
+    };
+  }
   function startBridgeDrag_(handleEl, clientX, clientY) {
     const id = handleEl.getAttribute("data-kentai-bridge-id");
     const h = handleEl.getAttribute("data-kentai-bridge-handle");
     const svg = svgEl_();
     const ln = kentaiFamilyBridgeById_(id);
     if (!id || !h || !svg || !ln) return;
-    kentaiBridgeDrag_ = { id, h, svg, ln: Object.assign({}, ln) };
+    kentaiBridgeDrag_ = { id, h, svg, armed: true };
     kentaiSelectedBridgeId_ = id;
     moveBridgeDrag_(clientX, clientY);
   }
@@ -17931,44 +18136,54 @@ function bindKentaiPreviewInteractions_(host) {
     const ln = kentaiFamilyBridgeById_(kentaiBridgeDrag_.id);
     if (!ln) return;
     const h = kentaiBridgeDrag_.h;
-    if (h === "lt") { ln.leftLegY = loc.y; ln.leftX = loc.x; }
+    if (h === "move") {
+      const base = kentaiBridgeDrag_.base;
+      const dx = loc.x - kentaiBridgeDrag_.origin.x;
+      const dy = loc.y - kentaiBridgeDrag_.origin.y;
+      if (!kentaiBridgeDrag_.armed) {
+        if (Math.hypot(dx, dy) < 4) return;
+        kentaiBridgeDrag_.armed = true;
+      }
+      ln.leftX = base.leftX + dx;
+      ln.rightX = base.rightX + dx;
+      ln.barY = base.barY + dy;
+      ln.leftLegY = base.leftLegY + dy;
+      ln.rightLegY = base.rightLegY + dy;
+    } else if (h === "lt") { ln.leftLegY = loc.y; ln.leftX = loc.x; }
     else if (h === "lb") { ln.barY = loc.y; ln.leftX = loc.x; }
     else if (h === "rb") { ln.barY = loc.y; ln.rightX = loc.x; }
     else if (h === "rt") { ln.rightLegY = loc.y; ln.rightX = loc.x; }
-    if (ln.leftX > ln.rightX) {
-      const tx = ln.leftX; ln.leftX = ln.rightX; ln.rightX = tx;
-      const ty = ln.leftLegY; ln.leftLegY = ln.rightLegY; ln.rightLegY = ty;
-    }
-    const g = kentaiBridgeDrag_.svg.querySelector('[data-kentai-bridge-id="' + String(kentaiBridgeDrag_.id).replace(/"/g, "") + '"]');
-    if (!g) return;
-    const seg = g.querySelectorAll("line");
-    if (seg.length >= 3) {
-      seg[0].setAttribute("x1", ln.leftX); seg[0].setAttribute("x2", ln.leftX);
-      seg[0].setAttribute("y1", ln.leftLegY); seg[0].setAttribute("y2", ln.barY);
-      seg[1].setAttribute("x1", ln.rightX); seg[1].setAttribute("x2", ln.rightX);
-      seg[1].setAttribute("y1", ln.rightLegY); seg[1].setAttribute("y2", ln.barY);
-      seg[2].setAttribute("x1", ln.leftX); seg[2].setAttribute("x2", ln.rightX);
-      seg[2].setAttribute("y1", ln.barY); seg[2].setAttribute("y2", ln.barY);
-    }
-    g.querySelectorAll(".kentai-bridge-handle").forEach(el => {
-      const hh = el.getAttribute("data-kentai-bridge-handle");
-      if (hh === "lt") { el.setAttribute("cx", ln.leftX); el.setAttribute("cy", ln.leftLegY); }
-      else if (hh === "lb") { el.setAttribute("cx", ln.leftX); el.setAttribute("cy", ln.barY); }
-      else if (hh === "rb") { el.setAttribute("cx", ln.rightX); el.setAttribute("cy", ln.barY); }
-      else if (hh === "rt") { el.setAttribute("cx", ln.rightX); el.setAttribute("cy", ln.rightLegY); }
-    });
+    kentaiFinishBridgeLineGeom_(ln, h === "move" ? "move" : "handle");
+    kentaiPaintBridgeLineDom_(kentaiBridgeDrag_.svg, ln);
   }
   function endBridgeDrag_() {
-    if (kentaiBridgeDrag_) refreshKentaiPreviewDom();
+    if (kentaiBridgeDrag_) {
+      kentaiBridgeIgnoreClickUntil_ = Date.now() + 450;
+      refreshKentaiPreviewDom();
+    }
     kentaiBridgeDrag_ = null;
   }
-  host.addEventListener("mousedown", e => {
-    const bHandle = e.target.closest(".kentai-bridge-handle");
+  function beginBridgePointer_(target, clientX, clientY, ev) {
+    if (kentaiBridgeAddModeActive_ || !target || !target.closest) return false;
+    const bHandle = target.closest(".kentai-bridge-handle");
     if (bHandle && host.contains(bHandle)) {
-      e.preventDefault();
-      startBridgeDrag_(bHandle, e.clientX, e.clientY);
-      return;
+      if (ev.cancelable) ev.preventDefault();
+      startBridgeDrag_(bHandle, clientX, clientY);
+      return true;
     }
+    if (target.closest(".kentai-bridge-delete")) return false;
+    const bridgeLine = target.closest(".kentai-bridge-line");
+    if (bridgeLine && host.contains(bridgeLine)) {
+      const id = bridgeLine.getAttribute("data-kentai-bridge-id");
+      if (!id) return false;
+      if (ev.cancelable) ev.preventDefault();
+      startBridgeMove_(id, clientX, clientY);
+      return true;
+    }
+    return false;
+  }
+  host.addEventListener("mousedown", e => {
+    if (beginBridgePointer_(e.target, e.clientX, e.clientY, e)) return;
     const ann = e.target.closest("[data-kentai-annot]");
     if (ann && host.contains(ann)) {
       e.preventDefault();
@@ -17976,12 +18191,9 @@ function bindKentaiPreviewInteractions_(host) {
     }
   }, bindOpts);
   host.addEventListener("touchstart", e => {
-    const bHandle = e.target.closest(".kentai-bridge-handle");
-    if (bHandle && host.contains(bHandle) && e.touches && e.touches[0]) {
-      if (e.cancelable) e.preventDefault();
-      startBridgeDrag_(bHandle, e.touches[0].clientX, e.touches[0].clientY);
-      return;
-    }
+    if (!e.touches || !e.touches[0]) return;
+    const t = e.touches[0];
+    if (beginBridgePointer_(e.target, t.clientX, t.clientY, e)) return;
     const ann = e.target.closest("[data-kentai-annot]");
     if (ann && host.contains(ann) && e.touches && e.touches[0]) {
       if (e.cancelable) e.preventDefault();
@@ -18023,8 +18235,7 @@ function importKentaiTeethFromChart_() {
     try { td = JSON.parse(json || "{}"); } catch (_) { td = {}; }
     lastKentaiFamilyTeeth_ = mapTeethDataToFamilyTeeth_(td);
     kentaiSelectedBridgeId_ = null;
-    kentaiBridgeAddModeActive_ = false;
-    kentaiBridgeAddAnchorKey_ = null;
+    kentaiSetBridgeAddMode_(false);
     closeKentaiToothSymbolPopover_();
     refreshKentaiPreviewDom();
     showToast("カルテの歯式を取り込みました（プレビューで調整できます）");
@@ -18066,8 +18277,7 @@ function kentaiClearPatientSpecificState_() {
   lastKentaiFamilyTeeth_ = null;
   lastKentaiRenderedPid_ = null;
   kentaiSelectedBridgeId_ = null;
-  kentaiBridgeAddModeActive_ = false;
-  kentaiBridgeAddAnchorKey_ = null;
+  kentaiSetBridgeAddMode_(false);
   closeKentaiToothSymbolPopover_();
 }
 
@@ -18224,8 +18434,7 @@ function openKentaiReportModal() {
     lastKentaiPreviewHdr_ = null;
     lastKentaiFamilyTeeth_ = null;
     kentaiSelectedBridgeId_ = null;
-    kentaiBridgeAddModeActive_ = false;
-    kentaiBridgeAddAnchorKey_ = null;
+    kentaiSetBridgeAddMode_(false);
     closeKentaiToothSymbolPopover_();
     ["kentai-text-oral", "kentai-text-denture", "kentai-text-perio", "kentai-text-caries", "kentai-text-overall"].forEach(id => {
       const el = document.getElementById(id);
@@ -21300,8 +21509,7 @@ function clearKentaiPreviewDraft_() {
   lastKentaiPreviewHdr_ = null;
   lastKentaiFamilyTeeth_ = null;
   kentaiSelectedBridgeId_ = null;
-  kentaiBridgeAddModeActive_ = false;
-  kentaiBridgeAddAnchorKey_ = null;
+  kentaiSetBridgeAddMode_(false);
   closeKentaiToothSymbolPopover_();
   ["kentai-text-oral", "kentai-text-denture", "kentai-text-perio", "kentai-text-caries", "kentai-text-overall"].forEach(id => {
     const el = document.getElementById(id);

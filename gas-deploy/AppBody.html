@@ -1838,9 +1838,9 @@
         <label for="kentaiClinicSelect">医院名</label>
         <select id="kentaiClinicSelect" onchange="onRptClinicSelectChange_('kentai')"></select>
       </div>
-      <p class="rpt-preview-hint" style="margin:0 0 6px">プレビュー内の<strong>医院名・患者名・性別</strong>などをタップして直せます。歯式は<strong>歯をタップ</strong>で記号を選び（最大3つ）、<strong>＋ブリッジ線</strong>で線を追加し、●をドラッグして調整できます。</p>
+      <p class="rpt-preview-hint" style="margin:0 0 6px">プレビュー内の<strong>医院名・患者名・性別</strong>などをタップして直せます。歯式は<strong>歯の丸</strong>をタップして記号を選びます（最大3つ）。<strong>＋ブリッジ線</strong>で歯を2本選ぶと線が足ります。線をドラッグで移動、青い●で長さや高さを変更、赤い×で削除できます。支台の歯は、空欄か樹脂だけのとき冠が入ります。</p>
       <div class="kentai-teeth-edit-bar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 10px" onclick="kentaiBridgeAddModeStart_()">＋ ブリッジ線</button>
+        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 10px" data-kentai-bridge-add onclick="kentaiBridgeAddModeStart_()">＋ ブリッジ線</button>
         <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 10px" onclick="kentaiBridgeDeleteSelected_()">－ 選択ブリッジ削除</button>
       </div>
       <div id="kentai-preview-host" class="kentai-preview-scroll-host" style="padding:8px"></div>

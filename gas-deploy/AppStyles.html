@@ -762,10 +762,11 @@ body.pc-mode #pcModeBtn { background:var(--accent);color:white;border-color:var(
 #kentai-preview-host .kentai-ft-annot--edit { cursor: move; user-select: none; }
 #kentai-preview-host .kentai-family-teeth { overflow: visible; display: block; }
 #kentai-preview-host .kentai-ft-tooth--edit { cursor: pointer; }
-#kentai-preview-host .kentai-bridge-line { cursor: pointer; }
-#kentai-preview-host .kentai-bridge-line--sel line { stroke: #2563eb; stroke-width: 2; }
-#kentai-preview-host .kentai-bridge-handle { cursor: grab; }
+#kentai-preview-host .kentai-bridge-line { cursor: pointer; touch-action: none; }
+#kentai-preview-host .kentai-bridge-line--sel .kentai-bridge-seg { stroke: #2563eb; stroke-width: 2.2; }
+#kentai-preview-host .kentai-bridge-handle { cursor: grab; touch-action: none; }
 #kentai-preview-host .kentai-bridge-handle:active { cursor: grabbing; }
+#kentai-preview-host .kentai-bridge-delete { cursor: pointer; touch-action: none; }
 .kentai-tooth-symbol-popover {
   position: fixed;
   z-index: 100010;
