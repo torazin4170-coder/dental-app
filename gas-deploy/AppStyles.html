@@ -82,8 +82,10 @@ body { font-family: "Hiragino Kaku Gothic ProN",system-ui,sans-serif; background
 .pif-badge.ih { background: #ede9fe; color: #5b21b6; }
 .pif-badge.dec { background: #f1f5f9; color: #475569; }
 .pif-badge.lft { background: #f1f5f9; color: #64748b; }
+.pif-badge.end { background: #ffedd5; color: #9a3412; }
 .patient-card.p-deceased { border-left: 4px solid #94a3b8; }
 .patient-card.p-left { border-left: 4px solid #cbd5e1; }
+.patient-card.p-ended { border-left: 4px solid #fdba74; }
 .inage-doc-badge {
   display: inline-block;
   font-size: 10px;
@@ -1402,6 +1404,7 @@ body.dark-mode .data-sync-banner .bg-save-retry-btn {
   border-color: #fca5a5;
   color: #fecaca;
 }
+body.dark-mode .pif-badge.end { background: #7c2d12; color: #fed7aa; }
 body.dark-mode .pif-badge.syncing { background: #7c2d12; color: #fed7aa; }
 body.dark-mode .pif-badge.unsync { background: #7f1d1d; color: #fecaca; }
 body.dark-mode #teethChartBlock { background: var(--surface) !important; }

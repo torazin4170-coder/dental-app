@@ -417,6 +417,7 @@ function patientStatusBadgeHtml_(p) {
   const st = p.status || "active";
   if (st === "deceased") h += ` <span class="pif-badge dec">逝去</span>`;
   else if (st === "left") h += ` <span class="pif-badge lft">退去</span>`;
+  else if (st === "ended") h += ` <span class="pif-badge end">終了</span>`;
   const jobs = bgSaveJobsForPatient_(p.id);
   if (jobs.some(j => j.status === "failed")) h += ` <span class="pif-badge unsync">未送信</span>`;
   else if (jobs.some(j => j.status === "sending")) h += ` <span class="pif-badge syncing">送信中</span>`;
@@ -591,9 +592,9 @@ function togglePatientListStatusFilter(key) {
 }
 
 function syncPatientListStatusButtonStyles_() {
-  const activeStyle = { active: "border:1.5px solid var(--green);background:var(--green-light);color:var(--green)", left: "border:1.5px solid #94a3b8;background:#f1f5f9;color:#64748b", deceased: "border:1.5px solid #94a3b8;background:#f8fafc;color:#475569" };
+  const activeStyle = { active: "border:1.5px solid var(--green);background:var(--green-light);color:var(--green)", ended: "border:1.5px solid #d97706;background:#ffedd5;color:#9a3412", left: "border:1.5px solid #94a3b8;background:#f1f5f9;color:#64748b", deceased: "border:1.5px solid #94a3b8;background:#f8fafc;color:#475569" };
   const inactiveStyle = "border:1.5px solid var(--border);background:white;color:var(--muted)";
-  ["active", "left", "deceased"].forEach(key => {
+  ["active", "ended", "left", "deceased"].forEach(key => {
     const btn = document.getElementById("plist-st-" + key);
     if (!btn) return;
     btn.style.cssText = (patientListStatusFilter.has(key) ? activeStyle[key] : inactiveStyle) + ";padding:6px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer";
@@ -4636,6 +4637,7 @@ function patientCardHtmlForList_(p) {
   if (inHosp) istCls = (istCls ? istCls + " " : "") + "p-in-hospital";
   if (st === "deceased") istCls = (istCls ? istCls + " " : "") + "p-deceased";
   else if (st === "left") istCls = (istCls ? istCls + " " : "") + "p-left";
+  else if (st === "ended") istCls = (istCls ? istCls + " " : "") + "p-ended";
   const badge = patientStatusBadgeHtml_(p);
   const docBadge = isInageFacilityById_(p.fac) ? inageDoctorBadgeHtml_(p.assigned_doctor) : "";
   const limBadge = monthlyVisitLimitBadgeHtml_(p, getTodayYmdJstForRecord_());
@@ -4752,9 +4754,10 @@ function mgmtPatientRowHtml_(p) {
   const st = p.status || "active";
   const fac = FACILITIES.find(f => f.id === p.fac);
   const istTag = patientStatusBadgeHtml_(p);
-  const labels = { active: "有効", left: "退去", deceased: "逝去" };
+  const labels = { active: "有効", ended: "終了", left: "退去", deceased: "逝去" };
   const bgs = {
     active: "background:var(--green-light);color:var(--green)",
+    ended: "background:#ffedd5;color:#9a3412",
     left: "background:#f1f5f9;color:var(--muted)",
     deceased: "background:#f8fafc;color:#475569"
   };
@@ -22951,7 +22954,7 @@ ${getRptPrintWhitespaceCss_()}
 function toggleStatusFilter(key) {
   if(mgmtStatusFilter.has(key)) mgmtStatusFilter.delete(key);
   else mgmtStatusFilter.add(key);
-  const activeStyle = { active:"border:1.5px solid var(--green);background:var(--green-light);color:var(--green)", left:"border:1.5px solid #94a3b8;background:#f1f5f9;color:#64748b", deceased:"border:1.5px solid #94a3b8;background:#f8fafc;color:#475569" };
+  const activeStyle = { active:"border:1.5px solid var(--green);background:var(--green-light);color:var(--green)", ended:"border:1.5px solid #d97706;background:#ffedd5;color:#9a3412", left:"border:1.5px solid #94a3b8;background:#f1f5f9;color:#64748b", deceased:"border:1.5px solid #94a3b8;background:#f8fafc;color:#475569" };
   const inactiveStyle = "border:1.5px solid var(--border);background:white;color:var(--muted)";
   document.getElementById(`st-${key}`).style.cssText = (mgmtStatusFilter.has(key)?activeStyle[key]:inactiveStyle) + ";padding:6px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer";
   renderMgmtPatients();
@@ -23578,7 +23581,7 @@ function applyStatus(st) {
   gasCall("updatePatientStatus", pid, st).then(()=>{
     const p = PATIENTS.find(x=>x.id===pid);
     if(p) p.status = st;
-    const msgs = {active:"有効に変更しました",left:"退去として記録しました",deceased:"逝去として記録しました"};
+    const msgs = {active:"有効に変更しました",ended:"終了にしました（依頼時は有効に戻してください）",left:"退去として記録しました",deceased:"逝去として記録しました"};
     showToast(msgs[st]||"更新しました");
     document.getElementById("statusModal").classList.remove("show");
     renderMgmtPatients(); renderPatients();

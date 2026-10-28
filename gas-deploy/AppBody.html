@@ -47,6 +47,7 @@
       </select>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button type="button" id="plist-st-active" onclick="togglePatientListStatusFilter('active')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--green);background:var(--green-light);color:var(--green);font-size:12px;font-weight:700;cursor:pointer">✓ 有効</button>
+        <button type="button" id="plist-st-ended" onclick="togglePatientListStatusFilter('ended')" title="定期の受診を終了。依頼時は有効に戻す" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">終了</button>
         <button type="button" id="plist-st-left" onclick="togglePatientListStatusFilter('left')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">退去</button>
         <button type="button" id="plist-st-deceased" onclick="togglePatientListStatusFilter('deceased')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">逝去</button>
       </div>
@@ -1116,6 +1117,7 @@
       </div>
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <button id="st-active" onclick="toggleStatusFilter('active')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--green);background:var(--green-light);color:var(--green);font-size:12px;font-weight:700;cursor:pointer">✓ 有効</button>
+        <button id="st-ended" onclick="toggleStatusFilter('ended')" title="定期の受診を終了。依頼時は有効に戻す" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">終了</button>
         <button id="st-left" onclick="toggleStatusFilter('left')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">退去</button>
         <button id="st-deceased" onclick="toggleStatusFilter('deceased')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">逝去</button>
       </div>
@@ -1414,7 +1416,7 @@
         style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit;resize:vertical;line-height:1.45"></textarea>
     </div>
     <div class="form-group"><label>ステータス</label>
-      <select id="pm-status"><option value="active">有効</option><option value="left">退去</option><option value="deceased">逝去</option></select>
+      <select id="pm-status"><option value="active">有効</option><option value="ended">終了（依頼時のみ）</option><option value="left">退去</option><option value="deceased">逝去</option></select>
     </div>
     <div class="form-group"><label>受診前（無料検診）</label>
       <select id="pm-intake-stage" style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
@@ -1554,9 +1556,10 @@
     <div class="modal-handle"></div>
     <div class="modal-title" id="sm-title">ステータス変更</div>
     <input type="hidden" id="sm-pid">
-    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">診療記録は保持されます。</p>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">診療記録は残ります。<strong>終了</strong>は、患者の都合で定期の受診をやめた人です。依頼が来たときだけ<strong>有効</strong>に戻してください。終了のあいだは、日報や訪問の一覧には出ません。</p>
     <div style="display:flex;flex-direction:column;gap:8px">
       <button onclick="applyStatus('active')" style="padding:14px;border-radius:10px;border:1.5px solid var(--green);background:var(--green-light);color:var(--green);font-size:14px;font-weight:700;cursor:pointer">✅ 有効（在籍中）</button>
+      <button onclick="applyStatus('ended')" style="padding:14px;border-radius:10px;border:1.5px solid #d97706;background:#ffedd5;color:#9a3412;font-size:14px;font-weight:700;cursor:pointer">⏸ 終了（依頼時のみ）</button>
       <button onclick="applyStatus('left')" style="padding:14px;border-radius:10px;border:1.5px solid var(--border);background:#f1f5f9;color:var(--muted);font-size:14px;font-weight:700;cursor:pointer">🚪 退去</button>
       <button onclick="applyStatus('deceased')" style="padding:14px;border-radius:10px;border:1.5px solid #cbd5e1;background:#f8fafc;color:#475569;font-size:14px;font-weight:700;cursor:pointer">🕊 逝去</button>
     </div>

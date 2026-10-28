@@ -542,4 +542,30 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('patient status filters include the ended tag', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const listBtn = document.getElementById('plist-st-ended')
+      const mgmtBtn = document.getElementById('st-ended')
+      const buttons = !!listBtn && !!mgmtBtn
+        && (listBtn.textContent || '').includes('終了')
+        && (mgmtBtn.textContent || '').includes('終了')
+      const sel = document.getElementById('pm-status') as HTMLSelectElement | null
+      const opt = !!(sel && [...sel.options].some(o => o.value === 'ended' && (o.textContent || '').includes('終了')))
+      const modal = document.getElementById('statusModal')
+      const modalBtn = !!(modal && modal.innerHTML.includes("applyStatus('ended')") && modal.innerHTML.includes('依頼時のみ'))
+      const activeOnly = (status: string) => (status || 'active') === 'active'
+      const hidden = !activeOnly('ended') && !activeOnly('left') && activeOnly('active')
+      return buttons && !!opt && modalBtn && hidden
+    })
+    expect(ok).toBe(true)
+  })
 })
