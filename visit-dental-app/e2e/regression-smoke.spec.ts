@@ -502,4 +502,44 @@ test.describe('regression smoke — DOM shell', () => {
     })
     expect(ok).toBe(true)
   })
+
+  test('month care checks denture cleaning when the tooth chart shows a denture in use', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        mapVisitToGokanSlot_?: (visit: unknown, data: unknown, used: Set<string>) => {
+          today?: { oral_care?: { checked?: boolean, subs?: Record<string, boolean> } }
+        }
+      }
+      if (typeof w.mapVisitToGokanSlot_ !== 'function') return false
+      const slot = (treatments: string, teeth: Record<string, boolean>) =>
+        w.mapVisitToGokanSlot_!(
+          { visit_date: '2026-10-01', treatments, notes: '' },
+          { teeth_data: teeth },
+          new Set(),
+        )
+      const on = (s: ReturnType<typeof slot>) => !!(s.today && s.today.oral_care && s.today.oral_care.subs && s.today.oral_care.subs['入れ歯の清掃'])
+      const fd = on(slot('口腔ケア', { fd_upper: true }))
+      const pd = on(slot('虫歯治療', { pd_lower: true }))
+      const legacy = on(slot('口腔ケア', { fd: true }))
+      const empty = !on(slot('口腔ケア', {}))
+      const none = !on(slot('口腔ケア', { no_denture_upper: true, no_denture_lower: true }))
+      const lost = !on(slot('口腔ケア', { fd_upper: true, denture_lost_upper: true }))
+      const oneJaw = on(slot('口腔ケア', { fd_upper: true, denture_lost_upper: true, pd_lower: true }))
+      const careVisit = slot('口腔ケア', { fd_upper: true })
+      const careKept = !!(careVisit.today && careVisit.today.oral_care && careVisit.today.oral_care.subs
+        && careVisit.today.oral_care.subs['口腔清掃'] && careVisit.today.oral_care.subs['歯茎の清掃'])
+      const parentOff = slot('虫歯治療', { pd_upper: true })
+      const parentOk = !(parentOff.today && parentOff.today.oral_care && parentOff.today.oral_care.checked)
+      return fd && pd && legacy && empty && none && lost && oneJaw && careKept && parentOk
+    })
+    expect(ok).toBe(true)
+  })
 })

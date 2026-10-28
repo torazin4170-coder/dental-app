@@ -973,6 +973,7 @@ function mapVisitToGokanSlot_(visit, data, usedPhrases) {
   } else slot.time_label = "";
   const codes = String(visit.treatments || "").split(/[、,]/).map(x => x.trim()).filter(Boolean);
   applyGokanTreatmentMaps_(slot.today, codes);
+  applyGokanDentureCleaningDefault_(slot.today, data && data.teeth_data);
   applyGokanNextMaps_(slot.next, visit.next_content, slot);
   slot.comment = buildGokanSlotComment_(visit, usedPhrases, data && data.teeth_data);
   return slot;
@@ -12635,6 +12636,24 @@ function rptDraftSavePromise_(promise) {
 function patientHasNoDentureBothJaws_(teethData) {
   const d = teethData || {};
   return !!(d.no_denture_upper && d.no_denture_lower);
+}
+
+/** 歯式で、上か下の義歯を今使っているか（FD・PD。義歯無し・紛失の顎は除く） */
+function patientUsesDenture_(teethData) {
+  if (!teethData || typeof teethData !== "object") return false;
+  migrateLegacyTeethProsthesis(teethData);
+  const jawOn = suffix => {
+    if (teethData["no_denture_" + suffix]) return false;
+    if (teethData["denture_lost_" + suffix]) return false;
+    return !!(teethData["fd_" + suffix] || teethData["pd_" + suffix]);
+  };
+  return jawOn("upper") || jawOn("lower");
+}
+
+function applyGokanDentureCleaningDefault_(today, teethData) {
+  if (!today || !today.oral_care || !patientUsesDenture_(teethData)) return;
+  if (!today.oral_care.subs) today.oral_care.subs = {};
+  today.oral_care.subs["入れ歯の清掃"] = true;
 }
 
 function phraseMentionsDenture_(phrase) {
