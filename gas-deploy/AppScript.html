@@ -5076,6 +5076,82 @@ function quarterlyOverviewCellHtml_(info) {
   return `<span class="qo-cell ${m.cls}" title="${escAttr(m.title)}">${escHtml(m.text)}</span>`;
 }
 
+/** 一覧の「前回」行。色の日付と違うときだけ括弧で日付を足す */
+function quarterlyOverviewPrevLineText_(detail, valueYmd, statusLastYmd, hideStatusDate) {
+  const d = String(detail || "").trim();
+  if (!d) return "";
+  const ymd = formatDateInputVal(valueYmd) || "";
+  const statusYmd = formatDateInputVal(statusLastYmd) || "";
+  if (!hideStatusDate && statusYmd && ymd && statusYmd === ymd) return d;
+  if (!ymd) return d;
+  const md = formatMdJpShort_(ymd);
+  const yy = ymd.slice(2, 4);
+  return md ? `${d}（${yy}/${md}）` : d;
+}
+
+function latestQuarterlyExamRecordFromList_(list, patientId, code) {
+  let best = null;
+  let bestYmd = "";
+  (list || []).forEach(r => {
+    if (!r || String(r.patient_id) !== String(patientId)) return;
+    if (!recordHasTreatment_(r, code)) return;
+    const ymd = formatDateInputVal(r.visit_date) || "";
+    if (!ymd || (bestYmd && ymd <= bestYmd)) return;
+    bestYmd = ymd;
+    best = r;
+  });
+  return best;
+}
+
+/** 前回の数値用。3か月の色判定には使わない。全期間が取れていればそちらも含む */
+function quarterlyOverviewPrevRecord_(patientId, code) {
+  const fromRecent = getLastRestrictedTreatmentRecord_(patientId, code, {});
+  const fromLife = Array.isArray(quarterlyLifetimeRecords_)
+    ? latestQuarterlyExamRecordFromList_(quarterlyLifetimeRecords_, patientId, code)
+    : null;
+  if (!fromLife) return fromRecent;
+  if (!fromRecent) return fromLife;
+  const recentYmd = formatDateInputVal(fromRecent.visit_date) || "";
+  const lifeYmd = formatDateInputVal(fromLife.visit_date) || "";
+  return lifeYmd > recentYmd ? fromLife : fromRecent;
+}
+
+function quarterlyOverviewPrevLineForPatient_(patientId, code, info, block) {
+  const rec = quarterlyOverviewPrevRecord_(patientId, code);
+  if (!rec) return "";
+  const detail = formatQuarterlyChipPrevDetail_(code, rec);
+  if (!detail) return "";
+  return quarterlyOverviewPrevLineText_(
+    detail,
+    rec.visit_date,
+    info && info.lastYmd,
+    !!block
+  );
+}
+
+function quarterlyOverviewExamCellHtml_(info, prevLine, block) {
+  const line = String(prevLine || "").trim();
+  const emptyTitle = block ? "前回の部位は記録にありません" : "前回の数値は記録にありません";
+  let status;
+  if (block) {
+    const title = line ? `${block.title}。前回 ${line}` : block.title;
+    status = `<span class="qo-cell qo-block" title="${escAttr(title)}">不可</span>`;
+  } else {
+    const m = quarterlyOverviewCellMeta_(info);
+    let title = m.title;
+    if (line) title += ` ／ ${line}`;
+    else if (info && info.lastYmd) title += ` ／ ${emptyTitle}`;
+    status = `<span class="qo-cell ${m.cls}" title="${escAttr(title)}">${escHtml(m.text)}</span>`;
+  }
+  let value = "";
+  if (line) {
+    value = `<div class="qo-prev">${escHtml(line)}</div>`;
+  } else if (info && info.lastYmd) {
+    value = `<div class="qo-prev qo-prev-empty" title="${escAttr(emptyTitle)}">—</div>`;
+  }
+  return `<div class="qo-exam">${status}${value}</div>`;
+}
+
 /** 定期検査一覧用。患者ID → 最新歯式JSON文字列。未取得は null */
 let quarterlyTeethByPid_ = null;
 /** 初回チェック用。全期間の診療記録。未取得は null（そのときは直近18か月に戻す） */
@@ -5199,12 +5275,15 @@ function quarterlyFkyokuBlockForPatient_(pid) {
   return fkyokuBillingBlockFromTeeth_(parseQuarterlyTeethJson_(raw));
 }
 
+function quarterlyOverviewValueCellHtml_(patientId, code, info) {
+  const line = quarterlyOverviewPrevLineForPatient_(patientId, code, info, null);
+  return quarterlyOverviewExamCellHtml_(info, line, null);
+}
+
 function quarterlyOverviewFkyokuCellHtml_(patientId, info) {
   const block = quarterlyFkyokuBlockForPatient_(patientId);
-  if (block) {
-    return `<span class="qo-cell qo-block" title="${escAttr(block.title)}">不可</span>`;
-  }
-  return quarterlyOverviewCellHtml_(info);
+  const line = quarterlyOverviewPrevLineForPatient_(patientId, PERIODIC_EXAM_FKYOKU_, info, block);
+  return quarterlyOverviewExamCellHtml_(info, line, block);
 }
 
 async function fetchQuarterlyTeethMapLegacy_() {
@@ -5341,7 +5420,9 @@ function renderQuarterlyOverviewTable_() {
   const headDr = showDrCol ? `<th class="qo-th-dr">担当Dr</th>` : "";
   rebuildQuarterlyOfpiFirstIndex_();
   ensureQuarterlyOverviewClicks_();
-  const lifeNote = Array.isArray(quarterlyLifetimeRecords_) ? "初回チェックは全期間" : "初回チェックは直近18か月";
+  const lifeNote = Array.isArray(quarterlyLifetimeRecords_)
+    ? "初回チェックと前回の数値は全期間"
+    : "初回チェックと前回の数値は直近18か月";
   let html = `<p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.45">基準日: <strong>${escHtml(getQuarterlyOverviewRefYmd_())}</strong> ／ 3か月の可否は直近18か月（${quarterlyOverviewRecords_.length}件）／ ${escHtml(lifeNote)}</p>`;
   groups.forEach(g => {
     const facName = (g.facility && g.facility.name) ? String(g.facility.name) : "施設";
@@ -5359,8 +5440,8 @@ function renderQuarterlyOverviewTable_() {
       QUARTERLY_OVERVIEW_CODES_.forEach(code => {
         const cell = code === PERIODIC_EXAM_FKYOKU_
           ? quarterlyOverviewFkyokuCellHtml_(p.id, cols[code])
-          : quarterlyOverviewCellHtml_(cols[code]);
-        html += `<td>${cell}</td>`;
+          : quarterlyOverviewValueCellHtml_(p.id, code, cols[code]);
+        html += `<td class="qo-exam-td">${cell}</td>`;
       });
       html += `<td class="qo-ofpi">${quarterlyOfpiCellHtml_(p.id)}</td>`;
       html += "</tr>";

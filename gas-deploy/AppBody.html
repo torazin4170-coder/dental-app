@@ -1013,11 +1013,11 @@
       .qo-fac-block { margin-bottom: 18px; }
       .qo-fac-title { font-size: 13px; font-weight: 800; color: #334155; margin: 0 0 8px; padding: 8px 10px; background: #f1f5f9; border-radius: 8px; }
       .qo-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-      .qo-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; table-layout: fixed; }
-      .qo-table th, .qo-table td { border-bottom: 1px solid #e2e8f0; padding: 8px 6px; vertical-align: middle; }
+      .qo-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 780px; table-layout: fixed; }
+      .qo-table th, .qo-table td { border-bottom: 1px solid #e2e8f0; padding: 8px 6px; vertical-align: top; }
       .qo-table th { background: #f8fafc; font-weight: 800; color: #475569; font-size: 11px; position: sticky; top: 0; z-index: 1; }
       .qo-table .qo-col-no { width: 52px; }
-      .qo-table .qo-col-name { width: 34%; }
+      .qo-table .qo-col-name { width: 18%; }
       .qo-table .qo-col-dr { width: 72px; }
       .qo-table .qo-col-exam { width: auto; }
       .qo-table .qo-col-ofpi { width: 92px; }
@@ -1035,6 +1035,9 @@
       .qo-cell.qo-ok { background: #dcfce7; color: #166534; }
       .qo-cell.qo-wait { background: #fef3c7; color: #92400e; }
       .qo-cell.qo-block { background: #fee2e2; color: #991b1b; }
+      .qo-exam { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+      .qo-prev { font-size: 11px; font-weight: 700; color: #0f172a; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
+      .qo-prev-empty { color: #94a3b8; font-weight: 800; }
       .qo-swatch.qo-block { background: #fca5a5; }
       #spanel-quarterly select, #spanel-quarterly input { touch-action: manipulation; }
       .rpt-edit { outline: none; border-radius: 3px; min-width: 0.4em; cursor: text; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; touch-action: manipulation; }
@@ -1240,7 +1243,7 @@
       </details>
     </div>
     <div class="settings-panel" id="spanel-quarterly">
-      <p class="report-hub-lead" style="margin-top:0">舌圧検査・口腔粘膜湿潤度・フッ素塗布の<strong>3か月制限</strong>を、施設ごと・全患者で一覧表示します。診療記録入力画面のチップ表示と同じ基準です。</p>
+      <p class="report-hub-lead" style="margin-top:0">舌圧検査・口腔粘膜湿潤度・フッ素塗布の<strong>3か月制限</strong>を、施設ごと・全患者で一覧表示します。診療記録入力画面のチップ表示と同じ基準です。色の下に、前回の数値（F局は塗った歯）を出します。</p>
       <div class="card" style="margin-bottom:10px">
         <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">基準日（この日で「選択可か」を判定）</label>
         <input type="date" id="quarterlyOverviewRefDate" onchange="renderQuarterlyOverviewTable_()" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit">
@@ -1259,6 +1262,7 @@
         <span><i class="qo-swatch qo-ok"></i>可＝前回から3か月経過</span>
         <span><i class="qo-swatch qo-wait"></i>日付〜＝その日まで不可</span>
         <span><i class="qo-swatch qo-block"></i>不可＝無歯顎または残根のみ（F局）</span>
+        <span>色の下＝前回（舌圧はkPa、湿潤度は点、F局は塗った歯）。—は日付だけで数値が残っていないとき</span>
         <span>☑＝初診の日以降に、舌圧と湿潤度をそれぞれ初めて行った人</span>
         <span>⑨＝その患者の口腔機能精密検査を開く</span>
       </div>

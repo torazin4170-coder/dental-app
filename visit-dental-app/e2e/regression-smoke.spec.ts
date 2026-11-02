@@ -543,6 +543,67 @@ test.describe('regression smoke — DOM shell', () => {
     expect(ok).toBe(true)
   })
 
+  test('quarterly overview shows the previous value under each exam', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        formatQuarterlyChipPrevDetail_?: (code: string, rec: unknown) => string
+        quarterlyOverviewPrevLineText_?: (detail: string, valueYmd: string, statusLastYmd: string, hideStatusDate: boolean) => string
+        quarterlyOverviewExamCellHtml_?: (info: unknown, prevLine: string, block: { title: string } | null) => string
+        latestQuarterlyExamRecordFromList_?: (list: unknown[], patientId: string, code: string) => { id?: string } | null
+      }
+      if (
+        typeof w.formatQuarterlyChipPrevDetail_ !== 'function' ||
+        typeof w.quarterlyOverviewPrevLineText_ !== 'function' ||
+        typeof w.quarterlyOverviewExamCellHtml_ !== 'function' ||
+        typeof w.latestQuarterlyExamRecordFromList_ !== 'function'
+      ) return false
+      const tongue = w.formatQuarterlyChipPrevDetail_('舌圧検査', {
+        exam_data: JSON.stringify({ 舌圧検査: { value: '28.5', unit: 'kPa' } }),
+        notes: '',
+      })
+      const moisture = w.formatQuarterlyChipPrevDetail_('口腔粘膜湿潤度検査', {
+        exam_data: '',
+        notes: '口腔粘膜湿潤度 27.4点',
+      })
+      const site = w.formatQuarterlyChipPrevDetail_('フッ素塗布', {
+        exam_data: JSON.stringify({ フッ素塗布: { labels: ['上右6', '上右7'] } }),
+        notes: '',
+      })
+      const sameDay = w.quarterlyOverviewPrevLineText_('28.5kPa', '2026-08-02', '2026-08-02', false) === '28.5kPa'
+      const older = w.quarterlyOverviewPrevLineText_('28.5kPa', '2024-06-01', '', false) === '28.5kPa（24/6/1）'
+      const blockedDate = w.quarterlyOverviewPrevLineText_('上右6·上右7', '2026-08-02', '2026-08-02', true) === '上右6·上右7（26/8/2）'
+      const okCell = w.quarterlyOverviewExamCellHtml_({ lastYmd: '2026-08-02', restricted: false }, '28.5kPa', null)
+      const neverCell = w.quarterlyOverviewExamCellHtml_({ lastYmd: '', restricted: false }, '', null)
+      const missingCell = w.quarterlyOverviewExamCellHtml_({ lastYmd: '2026-08-02', restricted: false }, '', null)
+      const blockCell = w.quarterlyOverviewExamCellHtml_(
+        { lastYmd: '2026-08-02', restricted: false },
+        '上右6·上右7（26/8/2）',
+        { title: '無歯顎（残っている歯がない）ため、F局は算定できません' },
+      )
+      const newer = w.latestQuarterlyExamRecordFromList_([
+        { id: 'old', patient_id: 'p1', visit_date: '2026-01-01', treatments: '舌圧検査' },
+        { id: 'new', patient_id: 'p1', visit_date: '2026-08-02', treatments: '舌圧検査' },
+        { id: 'other', patient_id: 'p2', visit_date: '2026-09-01', treatments: '舌圧検査' },
+      ], 'p1', '舌圧検査')
+      const cellsOk = okCell.includes('qo-ok') && okCell.includes('可') && okCell.includes('28.5kPa') && okCell.includes('qo-prev')
+        && !neverCell.includes('qo-prev') && neverCell.includes('未')
+        && missingCell.includes('qo-prev-empty') && missingCell.includes('—')
+        && blockCell.includes('不可') && blockCell.includes('qo-block') && blockCell.includes('上右6·上右7')
+        && !blockCell.includes('qo-ok')
+      return tongue === '28.5kPa' && moisture === '27.4点' && site === '上右6·上右7'
+        && sameDay && older && blockedDate && cellsOk && newer?.id === 'new'
+    })
+    expect(ok).toBe(true)
+  })
+
   test('patient status filters include the ended tag', async ({ page }) => {
     await page.goto('/')
     await page.waitForFunction(
