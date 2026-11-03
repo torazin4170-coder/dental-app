@@ -20747,7 +20747,7 @@ function buildSwsFormHtml_(data) {
   h += `<div class="sws-chk-row">${swsRadio("rsstJudge","normal","正常（3回以上）",r.judge==="normal")}${swsRadio("rsstJudge","low","低下（2回以下）",r.judge==="low")}</div>`;
   h += `<div class="sws-chk-row">${swsRadio("rsstStatus","ok","正常実施",r.status==="ok")}${swsRadio("rsstStatus","na","判定不能・実施不可",r.status==="na")}</div>`;
   h += `<div class="sws-chk-row">${swsRadio("rsstElev","good","喉頭挙上：良好",r.elevation==="good")}${swsRadio("rsstElev","weak","喉頭挙上：減弱",r.elevation==="weak")}</div>`;
-  h += `<div class="sws-chk-row">${swsChk("rsstReason","cog","指示理解困難(認知/高次脳)",has(r.reasons,"cog"))}${swsChk("rsstReason","dry","極度の口腔乾燥",has(r.reasons,"dry"))}${swsChk("rsstReason","refuse","不穏・拒否",has(r.reasons,"refuse"))}${swsChk("rsstReason","other","その他",has(r.reasons,"other"))}</div>`;
+  h += `<div class="sws-chk-row">${swsChk("rsstReason","cog","指示理解困難（認知症/高次脳機能障害）",has(r.reasons,"cog"))}${swsChk("rsstReason","dry","極度の口腔乾燥",has(r.reasons,"dry"))}${swsChk("rsstReason","refuse","不穏・拒否",has(r.reasons,"refuse"))}${swsChk("rsstReason","other","その他",has(r.reasons,"other"))}</div>`;
   h += `<input type="text" class="sws-inp" id="swsRsstOther" value="${escAttr(r.reasonOther || "")}" placeholder="その他の理由">`;
   h += `</div>`;
 
@@ -21217,7 +21217,7 @@ function buildSwsDocumentHtml_(data, forPrint, opts) {
 
   h += `<div class="sws-sec">2. 嚥下スクリーニング検査　評価実施日：${escHtml(d.examDate || "")}</div>`;
   h += `<table>`;
-  h += `<tr><th>反復唾液嚥下テスト(RSST)【触診による挙上評価】</th><td><div class="sws-criteria">判定：正常（3回以上）／低下（2回以下）</div>［${escHtml(r.count || "　")}］回 / 30秒<div class="sws-judge-line">判定：${swsRadioMarks([["normal","正常 (3回以上)"],["low","低下 (2回以下)"]], r.judge)}</div>${swsRadioMarks([["ok","正常実施"],["na","判定不能・実施不可"]], r.status)}　喉頭挙上：${swsRadioMarks([["good","良好"],["weak","減弱"]], r.elevation)}<br>理由：${swsMarks([["cog","指示理解困難(認知/高次脳)"],["dry","極度の口腔乾燥"],["refuse","不穏・拒否"],["other","その他"]], r.reasons)}${r.reasonOther ? "（" + escHtml(r.reasonOther) + "）" : ""}</td></tr>`;
+  h += `<tr><th>反復唾液嚥下テスト(RSST)【触診による挙上評価】</th><td><div class="sws-criteria">判定：正常（3回以上）／低下（2回以下）</div>［<span class="sws-rsst-count">${escHtml(r.count || "")}</span>］回 / 30秒<div class="sws-judge-line">判定：${swsRadioMarks([["normal","正常 (3回以上)"],["low","低下 (2回以下)"]], r.judge)}</div>${swsRadioMarks([["ok","正常実施"],["na","判定不能・実施不可"]], r.status)}　喉頭挙上：${swsRadioMarks([["good","良好"],["weak","減弱"]], r.elevation)}<br>理由：${swsMarks([["cog","指示理解困難（認知症/高次脳機能障害）"],["dry","極度の口腔乾燥"],["refuse","不穏・拒否"],["other","その他"]], r.reasons)}${r.reasonOther ? "（" + escHtml(r.reasonOther) + "）" : ""}</td></tr>`;
   h += `<tr><th>改訂水飲みテスト(MWST) フードテスト(FT)</th><td>${swsMark(String(m.score)==="1","1点：嚥下なし　ムセ　呼吸切迫")}　${swsMark(String(m.score)==="2","2点：嚥下あり　呼吸切迫")}　${swsMark(String(m.score)==="3","3点：呼吸良好　ムセ　湿性嗄声")}　${swsMark(String(m.score)==="4","4点：呼吸良好　ムセなし")}　${swsMark(String(m.score)==="5","5点：反復嚥下可能（30秒以内）")}<div class="sws-judge-line">判定：${swsRadioMarks([["normal","正常"],["suspect","疑い"],["abn","異常"]], m.judge)}</div>${swsRadioMarks([["ok","正常実施"],["na","判定不能・実施不可"]], m.status)}　ムセ：${swsRadioMarks([["none","なし"],["yes","あり"],["late","遅発性ムセ"]], m.mousse)}<br>理由：${swsMarks([["risk","唾液貯留/誤嚥リスク極めて高く見合わせ"],["cog","指示理解困難"],["refuse","とろみ水/水分への強い拒否・不穏"],["other","その他"]], m.reasons)}${m.reasonOther ? "（" + escHtml(m.reasonOther) + "）" : ""}</td></tr>`;
   h += `<tr><th>頸部聴診法【嚥下音・呼吸音】</th><td><div class="sws-criteria">判定：正常（清明）／異常（湿性音・泡立ち音）／判定不能・不明瞭</div><div class="sws-judge-line">判定：${swsRadioMarks([["normal","正常 (清明)"],["abn","異常 (湿性音・泡立ち音)"],["na","判定不能/不明瞭"]], a.judge)}</div>嚥下音：${swsMarks([["normal","正常"],["long","長い(送り込み不良)"],["weak","弱い(収縮力低下)"],["multi","複数回(残留)"],["bubble","泡立ち音(bubbling: 咽頭貯留/侵入)"]], a.swallow)}<br>呼吸音：${swsMarks([["clear","清明"],["wet","湿性音(wet: 貯留)"],["gargle","嗽音(gargling: 侵入)"]], a.breath)}　実施不可：${swsMarks([["refuse","聴診器接触への強い拒否・不穏"],["weak","音微弱"]], a.unableReasons)}</td></tr>`;
   h += `<tr><th>咳テスト(吸入 または 指示・代替)【喀痰能力アセスメント】</th><td><div>判定：${swsRadioMarks([["normal","正常 (咳反射・喀痰良好)"],["low","低下 (咳反射・排痰不良)"],["na","判定不能"]], c.judge)}</div><div class="sws-after-judge">［簡易咳テスト(1.0%クエン酸または食酢)］${swsRadioMarks([["normal","正常(30秒以内咳あり)"],["low","低下"]], c.citric)}</div><div>［指示咳嗽(代替)］${swsRadioMarks([["strong","強い咳払い可能"],["weak","弱い"],["none","咳払い不可"]], c.instructed)}</div><div>［自発咳嗽］${swsMarks([["wet","湿性咳嗽頻回"],["hard","喀痰困難(要吸引/ハフィング介助)"]], c.spontaneous)}</div><div>${swsMark(swsCoughUnableOn_(c), "実施不可")}</div><div>（理由：${swsMarks([["neb","ネブライザー（スプレー）吸入拒否・不穏"],["cog","指示理解困難"]], c.unableReasons)}）</div></td></tr>`;
@@ -21250,6 +21250,7 @@ body{margin:0;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,san
 .sws-doc .sws-box{color:#111}
 .sws-doc .sws-muted{color:#111}
 .sws-doc .sws-opt{display:inline-block;white-space:nowrap;margin:0 0.45em 1px 0;vertical-align:baseline}
+.sws-doc .sws-rsst-count{display:inline-block;min-width:3.6em;text-align:center}
 .sws-doc .sws-judge-line{display:block;margin-top:1.15em}
 .sws-doc .sws-after-judge{display:block;margin-top:1.15em}
 .sws-doc .sws-pre{white-space:pre-wrap}

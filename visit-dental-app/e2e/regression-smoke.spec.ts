@@ -605,7 +605,8 @@ test.describe('regression smoke — DOM shell', () => {
         ? (w.swsSyncLinkedQuestionnaireAnswers_(q, 'eat10', 4) && q.pill5[0] === '3')
         : false
       const ok = !!modal && !!printOpt && !!linkOpt && !!overallOpt && overallOpt.checked === false && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
-        && htmlMain.includes('山田花子') && htmlMain.includes('反復唾液嚥下テスト') && htmlMain.includes('［4］') && htmlMain.includes('正常')
+        && htmlMain.includes('山田花子') && htmlMain.includes('反復唾液嚥下テスト') && htmlMain.includes('sws-rsst-count') && htmlMain.includes('>4<') && htmlMain.includes('正常')
+        && htmlMain.includes('指示理解困難（認知症/高次脳機能障害）') && !htmlMain.includes('認知/高次脳')
         && htmlMain.includes('sws-opt')
         && !htmlMain.includes('聖隷式嚥下質問紙') && !htmlMain.includes('次回VE嚥下内視鏡検査に向けて')
         && htmlMain.includes('総合判定 ＆ 今後の計画') && !htmlNoOverall.includes('総合判定 ＆ 今後の計画')
