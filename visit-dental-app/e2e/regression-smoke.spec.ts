@@ -621,6 +621,9 @@ test.describe('regression smoke — DOM shell', () => {
         && htmlQ.includes('連1') && htmlQ.includes('連7') && htmlQ.includes('sws-q-link-mark')
         && !htmlQNoMark.includes('sws-q-link-mark')
         && htmlMain.includes('1点：嚥下なし') && htmlMain.includes('泡立ち音')
+        && !htmlMain.includes('1点：嚥下なし　ムセ　呼吸切迫　／　2点')
+        && htmlMain.includes('［自発咳嗽］') && htmlMain.includes('［指示咳嗽(代替)］')
+        && htmlMain.includes('［簡易咳テスト(1.0%クエン酸または食酢)］') && !htmlMain.includes('自発：')
         && !htmlMain.includes('㊞') && (htmlMain.match(/sws-judge-line/g) || []).length >= 4
         && pillGuide.includes('軽度から中等度')
         && syncResidue && syncPill
