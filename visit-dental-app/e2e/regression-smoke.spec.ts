@@ -607,6 +607,8 @@ test.describe('regression smoke — DOM shell', () => {
         && htmlQ.includes('聖隷式嚥下質問紙') && htmlQ.includes('sws-page-break') && htmlQ.includes('sws-q-page')
         && htmlQ.includes('酸逆流関連症状') && htmlQ.includes('運動不全（もたれ）症状')
         && htmlQ.includes('PILL-5（錠剤嚥下障害のアセスメント）') && htmlQ.includes('6未満＝正常')
+        && htmlQ.includes('連1') && htmlQ.includes('連7') && htmlQ.includes('sws-q-link-mark')
+        && htmlQ.includes('手書きでも同じ印どうしを揃えてください')
         && htmlMain.includes('1点：嚥下なし') && htmlMain.includes('泡立ち音')
         && pillGuide.includes('軽度から中等度')
         && syncResidue && syncPill
