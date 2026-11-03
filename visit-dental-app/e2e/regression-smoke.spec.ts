@@ -555,21 +555,21 @@ test.describe('regression smoke — DOM shell', () => {
     const ok = await page.evaluate(() => {
       const w = window as unknown as {
         emptySwsData_?: () => Record<string, unknown>
-        buildSwsDocumentHtml_?: (data: Record<string, unknown>, forPrint: boolean) => string
-        swsQuestionnaireHasAny_?: (q: unknown) => boolean
+        buildSwsDocumentHtml_?: (data: Record<string, unknown>, forPrint: boolean, opts?: { includeQuestionnaires?: boolean }) => string
         applySwsTeethDefaults_?: (data: Record<string, unknown>, teeth: Record<string, unknown>, force: boolean) => Record<string, unknown>
+        swsPill5GuideText_?: (total: number | null) => string
         openSwallowScreenModal?: () => void
         toggleChip?: (code: string) => void
       }
       const modal = document.getElementById('swsModal')
+      const printOpt = document.getElementById('swsPrintQuestionnaires') as HTMLInputElement | null
       const btn = [...document.querySelectorAll('.report-out-btn')].some(el => (el.textContent || '').includes('嚥下スクリーニング'))
-      if (typeof w.emptySwsData_ !== 'function' || typeof w.buildSwsDocumentHtml_ !== 'function' || typeof w.swsQuestionnaireHasAny_ !== 'function' || typeof w.applySwsTeethDefaults_ !== 'function') {
+      if (typeof w.emptySwsData_ !== 'function' || typeof w.buildSwsDocumentHtml_ !== 'function' || typeof w.applySwsTeethDefaults_ !== 'function') {
         return { ok: false, reason: 'missing-fns' }
       }
       const data = w.emptySwsData_() as {
         patientName?: string
         rsst?: { count?: string, judge?: string }
-        questionnaires?: { seirei: string[], fssg: string[], eat10: string[], pill5: string[] }
         oral?: { remainingTeeth?: string, dentureUse?: string[], dentureJaw?: string[] }
       }
       data.patientName = '山田花子'
@@ -577,11 +577,8 @@ test.describe('regression smoke — DOM shell', () => {
         data.rsst.count = '4'
         data.rsst.judge = 'normal'
       }
-      const html = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true)
-      const noQ = !w.swsQuestionnaireHasAny_(data.questionnaires)
-      const qOn = w.swsQuestionnaireHasAny_!({ seirei: ['A', '', ''], fssg: [], eat10: [], pill5: [] })
-      if (data.questionnaires) data.questionnaires.seirei[0] = 'A'
-      const htmlQ = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true)
+      const htmlMain = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: false })
+      const htmlQ = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: true })
       const teeth = w.applySwsTeethDefaults_(
         w.emptySwsData_() as Record<string, unknown>,
         { fd_upper: true, upper_L1: 'C2' },
@@ -592,12 +589,19 @@ test.describe('regression smoke — DOM shell', () => {
         {},
         true,
       ) as { oral?: { remainingTeeth?: string } }
-      const ok = !!modal && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
-        && html.includes('山田花子') && html.includes('RSST') && html.includes('［4］') && html.includes('正常')
-        && !html.includes('聖隷式嚥下質問紙') && noQ && qOn && htmlQ.includes('聖隷式嚥下質問紙')
+      const pillGuide = typeof w.swsPill5GuideText_ === 'function' ? w.swsPill5GuideText_(8) : ''
+      const ok = !!modal && !!printOpt && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
+        && htmlMain.includes('山田花子') && htmlMain.includes('反復唾液嚥下テスト') && htmlMain.includes('［4］') && htmlMain.includes('正常')
+        && !htmlMain.includes('聖隷式嚥下質問紙') && !htmlMain.includes('次回VE嚥下内視鏡検査に向けて')
+        && htmlMain.includes('総合判定 ＆ 今後の計画') && !htmlMain.includes('sws-page-break')
+        && htmlQ.includes('聖隷式嚥下質問紙') && htmlQ.includes('sws-page-break')
+        && htmlQ.includes('酸逆流関連症状') && htmlQ.includes('運動不全（もたれ）症状')
+        && htmlQ.includes('PILL-5（錠剤嚥下障害のアセスメント）') && htmlQ.includes('6未満＝正常')
+        && htmlMain.includes('1点：嚥下なし') && htmlMain.includes('泡立ち音')
+        && pillGuide.includes('軽度から中等度')
         && !!teeth?.oral?.dentureUse?.includes('use') && !!teeth?.oral?.dentureJaw?.includes('upper')
         && (emptyTeeth?.oral?.remainingTeeth === '' || emptyTeeth?.oral?.remainingTeeth == null)
-      return { ok, modal: !!modal, btn, htmlHasName: html.includes('山田花子'), denture: teeth?.oral, emptyRem: emptyTeeth?.oral?.remainingTeeth, noQ, qOn, htmlQHas: htmlQ.includes('聖隷式嚥下質問紙') }
+      return { ok }
     })
     expect(ok).toEqual(expect.objectContaining({ ok: true }))
   })
