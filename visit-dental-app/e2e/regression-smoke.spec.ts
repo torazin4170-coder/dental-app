@@ -621,6 +621,7 @@ test.describe('regression smoke — DOM shell', () => {
         && htmlQ.includes('連1') && htmlQ.includes('連7') && htmlQ.includes('sws-q-link-mark')
         && !htmlQNoMark.includes('sws-q-link-mark')
         && htmlMain.includes('1点：嚥下なし') && htmlMain.includes('泡立ち音')
+        && !htmlMain.includes('㊞') && (htmlMain.match(/sws-judge-line/g) || []).length >= 4
         && pillGuide.includes('軽度から中等度')
         && syncResidue && syncPill
         && !!teeth?.oral?.dentureUse?.includes('use') && !!teeth?.oral?.dentureJaw?.includes('upper')
