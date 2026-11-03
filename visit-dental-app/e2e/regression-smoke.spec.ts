@@ -555,7 +555,7 @@ test.describe('regression smoke — DOM shell', () => {
     const ok = await page.evaluate(() => {
       const w = window as unknown as {
         emptySwsData_?: () => Record<string, unknown>
-        buildSwsDocumentHtml_?: (data: Record<string, unknown>, forPrint: boolean, opts?: { includeQuestionnaires?: boolean, showLinkMarks?: boolean }) => string
+        buildSwsDocumentHtml_?: (data: Record<string, unknown>, forPrint: boolean, opts?: { includeQuestionnaires?: boolean, showLinkMarks?: boolean, showOverall?: boolean }) => string
         applySwsTeethDefaults_?: (data: Record<string, unknown>, teeth: Record<string, unknown>, force: boolean) => Record<string, unknown>
         swsPill5GuideText_?: (total: number | null) => string
         swsSyncLinkedQuestionnaireAnswers_?: (q: Record<string, string[]>, kind: string, idx: number) => boolean
@@ -565,6 +565,7 @@ test.describe('regression smoke — DOM shell', () => {
       const modal = document.getElementById('swsModal')
       const printOpt = document.getElementById('swsPrintQuestionnaires') as HTMLInputElement | null
       const linkOpt = document.getElementById('swsShowLinkMarks') as HTMLInputElement | null
+      const overallOpt = document.getElementById('swsShowOverall') as HTMLInputElement | null
       const btn = [...document.querySelectorAll('.report-out-btn')].some(el => (el.textContent || '').includes('嚥下スクリーニング'))
       if (typeof w.emptySwsData_ !== 'function' || typeof w.buildSwsDocumentHtml_ !== 'function' || typeof w.applySwsTeethDefaults_ !== 'function') {
         return { ok: false, reason: 'missing-fns' }
@@ -580,6 +581,7 @@ test.describe('regression smoke — DOM shell', () => {
         data.rsst.judge = 'normal'
       }
       const htmlMain = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: false })
+      const htmlNoOverall = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: false, showOverall: false })
       const htmlQ = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: true })
       const htmlQNoMark = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: true, showLinkMarks: false })
       const teeth = w.applySwsTeethDefaults_(
@@ -602,11 +604,12 @@ test.describe('regression smoke — DOM shell', () => {
       const syncPill = typeof w.swsSyncLinkedQuestionnaireAnswers_ === 'function'
         ? (w.swsSyncLinkedQuestionnaireAnswers_(q, 'eat10', 4) && q.pill5[0] === '3')
         : false
-      const ok = !!modal && !!printOpt && !!linkOpt && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
+      const ok = !!modal && !!printOpt && !!linkOpt && !!overallOpt && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
         && htmlMain.includes('山田花子') && htmlMain.includes('反復唾液嚥下テスト') && htmlMain.includes('［4］') && htmlMain.includes('正常')
         && htmlMain.includes('sws-opt')
         && !htmlMain.includes('聖隷式嚥下質問紙') && !htmlMain.includes('次回VE嚥下内視鏡検査に向けて')
-        && htmlMain.includes('総合判定 ＆ 今後の計画') && !htmlMain.includes('sws-page-break')
+        && htmlMain.includes('総合判定 ＆ 今後の計画') && !htmlNoOverall.includes('総合判定 ＆ 今後の計画')
+        && htmlNoOverall.includes('反復唾液嚥下テスト') && !htmlMain.includes('sws-page-break')
         && htmlQ.includes('聖隷式嚥下質問紙') && htmlQ.includes('sws-page-break') && htmlQ.includes('sws-q-page')
         && htmlQ.includes('酸逆流関連症状') && htmlQ.includes('運動不全（もたれ）症状')
         && htmlQ.includes('PILL-5（錠剤嚥下障害のアセスメント）') && htmlQ.includes('6未満＝正常')

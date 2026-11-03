@@ -20781,7 +20781,7 @@ function buildSwsFormHtml_(data) {
   h += `<div class="sws-chk-row">${swsChk("coughUnable","neb","ネブライザー（スプレー）吸入拒否・不穏",has(c.unableReasons,"neb"))}${swsChk("coughUnable","cog","指示理解困難",has(c.unableReasons,"cog"))}</div>`;
   h += `</div>`;
 
-  h += `<div class="card sws-form-section" style="padding:10px 12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">4. 総合判定 ＆ 今後の計画</div>`;
+  h += `<div class="card sws-form-section sws-overall-block" style="padding:10px 12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">4. 総合判定 ＆ 今後の計画</div>`;
   h += `<div class="sws-chk-row" style="flex-direction:column;align-items:flex-start">${SWS_OVERALL_OPTS_.map(opt => swsRadio("overall", opt.v, opt.t, d.overall===opt.v)).join("")}</div>`;
   h += `<div class="sws-field-lbl">次回VE実施予定日</div><input type="date" class="sws-inp" id="swsVeDate" value="${escAttr(d.veDate || "")}">`;
   h += `<div class="sws-field-lbl">時間（頃）</div><input type="text" class="sws-inp" id="swsVeTime" value="${escAttr(d.veTime || "")}" placeholder="例: 10:00">`;
@@ -20976,10 +20976,16 @@ function swsShowLinkMarksPreferred_() {
   return !el || !!el.checked;
 }
 
+function swsShowOverallPreferred_() {
+  const el = document.getElementById("swsShowOverall");
+  return !el || !!el.checked;
+}
+
 function swsApplyLinkMarkVisibility_() {
   const modal = document.getElementById("swsModal");
   if (!modal) return;
   modal.classList.toggle("sws-link-off", !swsShowLinkMarksPreferred_());
+  modal.classList.toggle("sws-overall-off", !swsShowOverallPreferred_());
 }
 
 const SWS_SCALE_LEGEND_ = {
@@ -21210,10 +21216,12 @@ function buildSwsDocumentHtml_(data, forPrint, opts) {
   h += `<tr><th>咳テスト(吸入 または 指示・代替)【喀痰能力アセスメント】</th><td><div class="sws-criteria">判定：正常（咳反射・喀痰良好）／低下（咳反射・排痰不良）／判定不能。簡易咳テスト(1.0%クエン酸または食酢)：正常(30秒以内咳あり)／低下</div>判定：${swsRadioMarks([["normal","正常 (咳反射・喀痰良好)"],["low","低下 (咳反射・排痰不良)"],["na","判定不能"]], c.judge)}　簡易：${swsRadioMarks([["normal","正常(30秒以内咳あり)"],["low","低下"]], c.citric)}　指示咳嗽：${swsRadioMarks([["strong","強い咳払い可能"],["weak","弱い"],["none","咳払い不可"]], c.instructed)}　自発：${swsMarks([["wet","湿性咳嗽頻回"],["hard","喀痰困難(要吸引/ハフィング介助)"]], c.spontaneous)}　実施不可：${swsMarks([["neb","ネブライザー（スプレー）吸入拒否・不穏"],["cog","指示理解困難"]], c.unableReasons)}</td></tr>`;
   h += `</table>`;
 
-  h += `<div class="sws-sec">4. 総合判定 ＆ 今後の計画</div>`;
-  h += `<table><tr><th>総合判定・経口摂取の適応</th><td>${SWS_OVERALL_OPTS_.map(opt => swsMark(d.overall===opt.v, opt.t)).join("<br>")}</td></tr>`;
-  h += `<tr><th>次回VE(嚥下内視鏡検査)計画</th><td>予定日：${escHtml(d.veDate || "")}　時間：${escHtml(d.veTime || "")}頃<br>準備物：<span class="sws-pre">${escHtml(d.vePrep || "")}</span></td></tr>`;
-  h += `<tr><th>多職種連携(ケア・ACP)への申し送り事項</th><td class="sws-pre">${escHtml(d.handover || "")}</td></tr></table>`;
+  if (opts.showOverall !== false) {
+    h += `<div class="sws-sec">4. 総合判定 ＆ 今後の計画</div>`;
+    h += `<table><tr><th>総合判定・経口摂取の適応</th><td>${SWS_OVERALL_OPTS_.map(opt => swsMark(d.overall===opt.v, opt.t)).join("<br>")}</td></tr>`;
+    h += `<tr><th>次回VE(嚥下内視鏡検査)計画</th><td>予定日：${escHtml(d.veDate || "")}　時間：${escHtml(d.veTime || "")}頃<br>準備物：<span class="sws-pre">${escHtml(d.vePrep || "")}</span></td></tr>`;
+    h += `<tr><th>多職種連携(ケア・ACP)への申し送り事項</th><td class="sws-pre">${escHtml(d.handover || "")}</td></tr></table>`;
+  }
   h += `<p style="margin:6px 0 0;font-size:9.5pt">評価担当者： ${escHtml(d.evaluator || "")}　㊞　／　評価実施日： ${escHtml(d.examDate || "")}</p>`;
   h += `</div>`;
 
@@ -21319,7 +21327,8 @@ function refreshSwsPreview_() {
   lastSwsContext_ = collectSwsForm_();
   host.innerHTML = buildSwsDocumentHtml_(lastSwsContext_, false, {
     includeQuestionnaires: swsIncludeQuestionnairesPreferred_(),
-    showLinkMarks: swsShowLinkMarksPreferred_()
+    showLinkMarks: swsShowLinkMarksPreferred_(),
+    showOverall: swsShowOverallPreferred_()
   });
 }
 
@@ -21592,7 +21601,8 @@ function printSwallowScreen_() {
   const title = `嚥下スクリーニング_${name}_${data.examDate || "日付未指定"}`;
   const bodyHtml = buildSwsDocumentHtml_(data, true, {
     includeQuestionnaires: includeQ,
-    showLinkMarks: swsShowLinkMarksPreferred_()
+    showLinkMarks: swsShowLinkMarksPreferred_(),
+    showOverall: swsShowOverallPreferred_()
   });
   const doc = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${escHtml(title)}</title>
 <style>${swsPrintCss_()}</style></head><body>${bodyHtml}</body></html>`;

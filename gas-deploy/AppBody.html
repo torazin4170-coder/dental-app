@@ -730,6 +730,7 @@
       #swsModal .sws-criteria { font-size: 11px; color: #475569; line-height: 1.45; margin: 0 0 8px; }
       #swsModal .sws-q-link-mark { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid #334155; border-radius: 4px; font-size: 10px; font-weight: 800; color: #0f172a; background: #e2e8f0; vertical-align: middle; }
       #swsModal.sws-link-off .sws-q-link-mark { display: none; }
+      #swsModal.sws-overall-off .sws-overall-block { display: none; }
       .sws-doc .sws-page-break { page-break-before: always; break-before: page; }
       .sws-doc .sws-criteria { font-size: 8.5pt; color: #334155; line-height: 1.35; margin: 0 0 4px; }
       .sws-doc { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif; color: #111; font-size: 10pt; line-height: 1.4; }
@@ -1807,9 +1808,13 @@
         <input type="checkbox" id="swsPrintQuestionnaires" onchange="scheduleSwsPreview_()" checked>
         質問紙も印刷する（2ページ目以降）
       </label>
-      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#334155;margin-right:auto">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#334155">
         <input type="checkbox" id="swsShowLinkMarks" onchange="scheduleSwsPreview_()" checked>
         連動の印を表示（現場記入・転記用）
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#334155;margin-right:auto">
+        <input type="checkbox" id="swsShowOverall" onchange="scheduleSwsPreview_()" checked>
+        4. 総合判定・今後の計画を表示
       </label>
       <button type="button" class="btn btn-secondary" onclick="saveSwsToTreatmentRecord_()">💾 診療記録へ保存</button>
       <button type="button" class="btn btn-secondary" onclick="syncSwsTeethFromChart_()">歯式から入れ直す</button>
