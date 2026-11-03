@@ -668,6 +668,7 @@ const MONTHLY_CARE_TREAT_SNIPPETS = {
   "歯周検査": "歯ぐきの腫れや出血の有無など、歯周組織の状態を調べました。",
   "舌圧検査": "舌の力や動きを測る検査を行い、飲み込みに関わる状態の確認に役立てました。",
   "口腔粘膜湿潤度検査": "口腔粘膜の湿潤度を測る検査を行い、お口の乾きの状態を確認しました。",
+  "嚥下スクリーニング検査": "飲み込みの状態を簡単に確認しました。",
   "虫歯治療": "むし歯の部分の治療（処置）を行い、痛みや進行を抑える対応をしました。",
   "歯周治療": "歯ぐきや歯周組織の状態に応じた歯周治療を行いました。",
   "抜歯・外科処置": "歯や歯ぐきの状態に応じた外科的な処置を行いました。",
@@ -2019,7 +2020,7 @@ function togglePatientStatusChip_(code) {
 const TREATMENT_GROUPS = [
   { group: "受診前",     items: [MUSHO_KENSHIN_TREATMENT] },
   { group: "定期処置",   items: ["口腔ケア","経過チェック","口腔衛生指導","フッ素塗布"] },
-  { group: "検査",       items: ["X線撮影","歯周検査","舌圧検査","口腔粘膜湿潤度検査"] },
+  { group: "検査",       items: ["X線撮影","歯周検査","舌圧検査","口腔粘膜湿潤度検査","嚥下スクリーニング検査"] },
   { group: "治療",       items: ["虫歯治療","歯周治療","抜歯・外科処置","義歯調整"] },
   { group: "義歯作製",   items: ["概形印象","精密印象","咬合採得","試適","完成セット"] },
 ];
@@ -2030,6 +2031,10 @@ const QUARTERLY_RESTRICTED_TREATMENTS = {
   "口腔粘膜湿潤度検査": true,
   "フッ素塗布": true
 };
+
+/** 嚥下スクリーニング検査（診療記録タグ・出力帳票⑫） */
+const SWALLOW_SCREEN_TREATMENT_ = "嚥下スクリーニング検査";
+let lastSwsContext_ = null;
 
 /** 定期検査履歴（舌圧・湿潤度・F局） */
 const PERIODIC_EXAM_TONGUE_ = "舌圧検査";
@@ -2423,11 +2428,28 @@ function loadExamInputsFromData_(examDataRaw) {
     else if (fk?.teeth?.length) fv.value = fk.teeth.map(toothKeyToShortLabel_).join("、");
     else fv.value = "";
   }
+  const swsSaved = o[SWALLOW_SCREEN_TREATMENT_];
+  if (swsSaved && typeof swsSaved === "object") {
+    lastSwsContext_ = Object.assign(emptySwsData_(), swsSaved);
+  }
   renderExamInputs_();
 }
 
 function collectExamDataForSave_() {
   const o = {};
+  if (selectedTreatments.has(SWALLOW_SCREEN_TREATMENT_)) {
+    const modalOpen = document.getElementById("swsModal")?.classList.contains("show");
+    const host = document.getElementById("swsFormHost");
+    if (modalOpen && host && host.children.length) {
+      o[SWALLOW_SCREEN_TREATMENT_] = collectSwsForm_();
+    } else if (lastSwsContext_) {
+      o[SWALLOW_SCREEN_TREATMENT_] = lastSwsContext_;
+    } else if (editingTreatmentId) {
+      const rec = (localRecords || []).find(r => String(r.id) === String(editingTreatmentId));
+      const saved = rec ? extractSwsFromExamData_(rec.exam_data) : null;
+      if (saved) o[SWALLOW_SCREEN_TREATMENT_] = saved;
+    }
+  }
   if (selectedTreatments.has(PERIODIC_EXAM_TONGUE_)) {
     const measurements = collectExamTongueMeasurements_();
     const v = deriveExamTongueResult_(measurements);
@@ -6223,7 +6245,7 @@ function openRecord(pid, options) {
   refreshExamHistoryTable_(selectedPatient.id);
 
   // ── 次回内容クイック選択チップ ──
-  const nextItems = ["口腔ケア","経過チェック","歯周検査","X線撮影","虫歯治療","歯周治療","義歯調整","舌圧検査","口腔粘膜湿潤度検査","フッ素塗布"];
+  const nextItems = ["口腔ケア","経過チェック","歯周検査","X線撮影","虫歯治療","歯周治療","義歯調整","舌圧検査","口腔粘膜湿潤度検査","嚥下スクリーニング検査","フッ素塗布"];
   document.getElementById("nextChips").innerHTML = nextItems.map(c =>
     `<div class="chip" style="font-size:12px;padding:5px 10px;min-height:32px"
       id="nchip-${encodeId(c)}" onclick="toggleNextChip('${c}')">${c}</div>`
@@ -6300,11 +6322,15 @@ function encodeId(s) {
 
 function toggleChip(code) {
   const id = encodeId(code);
+  const adding = !selectedTreatments.has(code);
   if (selectedTreatments.has(code)) selectedTreatments.delete(code);
   else selectedTreatments.add(code);
   document.getElementById(`chip-${id}`)?.classList.toggle("sel", selectedTreatments.has(code));
   renderExamInputs_();
   scheduleDraftHudUpdate();
+  if (adding && code === SWALLOW_SCREEN_TREATMENT_) {
+    openSwsModalFromRecord_();
+  }
 }
 
 // ── 歯式（表示・編集）──
@@ -12002,6 +12028,7 @@ const DOC_ARCHIVE_KIND_LABELS = {
   ofpi: "⑨ 精密検査",
   shindan: "⑩ 診断書",
   facilityHandover: "⑪ 施設申し送り",
+  sws: "⑫ 嚥下スクリーニング",
   clinicalMonthly: "月次（医療職）"
 };
 
@@ -16665,7 +16692,7 @@ const FH_SPECIAL_TREATMENTS_ = new Set([
 const FH_EXCLUDED_TREATMENTS_ = new Set([
   "口腔ケア", "経過チェック", "口腔衛生指導", "フッ素塗布",
   "フッ素塗布（F局）", "F局",
-  "X線撮影", "歯周検査", "舌圧検査", "口腔粘膜湿潤度検査",
+  "X線撮影", "歯周検査", "舌圧検査", "口腔粘膜湿潤度検査", "嚥下スクリーニング検査",
   MUSHO_KENSHIN_TREATMENT,
   "初診", "入院中", "退所", "ご逝去"
 ]);
@@ -20447,6 +20474,917 @@ function printOralFunctionPrecision_() {
     showToast("印刷画面を開きました");
   }
 }
+
+/** ── ⑫ 嚥下スクリーニング評価表 ── */
+let swsPinnedPatientId_ = "";
+let swsSourceMode_ = "report"; // record | report
+let swsTeethDataCache_ = null;
+let swsBoundTreatmentId_ = null;
+let swsPreviewTimer_ = null;
+let swsFormBound_ = false;
+
+const SWS_SEIREI_Q_ = [
+  "肺炎と診断されたことがありますか？",
+  "やせてきましたか？",
+  "物が飲み込みにくいと感じることがありますか？",
+  "食事中にむせることがありますか？",
+  "お茶を飲むときにむせることがありますか？",
+  "食事中や食後、それ以外の時にものどがゴロゴロ（痰がからんだ感じ）することがありますか？",
+  "のどに食べ物が残る感じがすることがありますか？",
+  "食べるのが遅くなりましたか？",
+  "硬いものが食べにくくなりましたか？",
+  "口から食べ物がこぼれることがありますか？",
+  "口の中に食べ物が残ることがありますか？",
+  "食物や酸っぱい液が胃からのどに戻ってくることがありますか？",
+  "胸に食べ物が残ったり、つまった感じがすることがありますか？",
+  "夜、咳で眠れなかったり目覚めることがありますか？",
+  "声がかすれてきましたか？（がらがら声、かすれ声など）"
+];
+const SWS_SEIREI_OPTS_ = [
+  ["A", "繰り返す"], ["A", "明らかに"], ["A", "しばしば"], ["A", "しばしば"], ["A", "しばしば"],
+  ["A", "しばしば"], ["A", "しばしば"], ["A", "たいへん"], ["A", "たいへん"], ["A", "しばしば"],
+  ["A", "しばしば"], ["A", "しばしば"], ["A", "しばしば"], ["A", "しばしば"], ["A", "たいへん"]
+];
+const SWS_SEIREI_B_ = [
+  "一度だけ", "わずかに", "ときどき", "ときどき", "ときどき",
+  "ときどき", "ときどき", "わずかに", "わずかに", "ときどき",
+  "ときどき", "ときどき", "ときどき", "ときどき", "わずかに"
+];
+
+const SWS_FSSG_Q_ = [
+  "胸やけがしますか？",
+  "おなかがはることがありますか？",
+  "食事をした後に胃が重苦しい（もたれる）ことがありますか？",
+  "思わず手のひらで胸をこすってしまうことがありますか？",
+  "食べたあと気持ちが悪くなることがありますか？",
+  "食後に胸やけがおこりますか？",
+  "喉（のど）の違和感（ヒリヒリなど）がありますか？",
+  "食事の途中で満腹になってしまいますか？",
+  "ものを飲み込むと、つかえることがありますか？",
+  "苦い水（胃酸）が上がってくることがありますか？",
+  "ゲップがよくでますか？",
+  "前かがみをすると胸やけがしますか？"
+];
+const SWS_FSSG_ACID_IDX_ = [0, 3, 5, 6, 8, 9, 11];
+const SWS_FSSG_DYS_IDX_ = [1, 2, 4, 7, 10];
+
+const SWS_EAT10_Q_ = [
+  "飲み込みの問題のために体重が減った",
+  "飲み込みの問題のために外食ができなくなった",
+  "液体を飲み込むのに余分な努力がいる",
+  "固形物を飲み込むのに余分な努力がいる",
+  "錠剤を飲み込むのに余分な努力がいる",
+  "飲み込むときに痛みがある",
+  "飲み込みの問題のため食事の楽しさが損なわれた",
+  "飲み込むとき食べ物がのどに残る",
+  "食べるときに咳が出る",
+  "飲み込むことがストレスである"
+];
+
+const SWS_PILL5_Q_ = [
+  "薬を飲み込むのが難しい",
+  "薬を切らないと飲み込めない",
+  "薬を砕くか、柔らかい食べ物と一緒に飲まないといけない",
+  "薬を飲むときむせたり咳き込んだりする",
+  "薬がのどに引っかかる感じがする"
+];
+
+const SWS_OVERALL_OPTS_ = [
+  { v: "maintain", t: "経口摂取維持：現状の食形態を継続可能" },
+  { v: "adjust", t: "要食形態調整：不顕性誤嚥・肺ラトリング等に配慮し、食形態の一時ダウン検討" },
+  { v: "ve", t: "次回VEにて詳細確認：次回VEで精密評価を推奨" },
+  { v: "stop", t: "経口摂取困難・中止：代替栄養移行または訓練のみ適応" }
+];
+
+function emptySwsData_() {
+  return {
+    v: 1,
+    patientId: "",
+    patientName: "",
+    birthWareki: "",
+    ageParen: "",
+    examDate: "",
+    evaluator: "",
+    mealStatus: "",
+    adl: "",
+    attention: "",
+    oral: {
+      consciousness: [],
+      posture: [],
+      postureDeg: "",
+      resp: [],
+      sputum: [],
+      pace: [],
+      tongueDir: [],
+      tongueQual: "",
+      palate: [],
+      lipQual: "",
+      oralClean: [],
+      tongueCoat: "",
+      dentureClean: "",
+      saliva: [],
+      mucosa: [],
+      mucosaNote: "",
+      ulcer: false,
+      toothache: [],
+      remainingTeeth: "",
+      rootTeeth: "",
+      dentureUse: [],
+      dentureJaw: [],
+      judgeAll: []
+    },
+    rsst: { count: "", judge: "", elevation: "", status: "", reasons: [], reasonOther: "" },
+    mwst: { score: "", judge: "", mousse: "", status: "", reasons: [], reasonOther: "" },
+    auscult: { judge: "", swallow: [], breath: [], unableReasons: [] },
+    cough: { judge: "", citric: "", instructed: "", spontaneous: [], unableReasons: [] },
+    overall: "",
+    veDate: "",
+    veTime: "",
+    vePrep: "",
+    handover: "",
+    questionnaires: {
+      seirei: Array(15).fill(""),
+      fssg: Array(12).fill(""),
+      eat10: Array(10).fill(""),
+      pill5: Array(5).fill("")
+    }
+  };
+}
+
+function isTeethChartEmptyForSws_(data) {
+  if (!data || typeof data !== "object") return true;
+  return !Object.keys(data).some(k => /^(upper|lower)_(L|R)\d+(_miss)?$/.test(k));
+}
+
+function countRootTeethFromChart_(data) {
+  if (!data || typeof data !== "object" || isTeethChartEmptyForSws_(data)) return null;
+  const upper = [8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 5, 6, 7, 8];
+  const lower = [8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 5, 6, 7, 8];
+  const keys = buildToothKeys("upper", upper).concat(buildToothKeys("lower", lower));
+  let n = 0;
+  keys.forEach(key => {
+    const missed = !!data[key + "_miss"];
+    const cond = data[key] ? String(data[key]) : "";
+    const known = parseTeethCondParts(cond).known;
+    if (missed || known.includes("EXT")) return;
+    if (known.includes("C4") || known.includes("根C") || cond.indexOf("残根") !== -1) n += 1;
+  });
+  return n;
+}
+
+function swsDentureFlagsFromChart_(data) {
+  data = data || {};
+  const upperInUse =
+    (!!data.fd_upper || !!data.pd_upper || !!data.fd) &&
+    !data.no_denture_upper &&
+    !data.denture_lost_upper;
+  const lowerInUse =
+    (!!data.fd_lower || !!data.pd_lower || !!data.pd) &&
+    !data.no_denture_lower &&
+    !data.denture_lost_lower;
+  const none =
+    !upperInUse &&
+    !lowerInUse &&
+    (!!data.no_denture_upper || !!data.no_denture_lower || (!data.fd && !data.pd && !data.fd_upper && !data.pd_upper && !data.fd_lower && !data.pd_lower));
+  return { upperInUse, lowerInUse, none };
+}
+
+function applySwsTeethDefaults_(data, teethData, force) {
+  if (!data || !data.oral) return data;
+  if (isTeethChartEmptyForSws_(teethData)) {
+    if (force) {
+      data.oral.remainingTeeth = "";
+      data.oral.rootTeeth = "";
+      data.oral.dentureUse = [];
+      data.oral.dentureJaw = [];
+    }
+    return data;
+  }
+  if (force || data.oral.remainingTeeth === "" || data.oral.remainingTeeth == null) {
+    const rem = countRemainingTeethFromChart_(teethData);
+    data.oral.remainingTeeth = rem != null ? String(rem) : "";
+  }
+  if (force || data.oral.rootTeeth === "" || data.oral.rootTeeth == null) {
+    const root = countRootTeethFromChart_(teethData);
+    data.oral.rootTeeth = root != null ? String(root) : "";
+  }
+  if (force || (!data.oral.dentureUse.length && !data.oral.dentureJaw.length)) {
+    const d = swsDentureFlagsFromChart_(teethData);
+    data.oral.dentureUse = [];
+    data.oral.dentureJaw = [];
+    if (d.upperInUse || d.lowerInUse) {
+      data.oral.dentureUse = ["use"];
+      if (d.upperInUse) data.oral.dentureJaw.push("upper");
+      if (d.lowerInUse) data.oral.dentureJaw.push("lower");
+    } else if (d.none) {
+      data.oral.dentureUse = ["none"];
+    }
+  }
+  return data;
+}
+
+function swsPatientDefaults_(p, examDate) {
+  const data = emptySwsData_();
+  data.patientId = p ? String(p.id) : "";
+  data.patientName = p ? String(p.name || "") : "";
+  const bd = p && p.birth_date ? String(p.birth_date).slice(0, 10) : "";
+  data.birthWareki = bd ? formatDateWarekiClient_(bd) : "";
+  const age = bd ? calcAgeFromIso(bd) : null;
+  data.ageParen = age != null ? `（${age}歳）` : "";
+  data.examDate = formatDateInputVal(examDate) || getTodayYmdJstForRecord_();
+  data.evaluator = (document.getElementById("doctor-name")?.value || "").trim();
+  return data;
+}
+
+function swsChk(name, value, label, checked) {
+  return `<label><input type="checkbox" data-sws-chk="${escAttr(name)}" value="${escAttr(value)}"${checked ? " checked" : ""}> ${escHtml(label)}</label>`;
+}
+
+function swsRadio(name, value, label, checked) {
+  return `<label><input type="radio" name="${escAttr(name)}" data-sws-radio="${escAttr(name)}" value="${escAttr(value)}"${checked ? " checked" : ""}> ${escHtml(label)}</label>`;
+}
+
+function buildSwsFormHtml_(data) {
+  const d = data || emptySwsData_();
+  const o = d.oral || {};
+  const has = (arr, v) => Array.isArray(arr) && arr.indexOf(v) !== -1;
+  let h = "";
+  h += `<div class="card sws-form-section" style="padding:10px 12px">`;
+  h += `<div class="sws-field-lbl">評価日</div><input type="date" class="sws-inp" id="swsExamDate" value="${escAttr(d.examDate || "")}">`;
+  h += `<div class="sws-field-lbl">評価担当者</div><input type="text" class="sws-inp" id="swsEvaluator" value="${escAttr(d.evaluator || "")}">`;
+  h += `<div class="sws-field-lbl">食事現状（主食・副食・水分）</div><textarea class="sws-ta" id="swsMealStatus">${escHtml(d.mealStatus || "")}</textarea>`;
+  h += `<div class="sws-field-lbl">ADL</div><textarea class="sws-ta" id="swsAdl">${escHtml(d.adl || "")}</textarea>`;
+  h += `<div class="sws-field-lbl">注意機能等</div><textarea class="sws-ta" id="swsAttention">${escHtml(d.attention || "")}</textarea>`;
+  h += `</div>`;
+
+  h += `<div class="card sws-form-section" style="padding:10px 12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">1. 口腔・全身状態</div>`;
+  h += `<div class="sws-field-lbl">意識・精神</div><div class="sws-chk-row">${swsChk("consciousness","good","良好",has(o.consciousness,"good"))}${swsChk("consciousness","irritable","易怒性・感情失禁あり",has(o.consciousness,"irritable"))}${swsChk("consciousness","sedation","過鎮静注意",has(o.consciousness,"sedation"))}${swsChk("consciousness","comm","意思疎通困難",has(o.consciousness,"comm"))}</div>`;
+  h += `<div class="sws-field-lbl">食事姿勢</div><div class="sws-chk-row">${swsChk("posture","chair","椅子座位",has(o.posture,"chair"))}${swsChk("posture","bed","ベッドギャッチアップ",has(o.posture,"bed"))}</div>`;
+  h += `<div class="sws-field-lbl">ギャッチアップ角度</div><input type="text" class="sws-inp" id="swsPostureDeg" value="${escAttr(o.postureDeg || "")}" placeholder="例: 45">`;
+  h += `<div class="sws-field-lbl">呼吸・喀痰</div><div class="sws-chk-row">${swsChk("resp","normal","正常",has(o.resp,"normal"))}${swsChk("resp","rattle","ラトリング・湿性音あり",has(o.resp,"rattle"))}${swsChk("sputum","ok","自己喀痰：可能",has(o.sputum,"ok"))}${swsChk("sputum","hard","自己喀痰：困難",has(o.sputum,"hard"))}</div>`;
+  h += `<div class="sws-field-lbl">食事ペース</div><div class="sws-chk-row">${swsChk("pace","indep","自立",has(o.pace,"indep"))}${swsChk("pace","watch","要見守り・ペース制限の声掛け必須",has(o.pace,"watch"))}</div>`;
+  h += `<div class="sws-field-lbl">挺舌</div><div class="sws-chk-row">${swsChk("tongueDir","front","前方",has(o.tongueDir,"front"))}${swsChk("tongueDir","left","左",has(o.tongueDir,"left"))}${swsChk("tongueDir","right","右",has(o.tongueDir,"right"))}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("tongueQual","good","挺舌：良好",o.tongueQual==="good")}${swsRadio("tongueQual","poor","挺舌：不良",o.tongueQual==="poor")}</div>`;
+  h += `<div class="sws-field-lbl">口蓋挙上</div><div class="sws-chk-row">${swsChk("palate","good","良好",has(o.palate,"good"))}${swsChk("palate","poor","不十分",has(o.palate,"poor"))}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("lipQual","good","口唇閉鎖：良好",o.lipQual==="good")}${swsRadio("lipQual","poor","口唇閉鎖：不良",o.lipQual==="poor")}</div>`;
+  h += `<div class="sws-field-lbl">口腔清掃</div><div class="sws-chk-row">${swsChk("oralClean","good","良好",has(o.oralClean,"good"))}${swsChk("oralClean","part","1-2部位に食渣・プラークあり",has(o.oralClean,"part"))}${swsChk("oralClean","poor","不良・全体的に食渣あり",has(o.oralClean,"poor"))}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("tongueCoat","少","舌苔：少ない",o.tongueCoat==="少")}${swsRadio("tongueCoat","中","舌苔：中",o.tongueCoat==="中")}${swsRadio("tongueCoat","多","舌苔：多い",o.tongueCoat==="多")}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("dentureClean","good","義歯清掃：良好",o.dentureClean==="good")}${swsRadio("dentureClean","poor","義歯清掃：不良",o.dentureClean==="poor")}</div>`;
+  h += `<div class="sws-field-lbl">唾液・粘膜</div><div class="sws-chk-row">${swsChk("saliva","wet","湿潤",has(o.saliva,"wet"))}${swsChk("saliva","dry","乾燥",has(o.saliva,"dry"))}${swsChk("saliva","pool","痰・唾液貯留あり",has(o.saliva,"pool"))}</div>`;
+  h += `<div class="sws-chk-row">${swsChk("mucosa","normal","粘膜：正常",has(o.mucosa,"normal"))}${swsChk("mucosa","abn","粘膜：異常",has(o.mucosa,"abn"))}${swsChk("ulcer","1","義歯下等に一部潰瘍",!!o.ulcer)}</div>`;
+  h += `<input type="text" class="sws-inp" id="swsMucosaNote" value="${escAttr(o.mucosaNote || "")}" placeholder="粘膜の異常の内容">`;
+  h += `<div class="sws-field-lbl">歯痛・疼痛</div><div class="sws-chk-row">${swsChk("toothache","none","なし",has(o.toothache,"none"))}${swsChk("toothache","yes","あり",has(o.toothache,"yes"))}</div>`;
+  h += `<div class="sws-field-lbl">残存歯（本）</div><input type="text" class="sws-inp" id="swsRemainingTeeth" value="${escAttr(o.remainingTeeth || "")}">`;
+  h += `<div class="sws-field-lbl">残根（本）</div><input type="text" class="sws-inp" id="swsRootTeeth" value="${escAttr(o.rootTeeth || "")}">`;
+  h += `<div class="sws-field-lbl">義歯</div><div class="sws-chk-row">${swsChk("dentureUse","use","使用中",has(o.dentureUse,"use"))}${swsChk("dentureJaw","upper","上",has(o.dentureJaw,"upper"))}${swsChk("dentureJaw","lower","下",has(o.dentureJaw,"lower"))}${swsChk("dentureUse","none","なし",has(o.dentureUse,"none"))}${swsChk("dentureUse","illfit","不適合のため未装着",has(o.dentureUse,"illfit"))}</div>`;
+  h += `<div class="sws-field-lbl">判定不能項目</div><div class="sws-chk-row">${swsChk("judgeAll","all","全項目実施",has(o.judgeAll,"all"))}${swsChk("judgeAll","part","一部判定不能",has(o.judgeAll,"part"))}</div>`;
+  h += `</div>`;
+
+  const r = d.rsst || {};
+  h += `<div class="card sws-form-section" style="padding:10px 12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">2. RSST</div>`;
+  h += `<div class="sws-field-lbl">回数 / 30秒</div><input type="number" class="sws-inp" id="swsRsstCount" min="0" step="1" value="${escAttr(r.count || "")}">`;
+  h += `<div class="sws-chk-row">${swsRadio("rsstJudge","normal","正常（3回以上）",r.judge==="normal")}${swsRadio("rsstJudge","low","低下（2回以下）",r.judge==="low")}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("rsstStatus","ok","正常実施",r.status==="ok")}${swsRadio("rsstStatus","na","判定不能・実施不可",r.status==="na")}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("rsstElev","good","喉頭挙上：良好",r.elevation==="good")}${swsRadio("rsstElev","weak","喉頭挙上：減弱",r.elevation==="weak")}</div>`;
+  h += `<div class="sws-chk-row">${swsChk("rsstReason","cog","指示理解困難",has(r.reasons,"cog"))}${swsChk("rsstReason","dry","極度の口腔乾燥",has(r.reasons,"dry"))}${swsChk("rsstReason","refuse","不穏・拒否",has(r.reasons,"refuse"))}${swsChk("rsstReason","other","その他",has(r.reasons,"other"))}</div>`;
+  h += `<input type="text" class="sws-inp" id="swsRsstOther" value="${escAttr(r.reasonOther || "")}" placeholder="その他の理由">`;
+  h += `</div>`;
+
+  const m = d.mwst || {};
+  h += `<div class="card sws-form-section" style="padding:10px 12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">2. MWST / フードテスト</div>`;
+  h += `<div class="sws-chk-row">${[1,2,3,4,5].map(n => swsRadio("mwstScore", String(n), n + "点", String(m.score)===String(n))).join("")}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("mwstJudge","normal","判定：正常",m.judge==="normal")}${swsRadio("mwstJudge","suspect","疑い",m.judge==="suspect")}${swsRadio("mwstJudge","abn","異常",m.judge==="abn")}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("mwstStatus","ok","正常実施",m.status==="ok")}${swsRadio("mwstStatus","na","判定不能・実施不可",m.status==="na")}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("mwstMousse","none","ムセ：なし",m.mousse==="none")}${swsRadio("mwstMousse","yes","あり",m.mousse==="yes")}${swsRadio("mwstMousse","late","遅発性ムセ",m.mousse==="late")}</div>`;
+  h += `<div class="sws-chk-row">${swsChk("mwstReason","risk","唾液貯留/誤嚥リスクで見合わせ",has(m.reasons,"risk"))}${swsChk("mwstReason","cog","指示理解困難",has(m.reasons,"cog"))}${swsChk("mwstReason","refuse","とろみ水拒否・不穏",has(m.reasons,"refuse"))}${swsChk("mwstReason","other","その他",has(m.reasons,"other"))}</div>`;
+  h += `<input type="text" class="sws-inp" id="swsMwstOther" value="${escAttr(m.reasonOther || "")}" placeholder="その他の理由">`;
+  h += `</div>`;
+
+  const a = d.auscult || {};
+  h += `<div class="card sws-form-section" style="padding:10px 12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">2. 頸部聴診法</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("ausJudge","normal","正常（清明）",a.judge==="normal")}${swsRadio("ausJudge","abn","異常",a.judge==="abn")}${swsRadio("ausJudge","na","判定不能/不明瞭",a.judge==="na")}</div>`;
+  h += `<div class="sws-field-lbl">嚥下音</div><div class="sws-chk-row">${swsChk("ausSwallow","normal","正常",has(a.swallow,"normal"))}${swsChk("ausSwallow","long","長い",has(a.swallow,"long"))}${swsChk("ausSwallow","weak","弱い",has(a.swallow,"weak"))}${swsChk("ausSwallow","multi","複数回",has(a.swallow,"multi"))}${swsChk("ausSwallow","bubble","泡立ち音",has(a.swallow,"bubble"))}</div>`;
+  h += `<div class="sws-field-lbl">呼吸音</div><div class="sws-chk-row">${swsChk("ausBreath","clear","清明",has(a.breath,"clear"))}${swsChk("ausBreath","wet","湿性音",has(a.breath,"wet"))}${swsChk("ausBreath","gargle","嗽音",has(a.breath,"gargle"))}</div>`;
+  h += `<div class="sws-chk-row">${swsChk("ausUnable","refuse","聴診器拒否・不穏",has(a.unableReasons,"refuse"))}${swsChk("ausUnable","weak","音微弱",has(a.unableReasons,"weak"))}</div>`;
+  h += `</div>`;
+
+  const c = d.cough || {};
+  h += `<div class="card sws-form-section" style="padding:10px 12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">2. 咳テスト</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("coughJudge","normal","正常",c.judge==="normal")}${swsRadio("coughJudge","low","低下",c.judge==="low")}${swsRadio("coughJudge","na","判定不能",c.judge==="na")}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("coughCitric","normal","簡易咳テスト：正常",c.citric==="normal")}${swsRadio("coughCitric","low","低下",c.citric==="low")}</div>`;
+  h += `<div class="sws-chk-row">${swsRadio("coughInst","strong","指示咳嗽：強い",c.instructed==="strong")}${swsRadio("coughInst","weak","弱い",c.instructed==="weak")}${swsRadio("coughInst","none","不可",c.instructed==="none")}</div>`;
+  h += `<div class="sws-chk-row">${swsChk("coughSpont","wet","自発：湿性咳嗽頻回",has(c.spontaneous,"wet"))}${swsChk("coughSpont","hard","喀痰困難",has(c.spontaneous,"hard"))}</div>`;
+  h += `<div class="sws-chk-row">${swsChk("coughUnable","neb","吸入拒否・不穏",has(c.unableReasons,"neb"))}${swsChk("coughUnable","cog","指示理解困難",has(c.unableReasons,"cog"))}</div>`;
+  h += `</div>`;
+
+  h += `<div class="card sws-form-section" style="padding:10px 12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">4. 総合判定・今後の計画</div>`;
+  h += `<div class="sws-chk-row" style="flex-direction:column;align-items:flex-start">${SWS_OVERALL_OPTS_.map(opt => swsRadio("overall", opt.v, opt.t, d.overall===opt.v)).join("")}</div>`;
+  h += `<div class="sws-field-lbl">次回VE実施予定日</div><input type="date" class="sws-inp" id="swsVeDate" value="${escAttr(d.veDate || "")}">`;
+  h += `<div class="sws-field-lbl">時間（頃）</div><input type="text" class="sws-inp" id="swsVeTime" value="${escAttr(d.veTime || "")}" placeholder="例: 10:00">`;
+  h += `<div class="sws-field-lbl">VE実食評価時準備物</div><textarea class="sws-ta" id="swsVePrep">${escHtml(d.vePrep || "")}</textarea>`;
+  h += `<div class="sws-field-lbl">多職種連携メモ</div><textarea class="sws-ta" id="swsHandover">${escHtml(d.handover || "")}</textarea>`;
+  h += `</div>`;
+
+  const q = d.questionnaires || {};
+  const seirei = q.seirei || [];
+  h += `<details class="sws-q"><summary>質問紙（任意）聖隷式・Fスケール・EAT-10・PILL-5</summary>`;
+  h += `<div style="font-size:12px;font-weight:800;margin:10px 0 4px">聖隷式嚥下質問紙</div>`;
+  SWS_SEIREI_Q_.forEach((qq, i) => {
+    const aLab = (SWS_SEIREI_OPTS_[i] && SWS_SEIREI_OPTS_[i][1]) || "A";
+    const bLab = SWS_SEIREI_B_[i] || "B";
+    h += `<div class="sws-q-item"><div>${i + 1}. ${escHtml(qq)}</div><div class="sws-q-opts">${swsRadio("seirei_" + i, "A", "A." + aLab, seirei[i]==="A")}${swsRadio("seirei_" + i, "B", "B." + bLab, seirei[i]==="B")}${swsRadio("seirei_" + i, "C", "C.なし", seirei[i]==="C")}</div></div>`;
+  });
+  const fssg = q.fssg || [];
+  h += `<div style="font-size:12px;font-weight:800;margin:14px 0 4px">Fスケール（FSSG）</div>`;
+  SWS_FSSG_Q_.forEach((qq, i) => {
+    h += `<div class="sws-q-item"><div>${i + 1}. ${escHtml(qq)}</div><div class="sws-q-opts">${[0,1,2,3,4].map(n => swsRadio("fssg_" + i, String(n), String(n), String(fssg[i])===String(n))).join("")}</div></div>`;
+  });
+  const eat = q.eat10 || [];
+  h += `<div style="font-size:12px;font-weight:800;margin:14px 0 4px">EAT-10（0＝問題なし〜4＝重度）</div>`;
+  SWS_EAT10_Q_.forEach((qq, i) => {
+    h += `<div class="sws-q-item"><div>${i + 1}. ${escHtml(qq)}</div><div class="sws-q-opts">${[0,1,2,3,4].map(n => swsRadio("eat10_" + i, String(n), String(n), String(eat[i])===String(n))).join("")}</div></div>`;
+  });
+  const pill = q.pill5 || [];
+  h += `<div style="font-size:12px;font-weight:800;margin:14px 0 4px">PILL-5（日本語版）</div>`;
+  SWS_PILL5_Q_.forEach((qq, i) => {
+    h += `<div class="sws-q-item"><div>${i + 1}. ${escHtml(qq)}</div><div class="sws-q-opts">${[0,1,2,3,4].map(n => swsRadio("pill5_" + i, String(n), String(n), String(pill[i])===String(n))).join("")}</div></div>`;
+  });
+  h += `</details>`;
+  return h;
+}
+
+function swsCollectChecked_(host, key) {
+  return [...host.querySelectorAll(`input[data-sws-chk="${key}"]:checked`)].map(el => el.value);
+}
+
+function swsCollectRadio_(host, key) {
+  const el = host.querySelector(`input[data-sws-radio="${key}"]:checked`);
+  return el ? el.value : "";
+}
+
+function collectSwsForm_() {
+  const host = document.getElementById("swsFormHost");
+  const base = lastSwsContext_ ? JSON.parse(JSON.stringify(lastSwsContext_)) : emptySwsData_();
+  if (!host) return base;
+  base.examDate = formatDateInputVal(document.getElementById("swsExamDate")?.value) || base.examDate;
+  base.evaluator = (document.getElementById("swsEvaluator")?.value || "").trim();
+  base.mealStatus = document.getElementById("swsMealStatus")?.value || "";
+  base.adl = document.getElementById("swsAdl")?.value || "";
+  base.attention = document.getElementById("swsAttention")?.value || "";
+  const o = base.oral || (base.oral = {});
+  o.consciousness = swsCollectChecked_(host, "consciousness");
+  o.posture = swsCollectChecked_(host, "posture");
+  o.postureDeg = document.getElementById("swsPostureDeg")?.value || "";
+  o.resp = swsCollectChecked_(host, "resp");
+  o.sputum = swsCollectChecked_(host, "sputum");
+  o.pace = swsCollectChecked_(host, "pace");
+  o.tongueDir = swsCollectChecked_(host, "tongueDir");
+  o.tongueQual = swsCollectRadio_(host, "tongueQual");
+  o.palate = swsCollectChecked_(host, "palate");
+  o.lipQual = swsCollectRadio_(host, "lipQual");
+  o.oralClean = swsCollectChecked_(host, "oralClean");
+  o.tongueCoat = swsCollectRadio_(host, "tongueCoat");
+  o.dentureClean = swsCollectRadio_(host, "dentureClean");
+  o.saliva = swsCollectChecked_(host, "saliva");
+  o.mucosa = swsCollectChecked_(host, "mucosa");
+  o.mucosaNote = document.getElementById("swsMucosaNote")?.value || "";
+  o.ulcer = swsCollectChecked_(host, "ulcer").indexOf("1") !== -1;
+  o.toothache = swsCollectChecked_(host, "toothache");
+  o.remainingTeeth = document.getElementById("swsRemainingTeeth")?.value || "";
+  o.rootTeeth = document.getElementById("swsRootTeeth")?.value || "";
+  o.dentureUse = swsCollectChecked_(host, "dentureUse");
+  o.dentureJaw = swsCollectChecked_(host, "dentureJaw");
+  o.judgeAll = swsCollectChecked_(host, "judgeAll");
+
+  const r = base.rsst || (base.rsst = {});
+  r.count = document.getElementById("swsRsstCount")?.value || "";
+  r.judge = swsCollectRadio_(host, "rsstJudge");
+  r.status = swsCollectRadio_(host, "rsstStatus");
+  r.elevation = swsCollectRadio_(host, "rsstElev");
+  r.reasons = swsCollectChecked_(host, "rsstReason");
+  r.reasonOther = document.getElementById("swsRsstOther")?.value || "";
+
+  const m = base.mwst || (base.mwst = {});
+  m.score = swsCollectRadio_(host, "mwstScore");
+  m.judge = swsCollectRadio_(host, "mwstJudge");
+  m.status = swsCollectRadio_(host, "mwstStatus");
+  m.mousse = swsCollectRadio_(host, "mwstMousse");
+  m.reasons = swsCollectChecked_(host, "mwstReason");
+  m.reasonOther = document.getElementById("swsMwstOther")?.value || "";
+
+  const a = base.auscult || (base.auscult = {});
+  a.judge = swsCollectRadio_(host, "ausJudge");
+  a.swallow = swsCollectChecked_(host, "ausSwallow");
+  a.breath = swsCollectChecked_(host, "ausBreath");
+  a.unableReasons = swsCollectChecked_(host, "ausUnable");
+
+  const c = base.cough || (base.cough = {});
+  c.judge = swsCollectRadio_(host, "coughJudge");
+  c.citric = swsCollectRadio_(host, "coughCitric");
+  c.instructed = swsCollectRadio_(host, "coughInst");
+  c.spontaneous = swsCollectChecked_(host, "coughSpont");
+  c.unableReasons = swsCollectChecked_(host, "coughUnable");
+
+  base.overall = swsCollectRadio_(host, "overall");
+  base.veDate = formatDateInputVal(document.getElementById("swsVeDate")?.value) || "";
+  base.veTime = document.getElementById("swsVeTime")?.value || "";
+  base.vePrep = document.getElementById("swsVePrep")?.value || "";
+  base.handover = document.getElementById("swsHandover")?.value || "";
+
+  const q = base.questionnaires || (base.questionnaires = { seirei: [], fssg: [], eat10: [], pill5: [] });
+  q.seirei = [];
+  for (let i = 0; i < 15; i++) q.seirei.push(swsCollectRadio_(host, "seirei_" + i));
+  q.fssg = [];
+  for (let i = 0; i < 12; i++) q.fssg.push(swsCollectRadio_(host, "fssg_" + i));
+  q.eat10 = [];
+  for (let i = 0; i < 10; i++) q.eat10.push(swsCollectRadio_(host, "eat10_" + i));
+  q.pill5 = [];
+  for (let i = 0; i < 5; i++) q.pill5.push(swsCollectRadio_(host, "pill5_" + i));
+
+  return base;
+}
+
+function swsApplyAutoJudges_(data, changed) {
+  if (!data) return data;
+  if (changed === "rsstCount" || changed === "all") {
+    const n = parseInt(String(data.rsst.count || ""), 10);
+    if (!isNaN(n) && !data.rsst.judgeLocked) {
+      if (n >= 3) data.rsst.judge = "normal";
+      else if (n >= 0 && String(data.rsst.count).trim() !== "") data.rsst.judge = "low";
+    }
+  }
+  if (changed === "mwstScore" || changed === "all") {
+    const s = parseInt(String(data.mwst.score || ""), 10);
+    if (!isNaN(s) && !data.mwst.judgeLocked) {
+      if (s >= 4) data.mwst.judge = "normal";
+      else if (s === 3) data.mwst.judge = "suspect";
+      else if (s >= 1) data.mwst.judge = "abn";
+    }
+  }
+  return data;
+}
+
+function swsMark(on, label) {
+  return on ? `<span class="sws-mark-on">☑ ${escHtml(label)}</span>` : `<span class="sws-muted">□ ${escHtml(label)}</span>`;
+}
+
+function swsMarks(map, selected) {
+  return map.map(([v, lab]) => swsMark(Array.isArray(selected) && selected.indexOf(v) !== -1, lab)).join("　");
+}
+
+function swsRadioMarks(map, selected) {
+  return map.map(([v, lab]) => swsMark(selected === v, lab)).join("　");
+}
+
+function swsQuestionnaireHasAny_(q) {
+  if (!q) return false;
+  const anyArr = arr => Array.isArray(arr) && arr.some(x => x != null && String(x).trim() !== "");
+  return anyArr(q.seirei) || anyArr(q.fssg) || anyArr(q.eat10) || anyArr(q.pill5);
+}
+
+function swsSumScores_(arr) {
+  let sum = 0;
+  let n = 0;
+  (arr || []).forEach(v => {
+    if (v == null || String(v).trim() === "") return;
+    const num = parseInt(String(v), 10);
+    if (!isNaN(num)) {
+      sum += num;
+      n += 1;
+    }
+  });
+  return n ? sum : null;
+}
+
+function buildSwsDocumentHtml_(data, forPrint) {
+  const d = data || emptySwsData_();
+  const o = d.oral || {};
+  const r = d.rsst || {};
+  const m = d.mwst || {};
+  const a = d.auscult || {};
+  const c = d.cough || {};
+  let h = `<div class="sws-doc">`;
+  h += `<h1>訪問歯科・嚥下スクリーニング評価表（初診・経過観察用）</h1>`;
+  h += `<table><tr><th>患者氏名</th><td>${escHtml(d.patientName || "")}　様</td><th>生年月日</th><td>${escHtml(d.birthWareki || "")}${escHtml(d.ageParen || "")}</td></tr>`;
+  h += `<tr><th>食事現状</th><td colspan="3" class="sws-pre">${escHtml(d.mealStatus || "")}</td></tr>`;
+  h += `<tr><th>ADL</th><td class="sws-pre">${escHtml(d.adl || "")}</td><th>注意機能等</th><td class="sws-pre">${escHtml(d.attention || "")}</td></tr></table>`;
+
+  h += `<div class="sws-sec">1. 口腔・全身状態（臨床観察アセスメント）</div>`;
+  h += `<table>`;
+  h += `<tr><th>意識・精神</th><td>${swsMarks([["good","良好"],["irritable","易怒性・感情失禁あり"],["sedation","過鎮静注意"],["comm","意思疎通困難"]], o.consciousness)}</td></tr>`;
+  h += `<tr><th>食事姿勢</th><td>${swsMarks([["chair","椅子座位"],["bed","ベッドギャッチアップ"]], o.posture)}${o.postureDeg ? "（" + escHtml(o.postureDeg) + "度）" : ""}</td></tr>`;
+  h += `<tr><th>呼吸・喀痰</th><td>${swsMarks([["normal","正常"],["rattle","ラトリング・湿性音あり"]], o.resp)}　自己喀痰：${swsMarks([["ok","可能"],["hard","困難"]], o.sputum)}</td></tr>`;
+  h += `<tr><th>食事ペース</th><td>${swsMarks([["indep","自立"],["watch","要見守り・ペース制限の声掛け必須"]], o.pace)}</td></tr>`;
+  h += `<tr><th>挺舌・口蓋・口唇</th><td>挺舌：${swsMarks([["front","前方"],["left","左"],["right","右"]], o.tongueDir)}（${swsRadioMarks([["good","良好"],["poor","不良"]], o.tongueQual)}）　口蓋：${swsMarks([["good","良好"],["poor","不十分"]], o.palate)}　口唇：${swsRadioMarks([["good","良好"],["poor","不良"]], o.lipQual)}</td></tr>`;
+  h += `<tr><th>口腔清掃</th><td>${swsMarks([["good","良好"],["part","1-2部位に食渣・プラークあり"],["poor","不良・全体的に食渣あり"]], o.oralClean)}　舌苔：${swsRadioMarks([["少","少ない"],["中","中"],["多","多い"]], o.tongueCoat)}　義歯清掃：${swsRadioMarks([["good","良好"],["poor","不良"]], o.dentureClean)}</td></tr>`;
+  h += `<tr><th>唾液・粘膜</th><td>唾液：${swsMarks([["wet","湿潤"],["dry","乾燥"],["pool","痰・唾液貯留あり"]], o.saliva)}　粘膜：${swsMarks([["normal","正常"],["abn","異常"]], o.mucosa)}${o.mucosaNote ? "（" + escHtml(o.mucosaNote) + "）" : ""}　${swsMark(!!o.ulcer, "義歯下等に一部潰瘍")}</td></tr>`;
+  h += `<tr><th>歯痛・疼痛</th><td>${swsMarks([["none","なし"],["yes","あり"]], o.toothache)}</td></tr>`;
+  h += `<tr><th>残存歯・義歯</th><td>残存歯：（${escHtml(o.remainingTeeth || "　")}本）　残根：（${escHtml(o.rootTeeth || "　")}本）　義歯：${swsMarks([["use","使用中"],["none","なし"],["illfit","不適合のため未装着"]], o.dentureUse)}（${swsMarks([["upper","上"],["lower","下"]], o.dentureJaw)}）</td></tr>`;
+  h += `<tr><th>判定不能</th><td>${swsMarks([["all","全項目実施"],["part","一部判定不能"]], o.judgeAll)}</td></tr>`;
+  h += `</table>`;
+
+  h += `<div class="sws-sec">2. 嚥下スクリーニング検査　評価実施日：${escHtml(d.examDate || "")}</div>`;
+  h += `<table>`;
+  h += `<tr><th>RSST</th><td>［${escHtml(r.count || "　")}］回 / 30秒　判定：${swsRadioMarks([["normal","正常（3回以上）"],["low","低下（2回以下）"]], r.judge)}　${swsRadioMarks([["ok","正常実施"],["na","判定不能・実施不可"]], r.status)}　喉頭挙上：${swsRadioMarks([["good","良好"],["weak","減弱"]], r.elevation)}<br>理由：${swsMarks([["cog","指示理解困難"],["dry","極度の口腔乾燥"],["refuse","不穏・拒否"],["other","その他"]], r.reasons)}${r.reasonOther ? "（" + escHtml(r.reasonOther) + "）" : ""}</td></tr>`;
+  h += `<tr><th>MWST/FT</th><td>${[1,2,3,4,5].map(n => swsMark(String(m.score)===String(n), n + "点")).join("　")}　判定：${swsRadioMarks([["normal","正常"],["suspect","疑い"],["abn","異常"]], m.judge)}　${swsRadioMarks([["ok","正常実施"],["na","判定不能・実施不可"]], m.status)}　ムセ：${swsRadioMarks([["none","なし"],["yes","あり"],["late","遅発性ムセ"]], m.mousse)}<br>理由：${swsMarks([["risk","誤嚥リスクで見合わせ"],["cog","指示理解困難"],["refuse","とろみ水拒否・不穏"],["other","その他"]], m.reasons)}${m.reasonOther ? "（" + escHtml(m.reasonOther) + "）" : ""}</td></tr>`;
+  h += `<tr><th>頸部聴診</th><td>判定：${swsRadioMarks([["normal","正常（清明）"],["abn","異常"],["na","判定不能/不明瞭"]], a.judge)}　嚥下音：${swsMarks([["normal","正常"],["long","長い"],["weak","弱い"],["multi","複数回"],["bubble","泡立ち音"]], a.swallow)}　呼吸音：${swsMarks([["clear","清明"],["wet","湿性音"],["gargle","嗽音"]], a.breath)}　実施不可：${swsMarks([["refuse","拒否・不穏"],["weak","音微弱"]], a.unableReasons)}</td></tr>`;
+  h += `<tr><th>咳テスト</th><td>判定：${swsRadioMarks([["normal","正常"],["low","低下"],["na","判定不能"]], c.judge)}　簡易：${swsRadioMarks([["normal","正常"],["low","低下"]], c.citric)}　指示咳嗽：${swsRadioMarks([["strong","強い"],["weak","弱い"],["none","不可"]], c.instructed)}　自発：${swsMarks([["wet","湿性咳嗽頻回"],["hard","喀痰困難"]], c.spontaneous)}　実施不可：${swsMarks([["neb","吸入拒否"],["cog","指示理解困難"]], c.unableReasons)}</td></tr>`;
+  h += `</table>`;
+
+  h += `<div class="sws-sec">4. 総合判定 ＆ 今後の計画（次回VE嚥下内視鏡検査に向けて）</div>`;
+  h += `<table><tr><th>総合判定</th><td>${SWS_OVERALL_OPTS_.map(opt => swsMark(d.overall===opt.v, opt.t)).join("<br>")}</td></tr>`;
+  h += `<tr><th>次回VE</th><td>予定日：${escHtml(d.veDate || "")}　時間：${escHtml(d.veTime || "")}頃<br>準備物：<span class="sws-pre">${escHtml(d.vePrep || "")}</span></td></tr>`;
+  h += `<tr><th>多職種連携</th><td class="sws-pre">${escHtml(d.handover || "")}</td></tr></table>`;
+  h += `<p style="margin:8px 0 0;font-size:10pt">評価担当者： ${escHtml(d.evaluator || "")}　㊞　／　評価実施日： ${escHtml(d.examDate || "")}</p>`;
+
+  const q = d.questionnaires || {};
+  if (swsQuestionnaireHasAny_(q)) {
+    h += `<div class="sws-sec">質問紙（任意）</div>`;
+    if ((q.seirei || []).some(x => x)) {
+      const aCount = (q.seirei || []).filter(x => x === "A").length;
+      h += `<div style="font-weight:800;margin:6px 0 2px">聖隷式嚥下質問紙</div><table>`;
+      SWS_SEIREI_Q_.forEach((qq, i) => {
+        h += `<tr><td>${i + 1}. ${escHtml(qq)}</td><td>${swsRadioMarks([["A","A"],["B","B"],["C","C"]], q.seirei[i] || "")}</td></tr>`;
+      });
+      h += `</table><p class="sws-muted" style="font-size:9pt">Aが1項目以上で嚥下機能低下の目安（今回A：${aCount}）</p>`;
+    }
+    if ((q.fssg || []).some(x => String(x).trim() !== "")) {
+      const total = swsSumScores_(q.fssg);
+      let acid = 0, dys = 0;
+      SWS_FSSG_ACID_IDX_.forEach(i => { const n = parseInt(q.fssg[i], 10); if (!isNaN(n)) acid += n; });
+      SWS_FSSG_DYS_IDX_.forEach(i => { const n = parseInt(q.fssg[i], 10); if (!isNaN(n)) dys += n; });
+      h += `<div style="font-weight:800;margin:6px 0 2px">Fスケール（FSSG）</div><table>`;
+      SWS_FSSG_Q_.forEach((qq, i) => {
+        h += `<tr><td>${i + 1}. ${escHtml(qq)}</td><td>${escHtml(String(q.fssg[i] ?? ""))}</td></tr>`;
+      });
+      h += `</table><p>合計 ${total != null ? total : "—"}点（酸逆流 ${acid} / もたれ ${dys}）${total != null && total >= 8 ? "　※8点以上はGERDの可能性の目安" : ""}</p>`;
+    }
+    if ((q.eat10 || []).some(x => String(x).trim() !== "")) {
+      const total = swsSumScores_(q.eat10);
+      h += `<div style="font-weight:800;margin:6px 0 2px">EAT-10</div><table>`;
+      SWS_EAT10_Q_.forEach((qq, i) => {
+        h += `<tr><td>${i + 1}. ${escHtml(qq)}</td><td>${escHtml(String(q.eat10[i] ?? ""))}</td></tr>`;
+      });
+      h += `</table><p>合計 ${total != null ? total : "—"}点${total != null && total >= 3 ? "　※3点以上は嚥下障害の可能性の目安" : ""}</p>`;
+    }
+    if ((q.pill5 || []).some(x => String(x).trim() !== "")) {
+      const total = swsSumScores_(q.pill5);
+      h += `<div style="font-weight:800;margin:6px 0 2px">PILL-5</div><table>`;
+      SWS_PILL5_Q_.forEach((qq, i) => {
+        h += `<tr><td>${i + 1}. ${escHtml(qq)}</td><td>${escHtml(String(q.pill5[i] ?? ""))}</td></tr>`;
+      });
+      h += `</table><p>合計 ${total != null ? total : "—"}点</p>`;
+    }
+  }
+  h += `</div>`;
+  return h;
+}
+
+function swsPrintCss_() {
+  return `body{margin:12mm;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif}
+.sws-doc{font-size:9.5pt;line-height:1.35;color:#111}
+.sws-doc h1{text-align:center;font-size:13pt;font-weight:800;margin:0 0 8px}
+.sws-doc table{width:100%;border-collapse:collapse;margin:0 0 6px}
+.sws-doc th,.sws-doc td{border:1px solid #111;padding:3px 5px;vertical-align:top}
+.sws-doc th{background:#f1f5f9;font-size:9pt;width:7em;white-space:nowrap}
+.sws-doc .sws-sec{font-size:10.5pt;font-weight:800;margin:8px 0 3px;border-bottom:1px solid #111}
+.sws-doc .sws-mark-on{font-weight:800}
+.sws-doc .sws-muted{color:#64748b}
+.sws-doc .sws-pre{white-space:pre-wrap}
+@media print{body{margin:8mm}}`;
+}
+
+function ensureSwsFormListener_() {
+  const host = document.getElementById("swsFormHost");
+  if (!host || swsFormBound_) return;
+  swsFormBound_ = true;
+  host.addEventListener("input", e => {
+    const t = e.target;
+    if (t && t.id === "swsRsstCount") {
+      const data = collectSwsForm_();
+      swsApplyAutoJudges_(data, "rsstCount");
+      lastSwsContext_ = data;
+      const judge = data.rsst.judge;
+      host.querySelectorAll('input[data-sws-radio="rsstJudge"]').forEach(el => {
+        el.checked = el.value === judge;
+      });
+    }
+    if (t && t.getAttribute("data-sws-radio") === "mwstScore") {
+      const data = collectSwsForm_();
+      swsApplyAutoJudges_(data, "mwstScore");
+      lastSwsContext_ = data;
+      const judge = data.mwst.judge;
+      host.querySelectorAll('input[data-sws-radio="mwstJudge"]').forEach(el => {
+        el.checked = el.value === judge;
+      });
+    }
+    if (t && t.getAttribute("data-sws-radio") === "rsstJudge") {
+      if (lastSwsContext_ && lastSwsContext_.rsst) lastSwsContext_.rsst.judgeLocked = true;
+    }
+    if (t && t.getAttribute("data-sws-radio") === "mwstJudge") {
+      if (lastSwsContext_ && lastSwsContext_.mwst) lastSwsContext_.mwst.judgeLocked = true;
+    }
+    scheduleSwsPreview_();
+  });
+  host.addEventListener("change", () => scheduleSwsPreview_());
+}
+
+function scheduleSwsPreview_() {
+  if (swsPreviewTimer_) clearTimeout(swsPreviewTimer_);
+  swsPreviewTimer_ = setTimeout(() => {
+    swsPreviewTimer_ = null;
+    refreshSwsPreview_();
+  }, 80);
+}
+
+function refreshSwsPreview_() {
+  const host = document.getElementById("swsPreviewInner");
+  if (!host) return;
+  lastSwsContext_ = collectSwsForm_();
+  host.innerHTML = buildSwsDocumentHtml_(lastSwsContext_, false);
+}
+
+function renderSwsForm_(data) {
+  const host = document.getElementById("swsFormHost");
+  if (!host) return;
+  lastSwsContext_ = data || emptySwsData_();
+  host.innerHTML = buildSwsFormHtml_(lastSwsContext_);
+  ensureSwsFormListener_();
+  refreshSwsPreview_();
+}
+
+function mergeSwsIntoExamDataRaw_(examDataRaw, swsData) {
+  const o = parseExamDataField_(examDataRaw);
+  o[SWALLOW_SCREEN_TREATMENT_] = swsData;
+  return JSON.stringify(o);
+}
+
+function extractSwsFromExamData_(examDataRaw) {
+  const o = parseExamDataField_(examDataRaw);
+  const saved = o[SWALLOW_SCREEN_TREATMENT_];
+  return saved && typeof saved === "object" ? saved : null;
+}
+
+function syncSwsWorkingIntoSelectedExam_() {
+  if (!lastSwsContext_) return;
+  if (typeof selectedTreatments !== "undefined" && selectedTreatments && selectedTreatments.has(SWALLOW_SCREEN_TREATMENT_)) {
+    /* collectExamDataForSave_ が参照する */
+  }
+}
+
+async function syncSwsTeethFromChart_() {
+  const pid = lastSwsContext_?.patientId || swsPinnedPatientId_ || "";
+  if (!pid) {
+    showToast("患者がいません");
+    return;
+  }
+  try {
+    const json = await gasCall("getTeethData", pid);
+    swsTeethDataCache_ = JSON.parse(json || "{}");
+  } catch (_) {
+    swsTeethDataCache_ = {};
+  }
+  migrateLegacyTeethProsthesis(swsTeethDataCache_);
+  const data = collectSwsForm_();
+  applySwsTeethDefaults_(data, swsTeethDataCache_, true);
+  renderSwsForm_(data);
+  showToast("歯式から残存歯・残根・義歯を入れ直しました");
+}
+
+async function loadSwsForPatient_(pid, examDateHint, opts) {
+  opts = opts || {};
+  const p = (PATIENTS || []).find(x => String(x.id) === String(pid));
+  const sub = document.getElementById("swsModalSub");
+  if (sub) {
+    const room = p ? trimField_(p.room) : "";
+    sub.textContent = `${p ? p.name || pid : pid}${room ? "（" + room + "）" : ""} — 評価表が本体。質問紙は任意`;
+  }
+  let teethData = {};
+  let records = [];
+  try {
+    const [teethJson, recJson] = await Promise.all([
+      gasCall("getTeethData", pid),
+      gasCall("getTreatmentsByPatient", pid)
+    ]);
+    teethData = JSON.parse(teethJson || "{}");
+    records = JSON.parse(recJson || "[]");
+  } catch (_) {
+    teethData = currentTeethData && selectedPatient && String(selectedPatient.id) === String(pid) ? currentTeethData : {};
+    records = (localRecords || []).filter(r => String(r.patient_id) === String(pid));
+  }
+  migrateLegacyTeethProsthesis(teethData);
+  swsTeethDataCache_ = teethData;
+  let examDate = formatDateInputVal(examDateHint) || "";
+  if (!examDate && swsSourceMode_ === "record") {
+    examDate = formatDateInputVal(document.getElementById("visitDateInput")?.value) || getTodayYmdJstForRecord_();
+  }
+  if (!examDate) {
+    examDate =
+      formatDateInputVal(document.getElementById("reportVisitDate")?.value) ||
+      getTodayYmdJstForRecord_();
+  }
+  let bound = null;
+  let saved = null;
+  (records || []).forEach(r => {
+    if (!recordHasTreatment_(r, SWALLOW_SCREEN_TREATMENT_)) return;
+    const ymd = formatDateInputVal(r.visit_date) || "";
+    if (ymd !== examDate) return;
+    const s = extractSwsFromExamData_(r.exam_data);
+    if (s) {
+      bound = r;
+      saved = s;
+    } else if (!bound) {
+      bound = r;
+    }
+  });
+  if (!saved && editingTreatmentId && selectedPatient && String(selectedPatient.id) === String(pid)) {
+    const rec = (localRecords || []).find(r => String(r.id) === String(editingTreatmentId));
+    if (rec) {
+      saved = extractSwsFromExamData_(rec.exam_data);
+      bound = rec;
+    }
+  }
+  swsBoundTreatmentId_ = bound && bound.id != null ? String(bound.id) : null;
+  let data = saved ? Object.assign(emptySwsData_(), saved) : swsPatientDefaults_(p, examDate);
+  data.patientId = String(pid);
+  data.patientName = p ? String(p.name || data.patientName || "") : data.patientName;
+  const bd = p && p.birth_date ? String(p.birth_date).slice(0, 10) : "";
+  if (bd) {
+    data.birthWareki = formatDateWarekiClient_(bd);
+    const age = calcAgeFromIso(bd);
+    data.ageParen = age != null ? `（${age}歳）` : "";
+  }
+  data.examDate = examDate;
+  if (!data.evaluator) data.evaluator = (document.getElementById("doctor-name")?.value || "").trim();
+  if (!saved) applySwsTeethDefaults_(data, teethData, false);
+  else applySwsTeethDefaults_(data, teethData, false);
+  renderSwsForm_(data);
+  if (opts.toastDraft && saved) showToast("この日の保存済み評価を読み込みました");
+}
+
+function openSwsModalShell_() {
+  clearUndoStack_();
+  document.getElementById("swsModal")?.classList.add("show");
+  showReportPreviewLoading_("swsPreviewInner", "読み込んでいます…");
+}
+
+function openSwsModalFromRecord_() {
+  if (!selectedPatient) {
+    showToast("患者を選んでください");
+    return;
+  }
+  swsSourceMode_ = "record";
+  swsPinnedPatientId_ = String(selectedPatient.id);
+  openSwsModalShell_();
+  const ymd =
+    formatDateInputVal(document.getElementById("visitDateInput")?.value) ||
+    getTodayYmdJstForRecord_();
+  void loadSwsForPatient_(selectedPatient.id, ymd, { toastDraft: true });
+}
+
+async function openSwallowScreenModal() {
+  swsSourceMode_ = "report";
+  swsPinnedPatientId_ = "";
+  clearUndoStack_();
+  repopulateKentaiReportPatients_();
+  const sel = document.getElementById("reportPatient");
+  let pid = sel?.value || "";
+  if (!pid) {
+    const list = getActivePatientsForReport_(getKentaiReportFacFilter_());
+    if (list[0]) pid = list[0].id;
+    if (sel && pid) sel.value = pid;
+  }
+  if (!pid) {
+    showToast("有効な患者がいません。施設を選ぶか、患者を追加してください。");
+    return;
+  }
+  swsPinnedPatientId_ = String(pid);
+  syncKentaiReportPatientLabel_();
+  openSwsModalShell_();
+  await loadSwsForPatient_(pid, null, { toastDraft: true });
+}
+
+function closeSwallowScreenModal_() {
+  if (swsSourceMode_ === "record" && lastSwsContext_) {
+    lastSwsContext_ = collectSwsForm_();
+  }
+  document.getElementById("swsModal")?.classList.remove("show");
+}
+
+async function saveSwsToTreatmentRecord_() {
+  const data = collectSwsForm_();
+  lastSwsContext_ = data;
+  const pid = data.patientId || swsPinnedPatientId_;
+  if (!pid) {
+    showToast("患者がいません");
+    return;
+  }
+  const ymd = formatDateInputVal(data.examDate) || getTodayYmdJstForRecord_();
+  data.examDate = ymd;
+
+  if (swsSourceMode_ === "record" && selectedPatient && String(selectedPatient.id) === String(pid)) {
+    selectedTreatments.add(SWALLOW_SCREEN_TREATMENT_);
+    document.getElementById(`chip-${encodeId(SWALLOW_SCREEN_TREATMENT_)}`)?.classList.add("sel");
+    showToast("入力を保持しました。診療記録の「保存」で確定します");
+    scheduleDraftHudUpdate();
+    return;
+  }
+
+  showToast("診療記録へ保存しています…");
+  try {
+    let records = [];
+    try {
+      records = JSON.parse(await gasCall("getTreatmentsByPatient", pid) || "[]");
+    } catch (_) {
+      records = (localRecords || []).filter(r => String(r.patient_id) === String(pid));
+    }
+    let target = null;
+    if (swsBoundTreatmentId_) {
+      target = (records || []).find(r => String(r.id) === String(swsBoundTreatmentId_)) || null;
+    }
+    if (!target) {
+      (records || []).forEach(r => {
+        const vd = formatDateInputVal(r.visit_date) || "";
+        if (vd !== ymd) return;
+        if (!target) target = r;
+        if (recordHasTreatment_(r, SWALLOW_SCREEN_TREATMENT_)) target = r;
+      });
+    }
+    const p = (PATIENTS || []).find(x => String(x.id) === String(pid));
+    if (target) {
+      const treats = recordTreatmentList_(target);
+      if (!treats.some(t => normalizeTreatmentCodeForMatch_(t) === SWALLOW_SCREEN_TREATMENT_)) {
+        treats.push(SWALLOW_SCREEN_TREATMENT_);
+      }
+      const payload = {
+        id: target.id,
+        patient_id: pid,
+        fac_id: target.fac_id || (p && p.fac) || "",
+        visit_date: ymd,
+        treatments: treats.join("、"),
+        notes: target.notes || "",
+        next_date: target.next_date || "",
+        next_content: target.next_content || "",
+        doctor: target.doctor || data.evaluator || "",
+        visit_time_start: target.visit_time_start || "",
+        visit_time_end: target.visit_time_end || "",
+        notes_tones: target.notes_tones || "",
+        exam_data: mergeSwsIntoExamDataRaw_(target.exam_data, data)
+      };
+      await gasCall("updateTreatmentRecord", JSON.stringify(payload));
+      mergeTreatmentRecordsIntoLocal_([payload]);
+      swsBoundTreatmentId_ = String(target.id);
+      showToast("診療記録へ保存しました");
+    } else {
+      const payload = {
+        patient_id: pid,
+        fac_id: (p && p.fac) || getReportFacId_() || "",
+        visit_date: ymd,
+        treatments: SWALLOW_SCREEN_TREATMENT_,
+        notes: "",
+        next_date: "",
+        next_content: "",
+        doctor: data.evaluator || "",
+        visit_time_start: "",
+        visit_time_end: "",
+        notes_tones: "",
+        exam_data: mergeSwsIntoExamDataRaw_("", data)
+      };
+      const id = await gasCall("saveTreatmentRecord", JSON.stringify(payload));
+      payload.id = id;
+      mergeTreatmentRecordsIntoLocal_([payload]);
+      swsBoundTreatmentId_ = String(id);
+      showToast("診療記録を作成して保存しました");
+    }
+  } catch (e) {
+    showToast("保存に失敗しました: " + (e && e.message ? e.message : String(e)));
+  }
+}
+
+function printSwallowScreen_() {
+  const data = collectSwsForm_();
+  lastSwsContext_ = data;
+  if (!data.patientId && !data.patientName) {
+    showToast("患者を選んでください");
+    return;
+  }
+  const name = (data.patientName || "患者").replace(/[\\/:*?"<>|]+/g, "_");
+  const title = `嚥下スクリーニング_${name}_${data.examDate || "日付未指定"}`;
+  const bodyHtml = buildSwsDocumentHtml_(data, true);
+  const doc = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${escHtml(title)}</title>
+<style>${swsPrintCss_()}</style></head><body>${bodyHtml}</body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) {
+    showToast("ポップアップがブロックされています。許可してから再度お試しください。");
+    return;
+  }
+  w.document.open();
+  w.document.write(doc);
+  w.document.close();
+  rptTriggerPrintWhenReady_(w);
+  showToast("印刷画面を開きました");
+}
+
 
 /** ── ⑩ 診断書 ── */
 let lastShindanContext_ = null;

@@ -442,7 +442,7 @@
     <style>
       .settings-tab { flex:1;min-width:64px;padding:10px 3px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent; }
       .settings-tab.active { color:var(--accent);border-bottom-color:var(--accent); }
-      :is(#faxDailyModal, #svListModal, #shareSheetModal, #monthCareModal, #visitTimetableModal, #kentaiReportModal, #personalSheetModal, #patientPpsModal, #ofpiModal, #shindanModal, #docArchiveModal).modal-overlay.show {
+      :is(#faxDailyModal, #svListModal, #shareSheetModal, #monthCareModal, #visitTimetableModal, #kentaiReportModal, #personalSheetModal, #patientPpsModal, #ofpiModal, #swsModal, #shindanModal, #docArchiveModal).modal-overlay.show {
         align-items: stretch;
         padding: 0;
       }
@@ -716,11 +716,34 @@
         }
         #visitTimetableModal .tt-preview-pane { flex: 1 1 58%; }
       }
-      #ofpiModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
+      #ofpiModal .report-preview-split,
+      #swsModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
+      #swsModal .sws-form-section { margin-bottom: 10px; }
+      #swsModal .sws-chk-row { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 4px 0 8px; font-size: 12px; line-height: 1.4; }
+      #swsModal .sws-chk-row label { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #334155; cursor: pointer; }
+      #swsModal .sws-field-lbl { font-size: 11px; font-weight: 800; color: #64748b; margin: 8px 0 4px; }
+      #swsModal .sws-ta { width: 100%; min-height: 64px; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; resize: vertical; }
+      #swsModal .sws-inp { width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; box-sizing: border-box; }
+      #swsModal details.sws-q { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; background: #f8fafc; }
+      #swsModal details.sws-q > summary { font-size: 12px; font-weight: 800; color: #334155; cursor: pointer; }
+      #swsModal .sws-q-item { margin: 8px 0; font-size: 12px; line-height: 1.45; }
+      #swsModal .sws-q-item .sws-q-opts { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 4px; }
+      .sws-doc { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif; color: #111; font-size: 10pt; line-height: 1.4; }
+      .sws-doc h1 { text-align: center; font-size: 13pt; font-weight: 800; margin: 0 0 8px; letter-spacing: 0.04em; }
+      .sws-doc table { width: 100%; border-collapse: collapse; margin: 0 0 8px; }
+      .sws-doc th, .sws-doc td { border: 1px solid #111; padding: 4px 6px; vertical-align: top; }
+      .sws-doc th { background: #f1f5f9; font-size: 9.5pt; font-weight: 800; white-space: nowrap; width: 7.5em; }
+      .sws-doc .sws-sec { font-size: 11pt; font-weight: 800; margin: 10px 0 4px; border-bottom: 1px solid #111; padding-bottom: 2px; }
+      .sws-doc .sws-mark-on { font-weight: 800; }
+      .sws-doc .sws-muted { color: #64748b; }
+      .sws-doc .sws-pre { white-space: pre-wrap; }
       @media (min-width: 900px) {
-        #ofpiModal .report-preview-split { flex-direction: row; gap: 12px; }
-        #ofpiModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
-        #ofpiModal .report-preview-scroll { min-height: calc(100dvh - 200px); }
+        #ofpiModal .report-preview-split,
+        #swsModal .report-preview-split { flex-direction: row; gap: 12px; }
+        #ofpiModal .report-preview-form-pane,
+        #swsModal .report-preview-form-pane { flex: 1 1 42%; max-width: 48%; }
+        #ofpiModal .report-preview-scroll,
+        #swsModal .report-preview-scroll { min-height: calc(100dvh - 200px); }
       }
       #shindanModal .report-preview-split { flex: 1 1 auto; min-height: 0; }
       @media (min-width: 900px) {
@@ -1233,6 +1256,11 @@
           <span class="rob-num">⑪</span>
           <span class="rob-title">施設申し送り（次の歯科医院向け）</span>
           <span class="rob-sub">施設 → 有効患者の概要・特別な治療・コメント → 保存・印刷</span>
+        </button>
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openSwallowScreenModal(), '⑫ 嚥下スクリーニングを開いています…')">
+          <span class="rob-num">⑫</span>
+          <span class="rob-title">嚥下スクリーニング</span>
+          <span class="rob-sub">患者・評価日（⑦と同じ患者欄）→ 観察・RSST等 → 印刷</span>
         </button>
       </div>
       <p class="report-hub-tone-hint" style="font-size:11px;color:var(--muted);margin:10px 0 0;line-height:1.55">青い枠（①④⑤⑥⑧）は<strong>よく使う出力を目立たせたデザイン</strong>です。選択中・ロックなどの状態表示ではありません。</p>
@@ -1749,6 +1777,30 @@
       <button type="button" class="btn btn-secondary btn-rpt-draft-clear" onclick="clearOfpiPreviewDraft_()">🗑 下書き消去</button>
       <button type="button" class="btn-cancel" onclick="closeOralFunctionPrecisionModal()">閉じる</button>
       <button type="button" class="btn-ok" onclick="printOralFunctionPrecision_()">🖨 印刷 / PDFに保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 嚥下スクリーニング（⑫） -->
+<div class="modal-overlay" id="swsModal">
+  <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="swsModalTitle">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="swsModalTitle">嚥下スクリーニング評価表</div>
+    <p id="swsModalSub" style="font-size:12px;color:var(--muted);margin:-4px 0 10px;line-height:1.45">初診・経過観察用。左で入力すると右の表に反映されます。質問紙は折りたたみ（入力したときだけ印刷）。</p>
+    <div class="report-preview-split">
+      <div class="report-preview-form-pane" id="swsFormHost"></div>
+      <div style="display:flex;flex-direction:column;min-height:0;flex:1">
+        <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;flex-shrink:0">プレビュー（印刷イメージ）</div>
+        <div id="swsPreviewScroll" class="report-preview-scroll">
+          <div id="swsPreviewInner" class="sws-preview-host"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions report-preview-modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="saveSwsToTreatmentRecord_()">💾 診療記録へ保存</button>
+      <button type="button" class="btn btn-secondary" onclick="syncSwsTeethFromChart_()">歯式から入れ直す</button>
+      <button type="button" class="btn-cancel" onclick="closeSwallowScreenModal_()">閉じる</button>
+      <button type="button" class="btn-ok" onclick="printSwallowScreen_()">🖨 印刷 / PDFに保存</button>
     </div>
   </div>
 </div>

@@ -543,6 +543,65 @@ test.describe('regression smoke — DOM shell', () => {
     expect(ok).toBe(true)
   })
 
+  test('swallow screening chip and form map into the printable sheet', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(
+      () => {
+        const boot = document.getElementById('boot-loading')
+        return !boot || boot.style.display === 'none'
+      },
+      { timeout: 45_000 },
+    )
+    const ok = await page.evaluate(() => {
+      const w = window as unknown as {
+        emptySwsData_?: () => Record<string, unknown>
+        buildSwsDocumentHtml_?: (data: Record<string, unknown>, forPrint: boolean) => string
+        swsQuestionnaireHasAny_?: (q: unknown) => boolean
+        applySwsTeethDefaults_?: (data: Record<string, unknown>, teeth: Record<string, unknown>, force: boolean) => Record<string, unknown>
+        openSwallowScreenModal?: () => void
+        toggleChip?: (code: string) => void
+      }
+      const modal = document.getElementById('swsModal')
+      const btn = [...document.querySelectorAll('.report-out-btn')].some(el => (el.textContent || '').includes('嚥下スクリーニング'))
+      if (typeof w.emptySwsData_ !== 'function' || typeof w.buildSwsDocumentHtml_ !== 'function' || typeof w.swsQuestionnaireHasAny_ !== 'function' || typeof w.applySwsTeethDefaults_ !== 'function') {
+        return { ok: false, reason: 'missing-fns' }
+      }
+      const data = w.emptySwsData_() as {
+        patientName?: string
+        rsst?: { count?: string, judge?: string }
+        questionnaires?: { seirei: string[], fssg: string[], eat10: string[], pill5: string[] }
+        oral?: { remainingTeeth?: string, dentureUse?: string[], dentureJaw?: string[] }
+      }
+      data.patientName = '山田花子'
+      if (data.rsst) {
+        data.rsst.count = '4'
+        data.rsst.judge = 'normal'
+      }
+      const html = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true)
+      const noQ = !w.swsQuestionnaireHasAny_(data.questionnaires)
+      const qOn = w.swsQuestionnaireHasAny_!({ seirei: ['A', '', ''], fssg: [], eat10: [], pill5: [] })
+      if (data.questionnaires) data.questionnaires.seirei[0] = 'A'
+      const htmlQ = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true)
+      const teeth = w.applySwsTeethDefaults_(
+        w.emptySwsData_() as Record<string, unknown>,
+        { fd_upper: true, upper_L1: 'C2' },
+        true,
+      ) as { oral?: { remainingTeeth?: string, dentureUse?: string[], dentureJaw?: string[] } }
+      const emptyTeeth = w.applySwsTeethDefaults_(
+        w.emptySwsData_() as Record<string, unknown>,
+        {},
+        true,
+      ) as { oral?: { remainingTeeth?: string } }
+      const ok = !!modal && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
+        && html.includes('山田花子') && html.includes('RSST') && html.includes('［4］') && html.includes('正常')
+        && !html.includes('聖隷式嚥下質問紙') && noQ && qOn && htmlQ.includes('聖隷式嚥下質問紙')
+        && !!teeth?.oral?.dentureUse?.includes('use') && !!teeth?.oral?.dentureJaw?.includes('upper')
+        && (emptyTeeth?.oral?.remainingTeeth === '' || emptyTeeth?.oral?.remainingTeeth == null)
+      return { ok, modal: !!modal, btn, htmlHasName: html.includes('山田花子'), denture: teeth?.oral, emptyRem: emptyTeeth?.oral?.remainingTeeth, noQ, qOn, htmlQHas: htmlQ.includes('聖隷式嚥下質問紙') }
+    })
+    expect(ok).toEqual(expect.objectContaining({ ok: true }))
+  })
+
   test('quarterly overview shows the previous value under each exam', async ({ page }) => {
     await page.goto('/')
     await page.waitForFunction(
