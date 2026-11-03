@@ -555,7 +555,7 @@ test.describe('regression smoke — DOM shell', () => {
     const ok = await page.evaluate(() => {
       const w = window as unknown as {
         emptySwsData_?: () => Record<string, unknown>
-        buildSwsDocumentHtml_?: (data: Record<string, unknown>, forPrint: boolean, opts?: { includeQuestionnaires?: boolean }) => string
+        buildSwsDocumentHtml_?: (data: Record<string, unknown>, forPrint: boolean, opts?: { includeQuestionnaires?: boolean, showLinkMarks?: boolean }) => string
         applySwsTeethDefaults_?: (data: Record<string, unknown>, teeth: Record<string, unknown>, force: boolean) => Record<string, unknown>
         swsPill5GuideText_?: (total: number | null) => string
         swsSyncLinkedQuestionnaireAnswers_?: (q: Record<string, string[]>, kind: string, idx: number) => boolean
@@ -564,6 +564,7 @@ test.describe('regression smoke — DOM shell', () => {
       }
       const modal = document.getElementById('swsModal')
       const printOpt = document.getElementById('swsPrintQuestionnaires') as HTMLInputElement | null
+      const linkOpt = document.getElementById('swsShowLinkMarks') as HTMLInputElement | null
       const btn = [...document.querySelectorAll('.report-out-btn')].some(el => (el.textContent || '').includes('嚥下スクリーニング'))
       if (typeof w.emptySwsData_ !== 'function' || typeof w.buildSwsDocumentHtml_ !== 'function' || typeof w.applySwsTeethDefaults_ !== 'function') {
         return { ok: false, reason: 'missing-fns' }
@@ -580,6 +581,7 @@ test.describe('regression smoke — DOM shell', () => {
       }
       const htmlMain = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: false })
       const htmlQ = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: true })
+      const htmlQNoMark = w.buildSwsDocumentHtml_(data as Record<string, unknown>, true, { includeQuestionnaires: true, showLinkMarks: false })
       const teeth = w.applySwsTeethDefaults_(
         w.emptySwsData_() as Record<string, unknown>,
         { fd_upper: true, upper_L1: 'C2' },
@@ -600,15 +602,21 @@ test.describe('regression smoke — DOM shell', () => {
       const syncPill = typeof w.swsSyncLinkedQuestionnaireAnswers_ === 'function'
         ? (w.swsSyncLinkedQuestionnaireAnswers_(q, 'eat10', 4) && q.pill5[0] === '3')
         : false
-      const ok = !!modal && !!printOpt && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
+      const ok = !!modal && !!printOpt && !!linkOpt && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
         && htmlMain.includes('山田花子') && htmlMain.includes('反復唾液嚥下テスト') && htmlMain.includes('［4］') && htmlMain.includes('正常')
+        && htmlMain.includes('sws-opt')
         && !htmlMain.includes('聖隷式嚥下質問紙') && !htmlMain.includes('次回VE嚥下内視鏡検査に向けて')
         && htmlMain.includes('総合判定 ＆ 今後の計画') && !htmlMain.includes('sws-page-break')
         && htmlQ.includes('聖隷式嚥下質問紙') && htmlQ.includes('sws-page-break') && htmlQ.includes('sws-q-page')
         && htmlQ.includes('酸逆流関連症状') && htmlQ.includes('運動不全（もたれ）症状')
         && htmlQ.includes('PILL-5（錠剤嚥下障害のアセスメント）') && htmlQ.includes('6未満＝正常')
+        && htmlQ.includes('0：なし') && htmlQ.includes('1：ほとんどなし') && htmlQ.includes('4：毎回あった')
+        && htmlQ.includes('0：ない') && htmlQ.includes('1：まれに') && htmlQ.includes('0：問題なし')
+        && htmlQ.includes('A.明らかに') && htmlQ.includes('C.なし')
+        && !htmlQ.includes('空欄のまま印刷し、現場で手書きしても構いません')
+        && !htmlQ.includes('手書きでも同じ印どうしを揃えてください')
         && htmlQ.includes('連1') && htmlQ.includes('連7') && htmlQ.includes('sws-q-link-mark')
-        && htmlQ.includes('手書きでも同じ印どうしを揃えてください')
+        && !htmlQNoMark.includes('sws-q-link-mark')
         && htmlMain.includes('1点：嚥下なし') && htmlMain.includes('泡立ち音')
         && pillGuide.includes('軽度から中等度')
         && syncResidue && syncPill
