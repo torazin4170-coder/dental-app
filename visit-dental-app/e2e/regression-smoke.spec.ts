@@ -558,6 +558,7 @@ test.describe('regression smoke — DOM shell', () => {
         buildSwsDocumentHtml_?: (data: Record<string, unknown>, forPrint: boolean, opts?: { includeQuestionnaires?: boolean }) => string
         applySwsTeethDefaults_?: (data: Record<string, unknown>, teeth: Record<string, unknown>, force: boolean) => Record<string, unknown>
         swsPill5GuideText_?: (total: number | null) => string
+        swsSyncLinkedQuestionnaireAnswers_?: (q: Record<string, string[]>, kind: string, idx: number) => boolean
         openSwallowScreenModal?: () => void
         toggleChip?: (code: string) => void
       }
@@ -590,15 +591,25 @@ test.describe('regression smoke — DOM shell', () => {
         true,
       ) as { oral?: { remainingTeeth?: string } }
       const pillGuide = typeof w.swsPill5GuideText_ === 'function' ? w.swsPill5GuideText_(8) : ''
+      const q = { seirei: Array(15).fill(''), fssg: Array(12).fill(''), eat10: Array(10).fill(''), pill5: Array(5).fill('') }
+      q.seirei[6] = 'A'
+      q.eat10[4] = '3'
+      const syncResidue = typeof w.swsSyncLinkedQuestionnaireAnswers_ === 'function'
+        ? (w.swsSyncLinkedQuestionnaireAnswers_(q, 'seirei', 6) && q.eat10[7] === '4')
+        : false
+      const syncPill = typeof w.swsSyncLinkedQuestionnaireAnswers_ === 'function'
+        ? (w.swsSyncLinkedQuestionnaireAnswers_(q, 'eat10', 4) && q.pill5[0] === '3')
+        : false
       const ok = !!modal && !!printOpt && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
         && htmlMain.includes('山田花子') && htmlMain.includes('反復唾液嚥下テスト') && htmlMain.includes('［4］') && htmlMain.includes('正常')
         && !htmlMain.includes('聖隷式嚥下質問紙') && !htmlMain.includes('次回VE嚥下内視鏡検査に向けて')
         && htmlMain.includes('総合判定 ＆ 今後の計画') && !htmlMain.includes('sws-page-break')
-        && htmlQ.includes('聖隷式嚥下質問紙') && htmlQ.includes('sws-page-break')
+        && htmlQ.includes('聖隷式嚥下質問紙') && htmlQ.includes('sws-page-break') && htmlQ.includes('sws-q-page')
         && htmlQ.includes('酸逆流関連症状') && htmlQ.includes('運動不全（もたれ）症状')
         && htmlQ.includes('PILL-5（錠剤嚥下障害のアセスメント）') && htmlQ.includes('6未満＝正常')
         && htmlMain.includes('1点：嚥下なし') && htmlMain.includes('泡立ち音')
         && pillGuide.includes('軽度から中等度')
+        && syncResidue && syncPill
         && !!teeth?.oral?.dentureUse?.includes('use') && !!teeth?.oral?.dentureJaw?.includes('upper')
         && (emptyTeeth?.oral?.remainingTeeth === '' || emptyTeeth?.oral?.remainingTeeth == null)
       return { ok }

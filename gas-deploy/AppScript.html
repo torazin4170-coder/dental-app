@@ -20792,7 +20792,7 @@ function buildSwsFormHtml_(data) {
   const q = d.questionnaires || {};
   const seirei = q.seirei || [];
   h += `<div class="sws-q-block"><div style="font-size:13px;font-weight:800;margin:0 0 8px;color:#0f172a">質問紙（任意・常時表示）</div>`;
-  h += `<p class="sws-criteria">印刷するかどうかは、画面下の「質問紙も印刷する」で選べます。空のまま印刷して現場で手書きもできます。</p>`;
+  h += `<p class="sws-criteria">印刷するかどうかは、画面下の「質問紙も印刷する」で選べます。空のまま印刷して現場で手書きもできます。<br>近い質問（体重・むせ・のど残渣・つかえ・錠剤など）は、片方を入れるともう一方も自動で揃えます（尺度が違うときは目安で変換）。</p>`;
   h += `<div style="font-size:12px;font-weight:800;margin:10px 0 4px">聖隷式嚥下質問紙</div>`;
   h += `<p class="sws-criteria">Aが1項目以上で「嚥下機能低下」の目安。</p>`;
   SWS_SEIREI_Q_.forEach((qq, i) => {
@@ -20978,21 +20978,116 @@ function swsPill5GuideText_(total) {
   return `合計 ${total}点（${band}）　／　評価ガイド：6未満＝正常　／　6〜12未満＝軽度から中等度　／　12以上＝中等度から重度`;
 }
 
+/** 質問紙の近い質問どうし。片方を入れるともう一方も揃える（尺度が違うときは目安で変換） */
+const SWS_Q_LINK_PAIRS_ = [
+  { a: ["seirei", 1], b: ["eat10", 0], note: "体重減少" },
+  { a: ["seirei", 2], b: ["eat10", 3], note: "飲み込みにくさ" },
+  { a: ["seirei", 3], b: ["eat10", 8], note: "食事中のむせ・咳" },
+  { a: ["seirei", 4], b: ["eat10", 2], note: "水分のむせ・努力" },
+  { a: ["seirei", 6], b: ["eat10", 7], note: "のどに残る感じ" },
+  { a: ["seirei", 12], b: ["fssg", 8], note: "つかえ・つまる感じ" },
+  { a: ["eat10", 4], b: ["pill5", 0], note: "錠剤・薬の飲み込み" }
+];
+
+function swsSeireiToScore04_(abc) {
+  const v = String(abc || "").toUpperCase();
+  if (v === "A") return "4";
+  if (v === "B") return "2";
+  if (v === "C") return "0";
+  return "";
+}
+
+function swsScore04ToSeirei_(score) {
+  if (score == null || String(score).trim() === "") return "";
+  const n = parseInt(String(score), 10);
+  if (isNaN(n)) return "";
+  if (n >= 3) return "A";
+  if (n >= 1) return "B";
+  return "C";
+}
+
+function swsConvertQuestionnaireValue_(fromKind, toKind, value) {
+  if (value == null || String(value).trim() === "") return "";
+  if (fromKind === toKind) return String(value);
+  if (fromKind === "seirei" && (toKind === "eat10" || toKind === "fssg" || toKind === "pill5")) {
+    return swsSeireiToScore04_(value);
+  }
+  if ((fromKind === "eat10" || fromKind === "fssg" || fromKind === "pill5") && toKind === "seirei") {
+    return swsScore04ToSeirei_(value);
+  }
+  if (
+    (fromKind === "eat10" || fromKind === "fssg" || fromKind === "pill5") &&
+    (toKind === "eat10" || toKind === "fssg" || toKind === "pill5")
+  ) {
+    return String(value);
+  }
+  return "";
+}
+
+function swsGetQArr_(q, kind) {
+  if (!q) return null;
+  if (kind === "seirei") return q.seirei;
+  if (kind === "fssg") return q.fssg;
+  if (kind === "eat10") return q.eat10;
+  if (kind === "pill5") return q.pill5;
+  return null;
+}
+
+function swsSyncLinkedQuestionnaireAnswers_(q, sourceKind, sourceIdx) {
+  if (!q) return false;
+  let changed = false;
+  const srcArr = swsGetQArr_(q, sourceKind);
+  if (!srcArr) return false;
+  const srcVal = srcArr[sourceIdx];
+  SWS_Q_LINK_PAIRS_.forEach(pair => {
+    const ends = [pair.a, pair.b];
+    ends.forEach((end, ei) => {
+      if (end[0] !== sourceKind || end[1] !== sourceIdx) return;
+      const other = ends[1 - ei];
+      const destKind = other[0];
+      const destIdx = other[1];
+      const destArr = swsGetQArr_(q, destKind);
+      if (!destArr) return;
+      const next = swsConvertQuestionnaireValue_(sourceKind, destKind, srcVal);
+      if (String(destArr[destIdx] || "") !== String(next)) {
+        destArr[destIdx] = next;
+        changed = true;
+      }
+    });
+  });
+  return changed;
+}
+
+function swsApplyQuestionnaireRadioValue_(host, kind, idx, value) {
+  if (!host) return;
+  const name = `${kind}_${idx}`;
+  host.querySelectorAll(`input[data-sws-radio="${name}"]`).forEach(el => {
+    el.checked = String(el.value) === String(value || "");
+  });
+}
+
+function swsSyncQuestionnaireRadiosFromData_(host, q) {
+  if (!host || !q) return;
+  (q.seirei || []).forEach((v, i) => swsApplyQuestionnaireRadioValue_(host, "seirei", i, v));
+  (q.fssg || []).forEach((v, i) => swsApplyQuestionnaireRadioValue_(host, "fssg", i, v));
+  (q.eat10 || []).forEach((v, i) => swsApplyQuestionnaireRadioValue_(host, "eat10", i, v));
+  (q.pill5 || []).forEach((v, i) => swsApplyQuestionnaireRadioValue_(host, "pill5", i, v));
+}
+
 function buildSwsQuestionnaireHtml_(data) {
   const q = (data && data.questionnaires) || {};
   const seirei = q.seirei || Array(15).fill("");
   const fssg = q.fssg || Array(12).fill("");
   const eat = q.eat10 || Array(10).fill("");
   const pill = q.pill5 || Array(5).fill("");
-  let h = `<div class="sws-page-break"></div>`;
+  let h = `<div class="sws-page-break"></div><div class="sws-q-page">`;
   h += `<div class="sws-sec">質問紙（任意）</div>`;
-  h += `<p class="sws-criteria">空欄のまま印刷し、現場で手書きしても構いません。</p>`;
+  h += `<p class="sws-criteria">空欄のまま印刷し、現場で手書きしても構いません。近い質問は片方の入力でもう一方も揃えます。</p>`;
 
   const aCount = seirei.filter(x => x === "A").length;
-  h += `<div style="font-weight:800;margin:6px 0 2px">聖隷式嚥下質問紙</div>`;
-  h += `<p class="sws-criteria">Aが1項目以上で「嚥下機能低下」の目安（今回A：${aCount}）</p><table>`;
+  h += `<div class="sws-q-title">聖隷式嚥下質問紙　<span class="sws-criteria-inline">Aが1項目以上で嚥下機能低下の目安（今回A：${aCount}）</span></div><table class="sws-q-table">`;
   SWS_SEIREI_Q_.forEach((qq, i) => {
-    h += `<tr><td>${i + 1}. ${escHtml(qq)}</td><td>${swsRadioMarks([["A","A"],["B","B"],["C","C"]], seirei[i] || "")}</td></tr>`;
+    h += `<tr><td class="sws-q-q">${i + 1}. ${escHtml(qq)}</td><td class="sws-q-a">${swsRadioMarks([["A","A"],["B","B"],["C","C"]], seirei[i] || "")}</td></tr>`;
   });
   h += `</table>`;
 
@@ -21007,29 +21102,25 @@ function buildSwsQuestionnaireHtml_(data) {
     const n = parseInt(fssg[i], 10);
     if (!isNaN(n)) dys += n;
   });
-  h += `<div style="font-weight:800;margin:10px 0 2px">Fスケール（FSSG）</div>`;
-  h += `<p class="sws-criteria">スコア：ない0／まれに1／時々2／しばしば3／いつも4。合計8点以上はGERDの可能性の目安。</p><table>`;
+  h += `<div class="sws-q-title">Fスケール（FSSG）　<span class="sws-criteria-inline">0〜4　合計8点以上はGERDの目安　／　酸逆流関連症状 ${acid}点　／　運動不全（もたれ）症状 ${dys}点　／　合計 ${fTotal != null ? fTotal : "—"}点</span></div><table class="sws-q-table">`;
   SWS_FSSG_Q_.forEach((qq, i) => {
-    h += `<tr><td>${i + 1}. ${escHtml(qq)}</td><td>${swsRadioMarks([["0","0"],["1","1"],["2","2"],["3","3"],["4","4"]], String(fssg[i] ?? ""))}</td></tr>`;
+    h += `<tr><td class="sws-q-q">${i + 1}. ${escHtml(qq)}</td><td class="sws-q-a">${swsRadioMarks([["0","0"],["1","1"],["2","2"],["3","3"],["4","4"]], String(fssg[i] ?? ""))}</td></tr>`;
   });
   h += `</table>`;
-  h += `<p>合計 ${fTotal != null ? fTotal : "—"}点　／　酸逆流関連症状 ${acid}点　／　運動不全（もたれ）症状 ${dys}点${fTotal != null && fTotal >= 8 ? "　※8点以上はGERDの可能性の目安" : ""}</p>`;
 
   const eTotal = swsSumScores_(eat);
-  h += `<div style="font-weight:800;margin:10px 0 2px">EAT-10</div>`;
-  h += `<p class="sws-criteria">0＝問題なし〜4＝重度。合計3点以上は嚥下障害の可能性の目安。</p><table>`;
+  h += `<div class="sws-q-title">EAT-10　<span class="sws-criteria-inline">0〜4　合計3点以上は嚥下障害の目安　／　合計 ${eTotal != null ? eTotal : "—"}点</span></div><table class="sws-q-table">`;
   SWS_EAT10_Q_.forEach((qq, i) => {
-    h += `<tr><td>${i + 1}. ${escHtml(qq)}</td><td>${swsRadioMarks([["0","0"],["1","1"],["2","2"],["3","3"],["4","4"]], String(eat[i] ?? ""))}</td></tr>`;
-  });
-  h += `</table><p>合計 ${eTotal != null ? eTotal : "—"}点${eTotal != null && eTotal >= 3 ? "　※3点以上は嚥下障害の可能性の目安" : ""}</p>`;
-
-  const pTotal = swsSumScores_(pill);
-  h += `<div style="font-weight:800;margin:10px 0 2px">PILL-5（錠剤嚥下障害のアセスメント）</div>`;
-  h += `<p class="sws-criteria">${escHtml(swsPill5GuideText_(pTotal))}</p><table>`;
-  SWS_PILL5_Q_.forEach((qq, i) => {
-    h += `<tr><td>${i + 1}. ${escHtml(qq)}</td><td>${swsRadioMarks([["0","0"],["1","1"],["2","2"],["3","3"],["4","4"]], String(pill[i] ?? ""))}</td></tr>`;
+    h += `<tr><td class="sws-q-q">${i + 1}. ${escHtml(qq)}</td><td class="sws-q-a">${swsRadioMarks([["0","0"],["1","1"],["2","2"],["3","3"],["4","4"]], String(eat[i] ?? ""))}</td></tr>`;
   });
   h += `</table>`;
+
+  const pTotal = swsSumScores_(pill);
+  h += `<div class="sws-q-title">PILL-5（錠剤嚥下障害のアセスメント）　<span class="sws-criteria-inline">${escHtml(swsPill5GuideText_(pTotal))}</span></div><table class="sws-q-table">`;
+  SWS_PILL5_Q_.forEach((qq, i) => {
+    h += `<tr><td class="sws-q-q">${i + 1}. ${escHtml(qq)}</td><td class="sws-q-a">${swsRadioMarks([["0","0"],["1","1"],["2","2"],["3","3"],["4","4"]], String(pill[i] ?? ""))}</td></tr>`;
+  });
+  h += `</table></div>`;
   return h;
 }
 
@@ -21085,20 +21176,42 @@ function buildSwsDocumentHtml_(data, forPrint, opts) {
 }
 
 function swsPrintCss_() {
-  return `body{margin:7mm;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif}
-.sws-doc{font-size:8.6pt;line-height:1.28;color:#111}
-.sws-doc h1{text-align:center;font-size:12pt;font-weight:800;margin:0 0 5px}
-.sws-doc table{width:100%;border-collapse:collapse;margin:0 0 4px}
-.sws-doc th,.sws-doc td{border:1px solid #111;padding:2px 4px;vertical-align:top}
-.sws-doc th{background:#f1f5f9;font-size:8pt;width:8.2em}
-.sws-doc .sws-sec{font-size:9.5pt;font-weight:800;margin:6px 0 2px;border-bottom:1px solid #111}
+  return `@page{size:A4;margin:0}
+body{margin:5mm;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-serif}
+.sws-doc{font-size:8.4pt;line-height:1.25;color:#111}
+.sws-doc h1{text-align:center;font-size:11.5pt;font-weight:800;margin:0 0 4px}
+.sws-doc table{width:100%;border-collapse:collapse;margin:0 0 3px}
+.sws-doc th,.sws-doc td{border:1px solid #111;padding:2px 3px;vertical-align:top}
+.sws-doc th{background:#f1f5f9;font-size:7.8pt;width:8.2em}
+.sws-doc .sws-sec{font-size:9pt;font-weight:800;margin:5px 0 2px;border-bottom:1px solid #111}
 .sws-doc .sws-mark-on{font-weight:800}
 .sws-doc .sws-muted{color:#64748b}
 .sws-doc .sws-pre{white-space:pre-wrap}
-.sws-doc .sws-criteria{font-size:7.8pt;color:#334155;line-height:1.3;margin:0 0 2px}
+.sws-doc .sws-criteria{font-size:7.4pt;color:#334155;line-height:1.25;margin:0 0 2px}
 .sws-doc .sws-page-break{page-break-before:always;break-before:page}
 .sws-doc .sws-main-page{page-break-inside:avoid}
-@media print{body{margin:6mm}}`;
+.sws-doc .sws-q-page{page-break-inside:avoid;font-size:6.5pt;line-height:1.08}
+.sws-doc .sws-q-page .sws-sec{font-size:8pt;margin:0 0 1px}
+.sws-doc .sws-q-page .sws-criteria{font-size:6.2pt;line-height:1.1;margin:0 0 1px}
+.sws-doc .sws-q-title{font-size:6.8pt;font-weight:800;margin:2px 0 0}
+.sws-doc .sws-criteria-inline{font-weight:600;color:#475569;font-size:6.2pt}
+.sws-doc .sws-q-table{margin:0 0 1px}
+.sws-doc .sws-q-table td{padding:0 1px;font-size:6.3pt;line-height:1.05}
+.sws-doc .sws-q-q{width:78%}
+.sws-doc .sws-q-a{width:22%;white-space:nowrap;text-align:left}
+@media print{body{margin:3.8mm}}`;
+}
+
+function swsHandleQuestionnaireChange_(host, radioName) {
+  const m = String(radioName || "").match(/^(seirei|fssg|eat10|pill5)_(\d+)$/);
+  if (!m) return false;
+  const kind = m[1];
+  const idx = parseInt(m[2], 10);
+  const data = collectSwsForm_();
+  const changed = swsSyncLinkedQuestionnaireAnswers_(data.questionnaires, kind, idx);
+  lastSwsContext_ = data;
+  if (changed) swsSyncQuestionnaireRadiosFromData_(host, data.questionnaires);
+  return true;
 }
 
 function ensureSwsFormListener_() {
@@ -21133,7 +21246,12 @@ function ensureSwsFormListener_() {
     }
     scheduleSwsPreview_();
   });
-  host.addEventListener("change", () => scheduleSwsPreview_());
+  host.addEventListener("change", e => {
+    const t = e.target;
+    const radioName = t && t.getAttribute ? t.getAttribute("data-sws-radio") : "";
+    if (radioName) swsHandleQuestionnaireChange_(host, radioName);
+    scheduleSwsPreview_();
+  });
 }
 
 function scheduleSwsPreview_() {
