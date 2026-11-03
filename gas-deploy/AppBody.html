@@ -743,6 +743,7 @@
       .sws-doc .sws-box { color: #111; }
       .sws-doc .sws-opt { display: inline-block; white-space: nowrap; margin: 0 0.45em 2px 0; vertical-align: baseline; }
       .sws-doc .sws-judge-line { display: block; margin-top: 1.15em; }
+      .sws-doc .sws-after-judge { display: block; margin-top: 1.15em; }
       .sws-doc .sws-muted { color: #111; }
       .sws-doc .sws-pre { white-space: pre-wrap; }
       @media (min-width: 900px) {
@@ -1814,7 +1815,7 @@
         連動の印を表示（現場記入・転記用）
       </label>
       <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#334155;margin-right:auto">
-        <input type="checkbox" id="swsShowOverall" onchange="scheduleSwsPreview_()" checked>
+        <input type="checkbox" id="swsShowOverall" onchange="scheduleSwsPreview_()">
         4. 総合判定・今後の計画を表示
       </label>
       <button type="button" class="btn btn-secondary" onclick="saveSwsToTreatmentRecord_()">💾 診療記録へ保存</button>

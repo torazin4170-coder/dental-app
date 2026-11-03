@@ -604,7 +604,7 @@ test.describe('regression smoke — DOM shell', () => {
       const syncPill = typeof w.swsSyncLinkedQuestionnaireAnswers_ === 'function'
         ? (w.swsSyncLinkedQuestionnaireAnswers_(q, 'eat10', 4) && q.pill5[0] === '3')
         : false
-      const ok = !!modal && !!printOpt && !!linkOpt && !!overallOpt && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
+      const ok = !!modal && !!printOpt && !!linkOpt && !!overallOpt && overallOpt.checked === false && btn && typeof w.openSwallowScreenModal === 'function' && typeof w.toggleChip === 'function'
         && htmlMain.includes('山田花子') && htmlMain.includes('反復唾液嚥下テスト') && htmlMain.includes('［4］') && htmlMain.includes('正常')
         && htmlMain.includes('sws-opt')
         && !htmlMain.includes('聖隷式嚥下質問紙') && !htmlMain.includes('次回VE嚥下内視鏡検査に向けて')
@@ -622,9 +622,9 @@ test.describe('regression smoke — DOM shell', () => {
         && !htmlQNoMark.includes('sws-q-link-mark')
         && htmlMain.includes('1点：嚥下なし') && htmlMain.includes('泡立ち音')
         && !htmlMain.includes('1点：嚥下なし　ムセ　呼吸切迫　／　2点')
-        && htmlMain.includes('［自発咳嗽］') && htmlMain.includes('［指示咳嗽(代替)］')
+        && htmlMain.includes('［自発咳嗽］') && htmlMain.includes('sws-after-judge') && htmlMain.includes('［指示咳嗽(代替)］')
         && htmlMain.includes('［簡易咳テスト(1.0%クエン酸または食酢)］') && !htmlMain.includes('自発：')
-        && !htmlMain.includes('㊞') && (htmlMain.match(/sws-judge-line/g) || []).length >= 4
+        && !htmlMain.includes('㊞') && (htmlMain.match(/sws-judge-line/g) || []).length >= 3
         && pillGuide.includes('軽度から中等度')
         && syncResidue && syncPill
         && !!teeth?.oral?.dentureUse?.includes('use') && !!teeth?.oral?.dentureJaw?.includes('upper')
