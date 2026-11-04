@@ -8927,6 +8927,12 @@ function renderMedItems(type) {
       const rn = `<button type="button" class="med-item-rename" data-rn-type="diseases" data-rn-cat="${encodeURIComponent(sourceCat)}" data-rn-orig="${encodeURIComponent(hideName)}" data-rn-custom="${_custom ? "1" : "0"}" data-rn-cur="${encodeURIComponent(label)}" title="マスタ上の名称を変更">名称</button>`;
       return `<div class="med-item ${sel ? "sel" : ""} with-del with-master-actions" data-med-type="diseases" data-med-name="${encodeURIComponent(label)}" role="button" tabindex="0"><span class="med-item-label">${escHtml(label)}</span>${rn}${del}</div>`;
     }).join("");
+    const catInput = document.getElementById("add-diseases-cat-input");
+    if (catInput) {
+      catInput.placeholder = selCat === "all"
+        ? "上でカテゴリーを1つ選んでから、新しい病名"
+        : `「${selCat}」に新しい病名`;
+    }
   } else {
     const meds = medMasterEntries_();
     const cats = uniqueDisplayCategories_("meds", meds);
@@ -9046,6 +9052,51 @@ function renderSelectedTags(type) {
   }).join("");
 }
 
+function addDiseaseToSelectedCategory_() {
+  const input = document.getElementById("add-diseases-cat-input");
+  const val = input ? input.value.trim() : "";
+  if (!val) {
+    showToast("追加する病名を入力してください");
+    return;
+  }
+  if (addCustomDiseaseName_(val, medFilter.diseases)) {
+    input.value = "";
+    const search = document.getElementById("search-diseases");
+    if (search && search.value.trim() === val) search.value = "";
+  }
+}
+
+function addCustomDiseaseName_(val, cat) {
+  val = String(val || "").trim();
+  if (!val) return false;
+  if (!cat || cat === "all") {
+    showToast("先にカテゴリーを選んでから追加してください");
+    return false;
+  }
+  const diseaseEntries = diseaseMasterEntries_();
+  const diseaseCats = uniqueDisplayCategories_("diseases", diseaseEntries);
+  if (!diseaseCats.includes(cat)) {
+    showToast("一覧にある疾患カテゴリーを選んでください");
+    return false;
+  }
+  const dupBuilt = diseaseEntries.some(e => e.cat === cat && e.name === val);
+  if (dupBuilt) {
+    showToast("このカテゴリーにはすでに同じ病名があります");
+    return false;
+  }
+  if (normalizeCustomDiseasesEntries(customDiseases).some(e => e.cat === cat && e.name === val)) {
+    showToast("すでにマスタに登録されています。見当たらない場合は「削除済みを復元」を押してください");
+    return false;
+  }
+  customDiseases.push({ cat, name: val });
+  gasCall("addCustomMasterItem", "diseases", val, cat, "").catch(err => {
+    showToast("マスタ登録に失敗: " + (err && err.message ? err.message : String(err)));
+  });
+  toggleMedItem("diseases", val);
+  renderMedItems("diseases");
+  return true;
+}
+
 function addCustomItem(type) {
   const input = document.getElementById(`search-${type}`);
   const val = input.value.trim();
@@ -9056,28 +9107,7 @@ function addCustomItem(type) {
     return;
   }
   if (type === "diseases") {
-    const diseaseEntries = diseaseMasterEntries_();
-    const diseaseCats = uniqueDisplayCategories_("diseases", diseaseEntries);
-    if (!diseaseCats.includes(cat)) {
-      showToast("一覧にある疾患カテゴリーを選んでください");
-      return;
-    }
-    const dupBuilt = diseaseEntries.some(e => e.cat === cat && e.name === val);
-    if (dupBuilt) {
-      showToast("このカテゴリーにはすでに同じ病名があります");
-      return;
-    }
-    if (normalizeCustomDiseasesEntries(customDiseases).some(e => e.cat === cat && e.name === val)) {
-      showToast("すでにマスタに登録されています。見当たらない場合は「削除済みを復元」を押してください");
-      return;
-    }
-    customDiseases.push({ cat, name: val });
-    gasCall("addCustomMasterItem", type, val, cat, "").catch(err => {
-      showToast("マスタ登録に失敗: " + (err && err.message ? err.message : String(err)));
-    });
-    toggleMedItem(type, val);
-    input.value = "";
-    renderMedItems(type);
+    if (addCustomDiseaseName_(val, cat)) input.value = "";
     return;
   }
   const knownMedCats = new Set([

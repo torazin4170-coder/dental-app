@@ -178,6 +178,10 @@
           <button type="button" class="med-master-action-btn" onclick="restoreMasterItems('diseases')">削除済みを復元</button>
         </div>
         <div class="med-items" id="list-diseases"></div>
+        <div class="med-add-row" id="add-diseases-cat-row">
+          <input class="med-search" id="add-diseases-cat-input" placeholder="カテゴリーを選んでから、新しい病名" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addDiseaseToSelectedCategory_();}">
+          <button type="button" class="med-add-btn" onclick="addDiseaseToSelectedCategory_()">＋ 追加</button>
+        </div>
         <div class="med-selected" id="sel-diseases"></div>
         <div class="med-add-row" id="add-diseases-row" style="display:none">
           <span id="add-diseases-hint" style="font-size:13px;color:var(--muted)"></span>
