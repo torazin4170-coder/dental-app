@@ -41,9 +41,13 @@
     </div>
     <div class="card" style="padding:10px 12px;margin-bottom:8px">
       <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">施設で絞り込み</label>
-      <select id="patient-fac-filter" onchange="onPatientFacFilterChange_()"
+      <select id="patient-fac-group" onchange="onPatientFacGroupChange_()"
         style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit">
-        <option value="all">全施設（施設ごとの見出し付き）</option>
+        <option value="all">すべてのグループ</option>
+      </select>
+      <select id="patient-fac-filter" onchange="onPatientFacFilterChange_()"
+        style="display:none;width:100%;margin-top:8px;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit">
+        <option value="all">全施設</option>
       </select>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button type="button" id="plist-st-active" onclick="togglePatientListStatusFilter('active')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--green);background:var(--green-light);color:var(--green);font-size:12px;font-weight:700;cursor:pointer">✓ 有効</button>
@@ -1144,9 +1148,13 @@
       <input type="text" id="mgmt-search" placeholder="患者名で検索…" oninput="renderMgmtPatients()"
         style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:10px;font-size:14px;font-family:inherit">
       <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">施設で絞り込み</label>
+      <select id="mgmt-fac-group" onchange="onMgmtFacGroupChange_()"
+        style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;font-size:14px;font-family:inherit">
+        <option value="all">すべてのグループ</option>
+      </select>
       <select id="mgmt-fac-filter" onchange="onMgmtFacFilterChange_()"
-        style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:10px;font-size:14px;font-family:inherit">
-        <option value="all">全施設（施設ごとの見出し付き）</option>
+        style="display:none;width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:10px;font-size:14px;font-family:inherit">
+        <option value="all">全施設</option>
       </select>
       <div id="mgmt-inage-doctor-filter-wrap" style="display:none;margin-bottom:10px">
         <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">サニーライフ稲毛：担当ドクターで絞る</label>
@@ -1435,7 +1443,12 @@
       </div>
       <div class="form-group"><label>居室</label><input type="text" id="pm-room" placeholder="203"></div>
     </div>
-    <div class="form-group"><label>施設</label><select id="pm-fac" onchange="onPmFacChange_()"></select></div>
+    <div class="form-group"><label>施設</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="pm-fac" onchange="onPmFacChange_()" style="flex:1;min-width:0"></select>
+        <button type="button" class="btn btn-secondary" style="flex-shrink:0;padding:10px 12px;font-size:13px" onclick="openFacModalFromPatient_()">＋ 新しい施設</button>
+      </div>
+    </div>
     <div class="form-group" id="pm-inage-doctor-wrap" style="display:none">
       <label>担当ドクター（サニーライフ稲毛）</label>
       <select id="pm-assigned-doctor" style="width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit">
@@ -1506,7 +1519,7 @@
 </div>
 
 <!-- FACILITY MODAL -->
-<div class="modal-overlay" id="facilityModal" onclick="if(event.target===this)this.classList.remove('show')">
+<div class="modal-overlay" id="facilityModal" onclick="if(event.target===this)closeFacilityModal_()">
   <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="fm-title">
     <div class="modal-handle"></div>
     <div class="modal-title" id="fm-title">施設を追加</div>
@@ -1518,7 +1531,7 @@
     <div class="form-group"><label>略称・カレンダー表示（A・B など1〜4文字）</label><input type="text" id="fm-short" maxlength="4" placeholder="例：A" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:inherit"></div>
     <div class="form-group"><label>月の目標人数（ダッシュボード用）</label><input type="number" id="fm-target" min="1" max="999" inputmode="numeric" placeholder="10" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit"></div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="document.getElementById('facilityModal').classList.remove('show')">キャンセル</button>
+      <button class="btn-cancel" onclick="closeFacilityModal_()">キャンセル</button>
       <button class="btn-ok" onclick="saveFacilityModal()">保存</button>
     </div>
   </div>

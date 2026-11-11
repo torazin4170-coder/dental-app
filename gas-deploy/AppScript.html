@@ -567,6 +567,20 @@ function onMgmtFacFilterChange_() {
   renderMgmtPatients();
 }
 
+function onMgmtFacGroupChange_() {
+  const g = document.getElementById("mgmt-fac-group")?.value || "all";
+  const facSel = document.getElementById("mgmt-fac-filter");
+  fillFacFilterForGroup_(facSel, g, "");
+  onMgmtFacFilterChange_();
+}
+
+function onPatientFacGroupChange_() {
+  const g = document.getElementById("patient-fac-group")?.value || "all";
+  const facSel = document.getElementById("patient-fac-filter");
+  fillFacFilterForGroup_(facSel, g, "");
+  onPatientFacFilterChange_();
+}
+
 function onPatientFacFilterChange_() {
   const val = document.getElementById("patient-fac-filter")?.value || "all";
   currentFac = val;
@@ -577,11 +591,70 @@ function onPatientFacFilterChange_() {
   renderPatients();
 }
 
-function syncPatientFacFilterSelect_() {
-  const sel = document.getElementById("patient-fac-filter");
+function facGroupKeyFromFilterValue_(val) {
+  val = String(val || "all");
+  if (val === "all") return "all";
+  if (val === "ungrouped") return "ungrouped";
+  if (val.startsWith("group:")) return val.slice(6);
+  const gid = (FACILITY_GROUPS.assignments || {})[val] || "";
+  return gid || "ungrouped";
+}
+
+function fillFacGroupSelect_(sel) {
   if (!sel) return;
-  if ([...sel.options].some(o => o.value === currentFac)) sel.value = currentFac;
-  else sel.value = "all";
+  const cur = sel.value || "all";
+  let html = '<option value="all">すべてのグループ</option>';
+  facilityGroupsSorted_().forEach(g => {
+    const n = facilityIdsInGroup_(g.id).length;
+    html += '<option value="' + escAttr(g.id) + '">' + escHtml(g.name) + (n ? "（" + n + "施設）" : "") + "</option>";
+  });
+  const un = facilitiesUngrouped_().length;
+  html += '<option value="ungrouped">未所属' + (un ? "（" + un + "施設）" : "") + "</option>";
+  sel.innerHTML = html;
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : "all";
+}
+
+function fillFacFilterForGroup_(sel, groupVal, selectedFac) {
+  if (!sel) return;
+  groupVal = groupVal || "all";
+  if (groupVal === "all") {
+    sel.style.display = "none";
+    sel.innerHTML = '<option value="all">全施設</option>';
+    sel.value = "all";
+    return;
+  }
+  sel.style.display = "block";
+  const facs = groupVal === "ungrouped"
+    ? facilitiesUngrouped_()
+    : (FACILITIES || []).filter(f => (FACILITY_GROUPS.assignments || {})[f.id] === groupVal);
+  const allVal = groupVal === "ungrouped" ? "ungrouped" : "group:" + groupVal;
+  const allLabel = groupVal === "ungrouped" ? "未所属のすべての施設" : "このグループのすべての施設";
+  let html = '<option value="' + escAttr(allVal) + '">' + escHtml(allLabel) + "</option>";
+  facs.forEach(f => {
+    html += '<option value="' + escAttr(f.id) + '">' + escHtml(f.name || f.id) + "</option>";
+  });
+  sel.innerHTML = html;
+  const want = selectedFac && [...sel.options].some(o => o.value === selectedFac) ? selectedFac : allVal;
+  sel.value = want;
+}
+
+function syncPatientFacFilterSelect_() {
+  const gsel = document.getElementById("patient-fac-group");
+  const fsel = document.getElementById("patient-fac-filter");
+  if (!gsel || !fsel) return;
+  const g = facGroupKeyFromFilterValue_(currentFac);
+  gsel.value = [...gsel.options].some(o => o.value === g) ? g : "all";
+  fillFacFilterForGroup_(fsel, gsel.value, currentFac);
+}
+
+function syncMgmtFacFilterSelect_() {
+  const gsel = document.getElementById("mgmt-fac-group");
+  const fsel = document.getElementById("mgmt-fac-filter");
+  if (!gsel || !fsel) return;
+  const cur = fsel.value || "all";
+  const g = facGroupKeyFromFilterValue_(cur);
+  gsel.value = [...gsel.options].some(o => o.value === g) ? g : "all";
+  fillFacFilterForGroup_(fsel, gsel.value, cur);
 }
 
 function togglePatientListStatusFilter(key) {
@@ -4367,18 +4440,21 @@ function removeFacilityFromGroups_(fid) {
 
 function resolveFacilityIdsForCurrentFac_() {
   if (currentFac === "all") return null;
+  if (currentFac === "ungrouped") return facilitiesUngrouped_().map(f => f.id);
   if (String(currentFac).startsWith("group:")) return facilityIdsInGroup_(currentFac.slice(6));
   return [currentFac];
 }
 
 function resolveFacilityIdsForFacFilter_(facFilter) {
   if (!facFilter || facFilter === "all") return null;
+  if (facFilter === "ungrouped") return facilitiesUngrouped_().map(f => f.id);
   if (String(facFilter).startsWith("group:")) return facilityIdsInGroup_(facFilter.slice(6));
   return [facFilter];
 }
 
 function isInageContextForFacFilter_(facFilter) {
   if (!facFilter || facFilter === "all") return false;
+  if (facFilter === "ungrouped") return facilitiesUngrouped_().some(f => isInageFacilityById_(f.id));
   if (String(facFilter).startsWith("group:")) {
     return facilityIdsInGroup_(facFilter.slice(6)).some(id => isInageFacilityById_(id));
   }
@@ -4633,18 +4709,12 @@ function buildFacFilterSelectOptionsHtml_(allLabel) {
 }
 
 function rebuildMgmtFacFilterOptions_() {
-  const sel = document.getElementById("mgmt-fac-filter");
-  if (!sel) return;
-  const cur = sel.value || "all";
-  sel.innerHTML = buildFacFilterSelectOptionsHtml_();
-  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
-  else sel.value = "all";
+  fillFacGroupSelect_(document.getElementById("mgmt-fac-group"));
+  syncMgmtFacFilterSelect_();
 }
 
 function rebuildPatientFacFilterOptions_() {
-  const sel = document.getElementById("patient-fac-filter");
-  if (!sel) return;
-  sel.innerHTML = buildFacFilterSelectOptionsHtml_("全施設（施設ごとの見出し付き）");
+  fillFacGroupSelect_(document.getElementById("patient-fac-group"));
   syncPatientFacFilterSelect_();
 }
 
@@ -4816,7 +4886,7 @@ function renderPatients() {
 
   if (currentFac === "all") {
     renderPatientListGrouped_(list, el, patientCardHtmlForList_, "all");
-  } else if (String(currentFac).startsWith("group:")) {
+  } else if (currentFac === "ungrouped" || String(currentFac).startsWith("group:")) {
     renderPatientListGrouped_(list, el, patientCardHtmlForList_, "group");
   } else {
     renderPatientListGrouped_(list, el, patientCardHtmlForList_, "single");
@@ -24273,7 +24343,7 @@ function renderMgmtPatients() {
 
   if (facFilter === "all") {
     renderMgmtPatientListGrouped_(list, el, "all");
-  } else if (String(facFilter).startsWith("group:")) {
+  } else if (facFilter === "ungrouped" || String(facFilter).startsWith("group:")) {
     renderMgmtPatientListGrouped_(list, el, "group");
   } else {
     el.innerHTML = list.slice().sort(comparePatientRoom_).map(mgmtPatientRowHtml_).join("");
@@ -24477,7 +24547,7 @@ function openPatientModal(pid) {
   document.getElementById("pm-cm").value = p?.cm||"";
   document.getElementById("pm-status").value = p?.status||"active";
   const sel = document.getElementById("pm-fac");
-  sel.innerHTML = `<option value="">選択</option>` + FACILITIES.map(f=>`<option value="${f.id}" ${p?.fac===f.id?"selected":""}>${f.name}</option>`).join("");
+  sel.innerHTML = `<option value="">選択</option>` + buildFacilitySelectOptionsHtml_(p?.fac || "");
   updatePmInageDoctorRow_();
   const adoc = document.getElementById("pm-assigned-doctor");
   if (adoc && isInageFacilityById_(sel.value)) {
@@ -24817,6 +24887,23 @@ function savePatientModal() {
   enqueueBgSaveJob_(job);
 }
 
+let pickNewFacForPatient_ = false;
+
+function closeFacilityModal_() {
+  pickNewFacForPatient_ = false;
+  const modal = document.getElementById("facilityModal");
+  if (!modal) return;
+  modal.classList.remove("show");
+  modal.style.zIndex = "";
+}
+
+function openFacModalFromPatient_() {
+  pickNewFacForPatient_ = true;
+  const modal = document.getElementById("facilityModal");
+  if (modal) modal.style.zIndex = "80";
+  openFacModal(null);
+}
+
 function openFacModal(fid) {
   clearUndoStack_();
   const f = fid ? FACILITIES.find(x=>x.id===fid) : null;
@@ -24848,7 +24935,16 @@ function saveFacilityModal() {
     if(!id){ data.id=result; data.color="#94a3b8"; if(!data.short) data.short=data.name ? data.name[0] : ""; FACILITIES.push(data); buildFacTabs(); }
     else { const f=FACILITIES.find(x=>x.id===id); if(f) Object.assign(f,data); }
     showToast(id?"施設情報を更新しました":"施設を追加しました");
-    document.getElementById("facilityModal").classList.remove("show");
+    const createdForPatient = !id && pickNewFacForPatient_;
+    closeFacilityModal_();
+    if (createdForPatient) {
+      const pm = document.getElementById("pm-fac");
+      if (pm && document.getElementById("patientModal")?.classList.contains("show")) {
+        pm.innerHTML = `<option value="">選択</option>` + buildFacilitySelectOptionsHtml_(data.id);
+        pm.value = data.id;
+        if (typeof onPmFacChange_ === "function") onPmFacChange_();
+      }
+    }
     renderMgmtFacilities();
     rebuildMgmtFacFilterOptions_();
     rebuildPatientFacFilterOptions_();
