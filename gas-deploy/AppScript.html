@@ -13367,8 +13367,9 @@ function familyToothSymbolsFromChart_(key, data) {
     if (tok === "Br" || tok === "EXT") return;
     if (tok === "C4" || tok === "根C") add("root");
     else if (["Co", "C1", "C2", "C3", "Pul"].includes(tok)) add("cavity");
-    else if (["CR", "FMC", "MB", "Cop", "CAD", "TEK", "セラCr", "ゴールドCr", "P-cap", "CR'", "HR", "IMP", "On"].includes(tok)) add("crown");
-    else if (["GI", "AF", "In", "コア", "Fix"].includes(tok)) add("filling");
+    // CR / CR′ はレジンの詰物。セラCr・ゴールドCr の Cr は冠。
+    else if (["FMC", "MB", "Cop", "CAD", "TEK", "セラCr", "ゴールドCr", "P-cap", "HR", "IMP", "On"].includes(tok)) add("crown");
+    else if (["CR", "CR'", "GI", "AF", "In", "コア", "Fix"].includes(tok)) add("filling");
     else if (!hasBr) add("resin");
   });
   if (hasBr) {
