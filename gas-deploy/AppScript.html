@@ -13466,10 +13466,10 @@ function familyToothNumFromKey_(key) {
 function familyToothSymbolSvg_(status, x, y, s) {
   const hs = s / 2;
   if (status === "cavity") return `<circle cx="${x}" cy="${y}" r="${hs * 0.62}" fill="#111"/>`;
-  if (status === "root") return `<polygon points="${x},${y - hs * 0.72} ${x - hs * 0.65},${y + hs * 0.5} ${x + hs * 0.65},${y + hs * 0.5}" fill="#111"/>`;
+  if (status === "root") return `<polygon points="${x - hs * 0.65},${y - hs * 0.5} ${x + hs * 0.65},${y - hs * 0.5} ${x},${y + hs * 0.72}" fill="#111"/>`;
   if (status === "missing") return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-size="${s * 1.05}" font-weight="900" fill="#111">✕</text>`;
   if (status === "crown") return `<rect x="${x - hs * 0.55}" y="${y - hs * 0.55}" width="${s * 0.62}" height="${s * 0.62}" fill="none" stroke="#111" stroke-width="1.4"/>`;
-  if (status === "filling") return `<polygon points="${x},${y - hs * 0.62} ${x - hs * 0.62},${y + hs * 0.4} ${x + hs * 0.62},${y + hs * 0.4}" fill="none" stroke="#111" stroke-width="1.4"/>`;
+  if (status === "filling") return `<polygon points="${x - hs * 0.62},${y - hs * 0.4} ${x + hs * 0.62},${y - hs * 0.4} ${x},${y + hs * 0.62}" fill="none" stroke="#111" stroke-width="1.4"/>`;
   if (status === "resin") return `<circle cx="${x}" cy="${y}" r="${hs * 0.52}" fill="#64748b"/>`;
   return "";
 }
