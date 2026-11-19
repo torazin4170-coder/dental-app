@@ -13364,19 +13364,19 @@ function familyToothSymbolsFromChart_(key, data) {
   };
   const hasBr = known.includes("Br");
   known.forEach(tok => {
-    if (tok === "Br" || tok === "EXT") return;
-    if (tok === "C4" || tok === "根C") add("root");
-    else if (["Co", "C1", "C2", "C3", "Pul"].includes(tok)) add("cavity");
-    // CR / CR′ は樹脂。セラCr・ゴールドCr の Cr は冠。
-    else if (["CR", "CR'"].includes(tok)) add("resin");
-    else if (["FMC", "MB", "Cop", "CAD", "TEK", "セラCr", "ゴールドCr", "P-cap", "HR", "IMP", "On"].includes(tok)) add("crown");
-    else if (["GI", "AF", "In", "コア", "Fix"].includes(tok)) add("filling");
+    if (tok === "EXT") return;
+    if (tok === "Br") { add("crown"); return; }
+    if (tok === "C4") add("root");
+    else if (["Co", "C1", "C2", "C3", "Pul", "根C", "縁下C"].includes(tok)) add("cavity");
+    // 医院指定。CR′ は CR'。書いていない記号は下のまま（MBは冠、Fixは詰物、その他は樹脂）。
+    else if (["CR", "CR'", "P-cap", "GI", "Cop", "仮封"].includes(tok)) add("resin");
+    else if (["AF", "In", "セラIn", "ゴールドIn", "Fix"].includes(tok)) add("filling");
+    else if (["On", "FMC", "HR", "CAD", "TEK", "コア", "セラCr", "ゴールドCr", "IMP", "MB"].includes(tok)) add("crown");
     else if (!hasBr) add("resin");
   });
-  if (hasBr) {
-    const kept = out.filter(s => s !== "resin");
-    if (!kept.includes("crown")) kept.unshift("crown");
-    return kept.slice(0, FAMILY_TOOTH_MAX_SYMBOLS_);
+  if (hasBr && !out.includes("crown")) {
+    out.unshift("crown");
+    return out.slice(0, FAMILY_TOOTH_MAX_SYMBOLS_);
   }
   if (!out.length && cond.trim()) add("resin");
   return out;
