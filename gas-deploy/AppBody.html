@@ -468,9 +468,9 @@
       .ps-doc .ps-bullet-cell .rpt-edit-multiline { display: block; min-height: 2.8em; white-space: pre-wrap; line-height: 1.55; }
       .ps-doc .rpt-edit-multiline { display: block; min-height: 2.8em; white-space: pre-wrap; line-height: 1.5; }
       .ps-doc .ps-plan-cell { min-height: 120px; }
-      .ps-doc .ps-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
-      .ps-doc .ps-head-main { flex: 1 1 220px; min-width: 0; }
-      .ps-doc .ps-face { flex: 0 0 auto; margin-left: auto; }
+      .ps-doc .ps-notes-row { display: flex; align-items: flex-start; gap: 8px; }
+      .ps-doc .ps-notes-text { flex: 1 1 auto; min-width: 0; }
+      .ps-doc .ps-face { flex: 0 0 auto; }
       .ps-doc .ps-face img {
         width: 32mm; height: 32mm; object-fit: contain; object-position: center;
         background: #f8fafc; border: 1px solid #000; display: block;
@@ -2123,7 +2123,7 @@
     <div class="fax-daily-modal-scroll-body">
       <div class="modal-title" id="patientPpsModalTitle">患者パーソナルシート</div>
       <div id="patientPpsModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
-      <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・患者（⑤）・対象年月</strong>から、患者データ・診療記録を反映した「歯科治療・管理計画書」をプレビューします。外側をタップしても閉じません。顔貌の写真がある患者は、用紙の右上に1枚出ます。プレビューの上のボタンで、別の顔貌への差し替えと、外すができます。</p>
+      <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設・患者（⑤）・対象年月</strong>から、患者データ・診療記録を反映した「歯科治療・管理計画書」をプレビューします。外側をタップしても閉じません。顔貌の写真がある患者は、特記事項の欄の右側に1枚出ます。プレビューの上のボタンで、別の顔貌への差し替えと、外すができます。</p>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
         <button type="button" class="btn btn-secondary" style="flex:1;min-width:140px;font-size:13px;padding:10px" onclick="reloadPatientPpsFromServer_()">🔄 診療記録から再読み込み</button>
       </div>

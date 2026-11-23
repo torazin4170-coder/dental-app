@@ -15091,14 +15091,14 @@ function patientPpsRefreshFaceOnly_() {
   const host = document.getElementById("patientPpsPreviewInner");
   if (!ctx || !host) return;
   patientPpsCommitShownFace_(ctx);
-  const head = host.querySelector(".ps-head");
-  if (!head) {
+  const row = host.querySelector(".ps-notes-row");
+  if (!row) {
     paintPatientPpsPreview_(ctx);
     return;
   }
-  head.querySelector(".ps-face")?.remove();
+  row.querySelector(".ps-face")?.remove();
   const html = patientPpsFaceImgHtml_(ctx, false);
-  if (html) head.insertAdjacentHTML("beforeend", html);
+  if (html) row.insertAdjacentHTML("beforeend", html);
   patientPpsSyncFaceBar_(ctx);
 }
 
@@ -15155,13 +15155,8 @@ function buildPatientPpsDocumentHtml_(ctx, forPrint) {
   const entryDate = `<span style="white-space:nowrap">記入日　${ed("entry_year", c.entry_year)} 年 ${ed("entry_month", c.entry_month)} 月 ${ed("entry_day", c.entry_day)} 日</span>`;
   const faceHtml = patientPpsFaceImgHtml_(c, forPrint);
   return `<div class="ps-doc">
-    <div class="ps-head">
-      <div class="ps-head-main">
-        <div class="ps-title">歯科治療・管理計画書</div>
-        <div class="ps-entry-date">${entryDate}</div>
-      </div>
-      ${faceHtml}
-    </div>
+    <div class="ps-title">歯科治療・管理計画書</div>
+    <div class="ps-entry-date">${entryDate}</div>
     <table>
       <tr class="ps-hdr-row">
         <td style="width:14%">部屋番号</td>
@@ -15179,7 +15174,7 @@ function buildPatientPpsDocumentHtml_(ctx, forPrint) {
     <table style="margin-top:0">
       <tr>
         <td class="ps-lbl">特記事項</td>
-        <td class="ps-bullet-cell">${edMl("special_notes", c.special_notes)}</td>
+        <td class="ps-bullet-cell ps-notes-cell"><div class="ps-notes-row"><div class="ps-notes-text">${edMl("special_notes", c.special_notes)}</div>${faceHtml}</div></td>
       </tr>
       <tr>
         <td class="ps-lbl">全身状態</td>
@@ -15447,9 +15442,9 @@ body { font-family: "Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,sans-seri
 .ps-doc .ps-lbl { background: #f8fafc; text-align: center; font-size: 9pt; font-weight: 700; width: 72px; }
 .ps-doc .ps-title { text-align: center; font-weight: 800; font-size: 14pt; letter-spacing: 0.08em; margin-bottom: 6px; }
 .ps-doc .ps-entry-date { text-align: right; font-size: 9.5pt; margin-bottom: 4px; }
-.ps-doc .ps-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
-.ps-doc .ps-head-main { flex: 1 1 220px; min-width: 0; }
-.ps-doc .ps-face { flex: 0 0 auto; margin-left: auto; }
+.ps-doc .ps-notes-row { display: flex; align-items: flex-start; gap: 8px; }
+.ps-doc .ps-notes-text { flex: 1 1 auto; min-width: 0; }
+.ps-doc .ps-face { flex: 0 0 auto; }
 .ps-doc .ps-face img { width: 32mm; height: 32mm; object-fit: contain; object-position: center; background: #f8fafc; border: 1px solid #000; display: block; }
 .ps-doc .ps-hdr-row td { text-align: center; font-size: 9pt; font-weight: 700; background: #f8fafc; }
 .ps-doc .ps-teeth-chart-embed { overflow-x: auto; padding: 4px 0; }
