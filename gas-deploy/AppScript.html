@@ -15395,7 +15395,6 @@ function migrateLegacyReportButton6_() {
     subEl.textContent = "施設・年月 → 全患者を一覧表に・追記・写真・除外";
   }
   btn.classList.remove("report-out-btn-muted");
-  btn.classList.add("report-out-btn-accent");
   if (btn.id === "facMonthlyPdfBtn") btn.id = "personalSheetBtn";
   btn.onclick = function (ev) {
     reportOutTap(ev, () => openPersonalSheetModal(), "⑥ 施設月次報告書を開いています…");

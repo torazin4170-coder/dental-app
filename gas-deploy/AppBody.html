@@ -1041,7 +1041,6 @@
       .report-out-btn .rob-num { font-size: 11px; font-weight: 800; color: var(--accent); letter-spacing: 0.06em; }
       .report-out-btn .rob-title { font-size: 15px; font-weight: 800; color: #0f172a; line-height: 1.25; }
       .report-out-btn .rob-sub { font-size: 12px; color: #64748b; line-height: 1.4; font-weight: 600; }
-      .report-out-btn-accent { border-color: #93c5fd; background: linear-gradient(180deg, #eff6ff 0%, #fff 55%); }
       .report-out-btn-muted { background: #f8fafc; }
       .report-hub-details { margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fafafa; font-size: 12px; color: #64748b; line-height: 1.55; }
       .report-hub-details summary { font-weight: 800; color: #334155; cursor: pointer; }
@@ -1224,7 +1223,7 @@
         <button type="button" class="btn btn-secondary" style="width:100%;padding:12px;font-size:14px;font-weight:800" onclick="openDocumentArchiveModal_()">📁 書類履歴（保存済みを確認・復元）</button>
       </div>
       <div class="report-out-grid">
-        <button type="button" class="report-out-btn report-out-btn-accent" onclick="reportOutTap(event, () => openFaxDailyPreviewModal(), '① 施設日報を準備しています…')">
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openFaxDailyPreviewModal(), '① 施設日報を準備しています…')">
           <span class="rob-num">①</span>
           <span class="rob-title">施設FAX日報</span>
           <span class="rob-sub">診療日 → その日の全施設（追加・削除可）→ プレビュー・印刷</span>
@@ -1239,17 +1238,17 @@
           <span class="rob-title">情報共有シート</span>
           <span class="rob-sub">チーム向け伝達用紙 → 入力後 印刷／PDF</span>
         </button>
-        <button type="button" class="report-out-btn report-out-btn-accent" onclick="reportOutTap(event, () => openMonthCareReportModal(), '④ 月次帳票を開いています…')">
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openMonthCareReportModal(), '④ 月次帳票を開いています…')">
           <span class="rob-num">④</span>
           <span class="rob-title">ケアマネ向け・月次（平易）</span>
           <span class="rob-sub">施設・年月・患者 → 4マス下書き・全員一括印刷</span>
         </button>
-        <button type="button" class="report-out-btn report-out-btn-accent" id="patientPpsBtn" onclick="reportOutTap(event, () => openPatientPpsModal(), '⑤ 患者パーソナルシートを開いています…')">
+        <button type="button" class="report-out-btn" id="patientPpsBtn" onclick="reportOutTap(event, () => openPatientPpsModal(), '⑤ 患者パーソナルシートを開いています…')">
           <span class="rob-num">⑤</span>
           <span class="rob-title">患者パーソナルシート</span>
           <span class="rob-sub">施設・患者・年月 → 治療・管理計画書・印刷</span>
         </button>
-        <button type="button" class="report-out-btn report-out-btn-accent" id="personalSheetBtn" onclick="reportOutTap(event, () => openPersonalSheetModal(), '⑥ 施設月次報告書を開いています…')">
+        <button type="button" class="report-out-btn" id="personalSheetBtn" onclick="reportOutTap(event, () => openPersonalSheetModal(), '⑥ 施設月次報告書を開いています…')">
           <span class="rob-num">⑥</span>
           <span class="rob-title">施設月次報告書</span>
           <span class="rob-sub">施設・年月 → 全患者を3列表に・追記・写真・除外・印刷</span>
@@ -1259,7 +1258,7 @@
           <span class="rob-title">歯科検診票（無料検診）</span>
           <span class="rob-sub">患者を選び下書き→確認→印刷（共通の患者欄を使用）</span>
         </button>
-        <button type="button" class="report-out-btn report-out-btn-accent" onclick="reportOutTap(event, () => openVisitTimetableModal(), '⑧ タイムテーブルを開いています…')">
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openVisitTimetableModal(), '⑧ タイムテーブルを開いています…')">
           <span class="rob-num">⑧</span>
           <span class="rob-title">訪問タイムテーブル（手書き用）</span>
           <span class="rob-sub">診療日＋①の施設 → 入力・保存 → 印刷（次回出力まで保持）</span>
@@ -1274,7 +1273,7 @@
           <span class="rob-title">診断書</span>
           <span class="rob-sub">患者・記載日 → 病名テンプレから選択 → プレビュー編集 → 印刷</span>
         </button>
-        <button type="button" class="report-out-btn report-out-btn-accent" onclick="reportOutTap(event, () => openFacilityHandoverModal(), '⑪ 施設申し送りを開いています…')">
+        <button type="button" class="report-out-btn" onclick="reportOutTap(event, () => openFacilityHandoverModal(), '⑪ 施設申し送りを開いています…')">
           <span class="rob-num">⑪</span>
           <span class="rob-title">施設申し送り（次の歯科医院向け）</span>
           <span class="rob-sub">施設 → 有効患者の概要・特別な治療・コメント → 保存・印刷</span>
@@ -1285,8 +1284,6 @@
           <span class="rob-sub">患者・評価日（⑦と同じ患者欄）→ 観察・RSST等 → 印刷</span>
         </button>
       </div>
-      <p class="report-hub-tone-hint" style="font-size:11px;color:var(--muted);margin:10px 0 0;line-height:1.55">青い枠（①④⑤⑥⑧）は<strong>よく使う出力を目立たせたデザイン</strong>です。選択中・ロックなどの状態表示ではありません。</p>
-
       <details class="report-hub-details">
         <summary>補足（体裁・設定）</summary>
         <p style="margin:8px 0 0">④の本文は、提出用PDF（五香様式）に合わせ、<strong>対象月 → 診療日時 → 施設名 部屋番号 利用者氏名 → 本日の治療内容（連絡事項）→ 次回の治療内容 → 担当医確認 印</strong>の順です。帯見出しは <code>report_title</code>（例：居宅療養管理指導報告書 （歯科医師））。施設名に <code>month_report_hide_time_facility_substr</code> の文字列が含まれると診療日のみ（歯科訪問診療報告書）、それ以外は日時付きです。<strong>⑤</strong>は患者1名の「歯科治療・管理計画書」、<strong>⑥</strong>は施設全患者の月次一覧表です。</p>
