@@ -76,7 +76,7 @@
   <!-- 診療記録入力 -->
   <div class="screen" id="screen-record">
     <!-- ヘッダー：患者名 + 履歴ボタン -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
       <button class="btn btn-secondary" style="padding:8px 14px;font-size:14px" onclick="backToList()">← 戻る</button>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -85,6 +85,8 @@
         </div>
         <div id="recordPatientMeta" style="font-size:12px;color:var(--muted)"></div>
       </div>
+      <button type="button" class="btn btn-secondary" style="padding:8px 12px;font-size:13px;flex-shrink:0"
+        onclick="openPatientEditFromRecord_()" title="基本情報・歯式・医療">✏️ 患者を編集</button>
       <button class="btn btn-secondary" style="padding:8px 12px;font-size:13px;flex-shrink:0"
         onclick="openHistory(selectedPatient?.id)">📋 履歴</button>
       <button type="button" class="btn btn-secondary undo-bar-btn" style="padding:8px 10px;font-size:12px;flex-shrink:0"

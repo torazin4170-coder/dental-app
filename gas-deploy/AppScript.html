@@ -6264,6 +6264,38 @@ function isTemporaryPatientId_(pid) {
   return /^tmp_pat_/.test(String(pid || ""));
 }
 
+/** 診療記録の上部（氏名・施設・部屋・年齢）を、いまの患者情報で描き直す */
+function fillRecordPatientHeader_() {
+  if (!selectedPatient) return;
+  const nameEl = document.getElementById("recordPatientName");
+  if (nameEl) nameEl.textContent = selectedPatient.name || "";
+  const fac = FACILITIES.find(f => f.id === selectedPatient.fac);
+  let inageMeta = "";
+  if (isInageFacilityById_(selectedPatient.fac)) {
+    const ad = String(selectedPatient.assigned_doctor || "").trim();
+    if (/^\d+$/.test(ad)) {
+      const n = parseInt(ad, 10);
+      if (n >= 1 && n <= getInageDoctorNamesList_().length) {
+        inageMeta = ` ｜ ${getInageDoctorDisplayName_(n)}`;
+      }
+    }
+  }
+  const meta = document.getElementById("recordPatientMeta");
+  if (meta) {
+    meta.textContent = `${fac?.name || ""} ｜ ${selectedPatient.room || ""} ｜ ${selectedPatient.age || ""}歳${inageMeta}`;
+  }
+}
+
+/** 診療記録の画面から、患者の編集（基本情報・歯式・医療）を開く */
+function openPatientEditFromRecord_() {
+  const pid = selectedPatient && selectedPatient.id;
+  if (!pid) {
+    showToast("患者が選ばれていません");
+    return;
+  }
+  openPatientModal(pid);
+}
+
 function openRecord(pid, options) {
   if (isTemporaryPatientId_(pid)) {
     showToast("この患者はまだ送信中です。画面上部の表示が消えてから開いてください");
@@ -6281,20 +6313,7 @@ function openRecord(pid, options) {
   initRecordLeftClinicalForPatient_(selectedPatient.id);
   selectedTreatments.clear();
   selectedNextTreatments.clear();
-  const fac = FACILITIES.find(f => f.id === selectedPatient.fac);
-  document.getElementById("recordPatientName").textContent = selectedPatient.name;
-  let inageMeta = "";
-  if (isInageFacilityById_(selectedPatient.fac)) {
-    const ad = String(selectedPatient.assigned_doctor || "").trim();
-    if (/^\d+$/.test(ad)) {
-      const n = parseInt(ad, 10);
-      if (n >= 1 && n <= getInageDoctorNamesList_().length) {
-        inageMeta = ` ｜ ${getInageDoctorDisplayName_(n)}`;
-      }
-    }
-  }
-  document.getElementById("recordPatientMeta").textContent =
-    `${fac?.name || ""} ｜ ${selectedPatient.room || ""} ｜ ${selectedPatient.age || ""}歳${inageMeta}`;
+  fillRecordPatientHeader_();
   setRecordPatientNotesValue_(selectedPatient.notes || "");
   setNotesEditorValue_("");
   ensureRecordCareCatPillsRendered_();
@@ -24557,7 +24576,10 @@ function openPatientModal(pid) {
     adoc.value = /^\d+$/.test(ad) && parseInt(ad, 10) >= 1 && parseInt(ad, 10) <= maxDoc ? ad : "";
   }
   const nEl = document.getElementById("pm-notes");
-  if (nEl) nEl.value = p && p.notes != null ? String(p.notes) : "";
+  if (nEl) {
+    const liveNotes = currentScreen === "record" && p ? getRecordPatientNotesValue_() : null;
+    nEl.value = liveNotes != null ? liveNotes : (p && p.notes != null ? String(p.notes) : "");
+  }
   const selIs = document.getElementById("pm-intake-stage");
   if (selIs) {
     const is = String(p?.intake_stage || "").trim();
@@ -24824,6 +24846,11 @@ function savePatientModal() {
   } catch (_) {}
 
   dismissPatientEditModalKeepPhotos_();
+  if (currentScreen === "record" && selectedPatient) {
+    fillRecordPatientHeader_();
+    setRecordPatientNotesValue_(selectedPatient.notes || "");
+    syncRecordInHospitalCheckbox_();
+  }
   renderMgmtPatients();
   renderPatients();
   showToast(wasNew ? "患者を受け付けました。裏で送信します" : "患者情報を受け付けました。裏で送信します");
