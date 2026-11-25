@@ -21037,9 +21037,64 @@ function swsRadio(name, value, label, checked) {
   return `<label><input type="radio" name="${escAttr(name)}" data-sws-radio="${escAttr(name)}" value="${escAttr(value)}"${checked ? " checked" : ""}> ${escHtml(label)}</label>`;
 }
 
+function swsHandoverBlockIsEmpty_(el) {
+  const nodes = [...el.childNodes];
+  if (!nodes.length) return true;
+  return nodes.every(n => {
+    if (n.nodeType === Node.TEXT_NODE) return !String(n.textContent || "").replace(/\u00a0/g, " ").trim();
+    if (n.nodeType === Node.ELEMENT_NODE && n.tagName === "BR") return true;
+    return false;
+  });
+}
+
+/** 申し送り欄は空行を潰さない。他の帳票の改行上限とは分ける。 */
+function swsHandoverDomToMarkers_(el) {
+  if (!el) return "";
+  const lines = [""];
+  const cur = () => lines[lines.length - 1];
+  const add = s => { lines[lines.length - 1] += s; };
+  const brk = () => { lines.push(""); };
+  function walk(node) {
+    [...node.childNodes].forEach(ch => {
+      if (ch.nodeType === Node.TEXT_NODE) {
+        add(String(ch.textContent || "").replace(/\u00a0/g, " "));
+        return;
+      }
+      if (ch.nodeType !== Node.ELEMENT_NODE) return;
+      const tag = ch.tagName;
+      if (tag === "BR") { brk(); return; }
+      if (tag === "DIV" || tag === "P") {
+        if (cur().length) brk();
+        else if (!(lines.length === 1 && lines[0] === "")) brk();
+        if (!swsHandoverBlockIsEmpty_(ch)) walk(ch);
+        return;
+      }
+      if (ch.classList.contains("fax-em-red")) { add("《赤》"); walk(ch); add("《/赤》"); return; }
+      if (ch.classList.contains("fax-em-hl")) { add("《黄》"); walk(ch); add("《/黄》"); return; }
+      if (ch.classList.contains("fax-em-box-black")) { add("【黒枠】"); walk(ch); add("【/黒枠】"); return; }
+      if (ch.classList.contains("fax-em-box")) { add("【枠】"); walk(ch); add("【/枠】"); return; }
+      walk(ch);
+    });
+  }
+  walk(el);
+  return lines.join("\n");
+}
+
+function swsHandoverMarkersToHtml_(raw) {
+  const text = raw != null ? String(raw) : "";
+  if (!text) return "";
+  return text.split("\n").map(line => `<div>${faxMarkersToHtml_(line) || "<br>"}</div>`).join("");
+}
+
+function swsHandoverEditorHtml_(raw) {
+  const shell = rptEditRich_("handover", "", { block: true, tag: "div", cls: "sws-handover-rich", multiline: true })
+    .replace('data-rpt-rich="1"', 'data-rpt-rich="1" data-sws-handover-ed="1"');
+  return shell.replace("></div>", `>${swsHandoverMarkersToHtml_(raw)}</div>`);
+}
+
 function swsReadHandoverMarkers_(el) {
   if (!el) return "";
-  return issRichFieldToMarkers_(el);
+  return swsHandoverDomToMarkers_(el);
 }
 
 function swsHandoverPhotoSize_(p) {
@@ -21080,9 +21135,8 @@ function swsHandoverPhotosHtml_(photos, forPrint) {
 function swsHandoverCellHtml_(d, forPrint) {
   const raw = d && d.handover ? String(d.handover) : "";
   const text = forPrint
-    ? `<div class="sws-handover-rich sws-pre">${faxMarkersToHtml_(raw)}</div>`
-    : rptEditRich_("handover", raw, { block: true, tag: "div", cls: "sws-handover-rich", multiline: true })
-      .replace('data-rpt-rich="1"', 'data-rpt-rich="1" data-sws-handover-ed="1"');
+    ? `<div class="sws-handover-rich sws-pre">${swsHandoverMarkersToHtml_(raw)}</div>`
+    : swsHandoverEditorHtml_(raw);
   return text + swsHandoverPhotosHtml_(d && d.handoverPhotos, forPrint);
 }
 
@@ -21094,7 +21148,7 @@ function swsSyncHandoverFrom_(src) {
   const prevEd = document.querySelector("#swsPreviewInner [data-sws-handover-ed]");
   [formEd, prevEd].forEach(el => {
     if (!el || el === src) return;
-    el.innerHTML = faxMarkersToHtml_(markers);
+    el.innerHTML = swsHandoverMarkersToHtml_(markers);
   });
 }
 
@@ -21243,7 +21297,7 @@ function buildSwsFormHtml_(data) {
   h += `<div class="sws-field-lbl">時間（頃）</div><input type="text" class="sws-inp" id="swsVeTime" value="${escAttr(d.veTime || "")}" placeholder="例: 10:00">`;
   h += `<div class="sws-field-lbl">VE実食評価時準備物</div><textarea class="sws-ta" id="swsVePrep">${escHtml(d.vePrep || "")}</textarea>`;
   h += `<div class="sws-field-lbl">多職種連携(ケア・ACP)への申し送り事項</div>`;
-  h += `<div id="swsHandover" class="sws-handover-ed" contenteditable="true" data-rpt-rich="1" data-sws-handover-ed="1" spellcheck="false">${faxMarkersToHtml_(d.handover || "")}</div>`;
+  h += `<div id="swsHandover" class="sws-handover-ed" contenteditable="true" data-rpt-rich="1" data-sws-handover-ed="1" spellcheck="false">${swsHandoverMarkersToHtml_(d.handover || "")}</div>`;
   h += swsHandoverPhotosHtml_(d.handoverPhotos, false);
   h += `</div>`;
 
@@ -21730,6 +21784,7 @@ body{margin:0;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,san
 .sws-doc .sws-q-a{width:42%;text-align:left}
 .sws-doc .sws-q-link-mark{display:inline-block;margin-left:4px;padding:0 3px;border:1px solid #111;font-size:8pt;font-weight:800;line-height:1.25;vertical-align:middle;white-space:nowrap}
 .sws-doc .sws-handover-rich{white-space:pre-wrap}
+.sws-doc .sws-handover-rich > div{min-height:1.35em}
 .sws-doc .sws-handover-photos{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
 .sws-doc .sws-handover-photo img{object-fit:contain;border:1px solid #111;background:#fff;display:block}
 .fax-em-red{color:#dc2626;font-weight:800}
