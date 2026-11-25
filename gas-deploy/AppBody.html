@@ -769,8 +769,10 @@
       .sws-doc .sws-handover-rich { min-height:2.4em; white-space:pre-wrap; }
       .sws-handover-photos { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-start; margin-top:6px; }
       .sws-handover-photo { display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
-      .sws-handover-photo img { width:28mm; height:28mm; object-fit:contain; border:1px solid #111; background:#fff; display:block; }
-      .sws-handover-photo-add, .sws-handover-photo-del { font-size:12px; font-weight:800; padding:4px 8px; border-radius:8px; border:1px solid var(--border); background:#fff; cursor:pointer; }
+      .sws-handover-photo img { object-fit:contain; border:1px solid #111; background:#fff; display:block; }
+      .sws-handover-photo-tools { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+      .sws-handover-photo-add, .sws-handover-photo-del, .sws-handover-photo-size { font-size:12px; font-weight:800; padding:4px 8px; border-radius:8px; border:1px solid var(--border); background:#fff; cursor:pointer; color:#0f172a; }
+      .sws-handover-photo-size.is-on { background:#0f172a; color:#fff; border-color:#0f172a; }
       #swsHandover .fax-em-red, .sws-doc .fax-em-red { color:#dc2626; font-weight:800; }
       #swsHandover .fax-em-hl, .sws-doc .fax-em-hl { background:#fef08a; padding:1px 3px; }
       #swsHandover .fax-em-box, .sws-doc .fax-em-box { display:inline-block; border:2px solid #dc2626; padding:2px 6px; border-radius:4px; }
@@ -1830,7 +1832,7 @@
   <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="swsModalTitle">
     <div class="modal-handle"></div>
     <div class="modal-title" id="swsModalTitle">嚥下スクリーニング評価表</div>
-    <p id="swsModalSub" style="font-size:12px;color:var(--muted);margin:-4px 0 10px;line-height:1.45">左で入力すると右の表に反映されます。印刷では評価表を1ページにし、質問紙は下のチェックを付けたときだけ次のページから出します。空のまま印刷して手書きもできます。申し送りは「4. 総合判定・今後の計画を表示」を付けたときに用紙へ出ます。文字を選ぶと赤字や枠を付けられ、写真も追加できます。</p>
+    <p id="swsModalSub" style="font-size:12px;color:var(--muted);margin:-4px 0 10px;line-height:1.45">左で入力すると右の表に反映されます。印刷では評価表を1ページにし、質問紙は下のチェックを付けたときだけ次のページから出します。空のまま印刷して手書きもできます。申し送りは「4. 総合判定・今後の計画を表示」を付けたときに用紙へ出ます。文字を選ぶと赤字や枠を付けられ、写真も追加できます。写真の下の「小・中・大」で、その写真だけの大きさを変えられます。</p>
     <div class="report-preview-split">
       <div class="report-preview-form-pane" id="swsFormHost"></div>
       <div style="display:flex;flex-direction:column;min-height:0;flex:1">

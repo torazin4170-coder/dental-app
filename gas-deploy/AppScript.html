@@ -21042,14 +21042,34 @@ function swsReadHandoverMarkers_(el) {
   return issRichFieldToMarkers_(el);
 }
 
+function swsHandoverPhotoSize_(p) {
+  const s = p && p.size;
+  return s === "s" || s === "l" ? s : "m";
+}
+
+function swsHandoverPhotoSizeMm_(size) {
+  if (size === "s") return "18mm";
+  if (size === "l") return "48mm";
+  return "28mm";
+}
+
 function swsHandoverPhotosHtml_(photos, forPrint) {
   const list = (Array.isArray(photos) ? photos : []).filter(p => p && (p.data_url || p.dataUrl));
   if (!list.length && forPrint) return "";
   let h = `<div class="sws-handover-photos">`;
   list.forEach(p => {
     const src = p.data_url || p.dataUrl || "";
-    h += `<div class="sws-handover-photo"><img src="${escHtml(src)}" alt="申し送りの写真">`;
-    if (!forPrint) h += `<button type="button" class="sws-handover-photo-del" data-sws-photo-id="${escAttr(p.id || "")}">外す</button>`;
+    const size = swsHandoverPhotoSize_(p);
+    const mm = swsHandoverPhotoSizeMm_(size);
+    h += `<div class="sws-handover-photo" data-sws-photo-size="${size}"><img src="${escHtml(src)}" alt="申し送りの写真" style="width:${mm};height:${mm}">`;
+    if (!forPrint) {
+      h += `<div class="sws-handover-photo-tools">`;
+      [["s", "小"], ["m", "中"], ["l", "大"]].forEach(([key, label]) => {
+        h += `<button type="button" class="sws-handover-photo-size${size === key ? " is-on" : ""}" data-sws-photo-id="${escAttr(p.id || "")}" data-sws-photo-size="${key}">${label}</button>`;
+      });
+      h += `<button type="button" class="sws-handover-photo-del" data-sws-photo-id="${escAttr(p.id || "")}">外す</button>`;
+      h += `</div>`;
+    }
     h += `</div>`;
   });
   if (!forPrint) h += `<button type="button" class="sws-handover-photo-add">📷 写真を追加</button>`;
@@ -21109,7 +21129,7 @@ function swsPickHandoverPhoto_() {
       reader.onload = () => {
         compressImage(String(reader.result || ""), 1000, 0.75, dataUrl => {
           if (dataUrl && lastSwsContext_.handoverPhotos.length < 8) {
-            lastSwsContext_.handoverPhotos.push({ id: swsNewHandoverPhotoId_(), data_url: dataUrl });
+            lastSwsContext_.handoverPhotos.push({ id: swsNewHandoverPhotoId_(), data_url: dataUrl, size: "m" });
           }
           left -= 1;
           if (left <= 0) {
@@ -21127,6 +21147,16 @@ function swsPickHandoverPhoto_() {
 function swsRemoveHandoverPhoto_(id) {
   if (!lastSwsContext_) return;
   lastSwsContext_.handoverPhotos = (lastSwsContext_.handoverPhotos || []).filter(p => String(p.id) !== String(id));
+  refreshSwsPreview_();
+  swsPaintFormHandoverPhotos_();
+}
+
+function swsSetHandoverPhotoSize_(id, size) {
+  if (!lastSwsContext_ || !Array.isArray(lastSwsContext_.handoverPhotos)) return;
+  const next = size === "s" || size === "l" ? size : "m";
+  const ph = lastSwsContext_.handoverPhotos.find(p => String(p.id) === String(id));
+  if (!ph || swsHandoverPhotoSize_(ph) === next) return;
+  ph.size = next;
   refreshSwsPreview_();
   swsPaintFormHandoverPhotos_();
 }
@@ -21701,7 +21731,7 @@ body{margin:0;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,san
 .sws-doc .sws-q-link-mark{display:inline-block;margin-left:4px;padding:0 3px;border:1px solid #111;font-size:8pt;font-weight:800;line-height:1.25;vertical-align:middle;white-space:nowrap}
 .sws-doc .sws-handover-rich{white-space:pre-wrap}
 .sws-doc .sws-handover-photos{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
-.sws-doc .sws-handover-photo img{width:28mm;height:28mm;object-fit:contain;border:1px solid #111;background:#fff;display:block}
+.sws-doc .sws-handover-photo img{object-fit:contain;border:1px solid #111;background:#fff;display:block}
 .fax-em-red{color:#dc2626;font-weight:800}
 .fax-em-hl{background:#fef08a;padding:0 2px}
 .fax-em-box{display:inline-block;border:2px solid #dc2626;padding:1px 4px;border-radius:3px}
@@ -21777,6 +21807,12 @@ function ensureSwsFormListener_() {
       if (e.target.closest(".sws-handover-photo-add")) {
         e.preventDefault();
         swsPickHandoverPhoto_();
+        return;
+      }
+      const sizeBtn = e.target.closest(".sws-handover-photo-size");
+      if (sizeBtn) {
+        e.preventDefault();
+        swsSetHandoverPhotoSize_(sizeBtn.getAttribute("data-sws-photo-id"), sizeBtn.getAttribute("data-sws-photo-size"));
         return;
       }
       const del = e.target.closest(".sws-handover-photo-del");
