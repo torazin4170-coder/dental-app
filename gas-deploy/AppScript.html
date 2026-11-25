@@ -10863,7 +10863,8 @@ function rptIsRichPreviewContainer_(container) {
     container.id === "faxDailyPreviewInner" ||
     container.id === "svListPreviewInner" ||
     container.id === "issPreviewInner" ||
-    container.id === "personalSheetPreviewInner"
+    container.id === "personalSheetPreviewInner" ||
+    container.id === "swsPreviewInner"
   );
 }
 
@@ -10876,6 +10877,8 @@ function rptActiveEmphasisBar_() {
   if (issM && issM.classList.contains("show")) return document.getElementById("issEmphasisBar");
   const psM = document.getElementById("personalSheetModal");
   if (psM && psM.classList.contains("show")) return document.getElementById("personalSheetEmphasisBar");
+  const swsM = document.getElementById("swsModal");
+  if (swsM && swsM.classList.contains("show")) return document.getElementById("swsEmphasisBar");
   const recScreen = document.getElementById("screen-record");
   const notesEd = getNotesEditorEl_();
   const recBar = document.getElementById("recordNotesEmBar");
@@ -10894,6 +10897,7 @@ function rptEmActivePreviewInner_() {
   if (document.getElementById("shareSheetModal")?.classList.contains("show")) return document.getElementById("issPreviewInner");
   const psM = document.getElementById("personalSheetModal");
   if (psM && psM.classList.contains("show")) return document.getElementById("personalSheetPreviewInner");
+  if (document.getElementById("swsModal")?.classList.contains("show")) return document.getElementById("swsPreviewInner");
   return null;
 }
 
@@ -10909,6 +10913,9 @@ function rptEmPullActiveContext_(inner) {
   else if (inner.id === "issPreviewInner" && lastIssPreviewContext) {
     rptPullEdits_(inner, lastIssPreviewContext);
     issPullAllPhotosFromPreview_();
+  } else if (inner.id === "swsPreviewInner") {
+    const cell = rptEmLastRichCell_;
+    if (cell && (cell.id === "swsHandover" || cell.hasAttribute("data-sws-handover-ed"))) swsSyncHandoverFrom_(cell);
   }
 }
 
@@ -11432,7 +11439,7 @@ function rptScheduleEmphasisBarCheck_() {
       return;
     }
     const ae = document.activeElement;
-    if (ae && (ae.closest("#faxEmphasisBar") || ae.closest("#svListEmphasisBar") || ae.closest("#issEmphasisBar") || ae.closest("#personalSheetEmphasisBar") || ae.closest("#recordNotesEmBar") || ae.closest("[data-rpt-rich='1']"))) return;
+    if (ae && (ae.closest("#faxEmphasisBar") || ae.closest("#svListEmphasisBar") || ae.closest("#issEmphasisBar") || ae.closest("#personalSheetEmphasisBar") || ae.closest("#swsEmphasisBar") || ae.closest("#recordNotesEmBar") || ae.closest("[data-rpt-rich='1']"))) return;
     if (rptEmRangePickActive_ && rptEmLastRichCell_ && rptEmLastRichCell_.isConnected) return;
     if (rptEmLastRichCell_ && rptEmLastRichCell_.isConnected) return;
     bar.classList.remove("show");
@@ -11448,7 +11455,7 @@ function rptHideEmphasisBar_() {
   rptEmSavedRange_ = null;
   rptEmRangePickReset_(false);
   rptUnpinEmphasisBarMobile_();
-  ["faxEmphasisBar", "svListEmphasisBar", "issEmphasisBar", "personalSheetEmphasisBar", "recordNotesEmBar"].forEach(id => {
+  ["faxEmphasisBar", "svListEmphasisBar", "issEmphasisBar", "personalSheetEmphasisBar", "swsEmphasisBar", "recordNotesEmBar"].forEach(id => {
     const bar = document.getElementById(id);
     if (bar) {
       bar.classList.remove("show");
@@ -11489,7 +11496,7 @@ function rptEmBarBtnPrep_(btn) {
 }
 
 function rptBindEmphasisBarButtons_() {
-  document.querySelectorAll("#faxEmphasisBar, #svListEmphasisBar, #issEmphasisBar, #personalSheetEmphasisBar, #recordNotesEmBar").forEach(bar => {
+  document.querySelectorAll("#faxEmphasisBar, #svListEmphasisBar, #issEmphasisBar, #personalSheetEmphasisBar, #swsEmphasisBar, #recordNotesEmBar").forEach(bar => {
     rptEnsureEmphasisBarExtras_(bar);
     bar.querySelectorAll(".fax-em-btn").forEach(btn => {
       if (btn.dataset.rptEmBtnBound === "1") return;
@@ -20927,6 +20934,7 @@ function emptySwsData_() {
     veTime: "",
     vePrep: "",
     handover: "",
+    handoverPhotos: [],
     questionnaires: {
       seirei: Array(15).fill(""),
       fssg: Array(12).fill(""),
@@ -21029,6 +21037,100 @@ function swsRadio(name, value, label, checked) {
   return `<label><input type="radio" name="${escAttr(name)}" data-sws-radio="${escAttr(name)}" value="${escAttr(value)}"${checked ? " checked" : ""}> ${escHtml(label)}</label>`;
 }
 
+function swsReadHandoverMarkers_(el) {
+  if (!el) return "";
+  return issRichFieldToMarkers_(el);
+}
+
+function swsHandoverPhotosHtml_(photos, forPrint) {
+  const list = (Array.isArray(photos) ? photos : []).filter(p => p && (p.data_url || p.dataUrl));
+  if (!list.length && forPrint) return "";
+  let h = `<div class="sws-handover-photos">`;
+  list.forEach(p => {
+    const src = p.data_url || p.dataUrl || "";
+    h += `<div class="sws-handover-photo"><img src="${escHtml(src)}" alt="申し送りの写真">`;
+    if (!forPrint) h += `<button type="button" class="sws-handover-photo-del" data-sws-photo-id="${escAttr(p.id || "")}">外す</button>`;
+    h += `</div>`;
+  });
+  if (!forPrint) h += `<button type="button" class="sws-handover-photo-add">📷 写真を追加</button>`;
+  h += `</div>`;
+  return h;
+}
+
+function swsHandoverCellHtml_(d, forPrint) {
+  const raw = d && d.handover ? String(d.handover) : "";
+  const text = forPrint
+    ? `<div class="sws-handover-rich sws-pre">${faxMarkersToHtml_(raw)}</div>`
+    : rptEditRich_("handover", raw, { block: true, tag: "div", cls: "sws-handover-rich", multiline: true })
+      .replace('data-rpt-rich="1"', 'data-rpt-rich="1" data-sws-handover-ed="1"');
+  return text + swsHandoverPhotosHtml_(d && d.handoverPhotos, forPrint);
+}
+
+function swsSyncHandoverFrom_(src) {
+  if (!src || !lastSwsContext_) return;
+  const markers = swsReadHandoverMarkers_(src);
+  lastSwsContext_.handover = markers;
+  const formEd = document.getElementById("swsHandover");
+  const prevEd = document.querySelector("#swsPreviewInner [data-sws-handover-ed]");
+  [formEd, prevEd].forEach(el => {
+    if (!el || el === src) return;
+    el.innerHTML = faxMarkersToHtml_(markers);
+  });
+}
+
+function swsNewHandoverPhotoId_() {
+  return "sws_" + Date.now().toString(36) + "_" + Math.floor(Math.random() * 1000);
+}
+
+function swsPaintFormHandoverPhotos_() {
+  const strip = document.querySelector("#swsFormHost .sws-handover-photos");
+  if (!strip || !lastSwsContext_) return;
+  strip.outerHTML = swsHandoverPhotosHtml_(lastSwsContext_.handoverPhotos, false);
+}
+
+function swsPickHandoverPhoto_() {
+  if (!lastSwsContext_) lastSwsContext_ = emptySwsData_();
+  if (!Array.isArray(lastSwsContext_.handoverPhotos)) lastSwsContext_.handoverPhotos = [];
+  if (lastSwsContext_.handoverPhotos.length >= 8) {
+    showToast("写真は8枚までです");
+    return;
+  }
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "image/*";
+  inp.multiple = true;
+  inp.addEventListener("change", () => {
+    const room = 8 - lastSwsContext_.handoverPhotos.length;
+    const files = Array.from(inp.files || []).slice(0, room);
+    if (!files.length) return;
+    let left = files.length;
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        compressImage(String(reader.result || ""), 1000, 0.75, dataUrl => {
+          if (dataUrl && lastSwsContext_.handoverPhotos.length < 8) {
+            lastSwsContext_.handoverPhotos.push({ id: swsNewHandoverPhotoId_(), data_url: dataUrl });
+          }
+          left -= 1;
+          if (left <= 0) {
+            refreshSwsPreview_();
+            swsPaintFormHandoverPhotos_();
+          }
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+  inp.click();
+}
+
+function swsRemoveHandoverPhoto_(id) {
+  if (!lastSwsContext_) return;
+  lastSwsContext_.handoverPhotos = (lastSwsContext_.handoverPhotos || []).filter(p => String(p.id) !== String(id));
+  refreshSwsPreview_();
+  swsPaintFormHandoverPhotos_();
+}
+
 function buildSwsFormHtml_(data) {
   const d = data || emptySwsData_();
   const o = d.oral || {};
@@ -21110,7 +21212,9 @@ function buildSwsFormHtml_(data) {
   h += `<div class="sws-field-lbl">次回VE実施予定日</div><input type="date" class="sws-inp" id="swsVeDate" value="${escAttr(d.veDate || "")}">`;
   h += `<div class="sws-field-lbl">時間（頃）</div><input type="text" class="sws-inp" id="swsVeTime" value="${escAttr(d.veTime || "")}" placeholder="例: 10:00">`;
   h += `<div class="sws-field-lbl">VE実食評価時準備物</div><textarea class="sws-ta" id="swsVePrep">${escHtml(d.vePrep || "")}</textarea>`;
-  h += `<div class="sws-field-lbl">多職種連携メモ</div><textarea class="sws-ta" id="swsHandover">${escHtml(d.handover || "")}</textarea>`;
+  h += `<div class="sws-field-lbl">多職種連携(ケア・ACP)への申し送り事項</div>`;
+  h += `<div id="swsHandover" class="sws-handover-ed" contenteditable="true" data-rpt-rich="1" data-sws-handover-ed="1" spellcheck="false">${faxMarkersToHtml_(d.handover || "")}</div>`;
+  h += swsHandoverPhotosHtml_(d.handoverPhotos, false);
   h += `</div>`;
 
   const q = d.questionnaires || {};
@@ -21223,7 +21327,9 @@ function collectSwsForm_() {
   base.veDate = formatDateInputVal(document.getElementById("swsVeDate")?.value) || "";
   base.veTime = document.getElementById("swsVeTime")?.value || "";
   base.vePrep = document.getElementById("swsVePrep")?.value || "";
-  base.handover = document.getElementById("swsHandover")?.value || "";
+  const handoverEd = document.getElementById("swsHandover");
+  base.handover = handoverEd ? swsReadHandoverMarkers_(handoverEd) : (base.handover || "");
+  if (!Array.isArray(base.handoverPhotos)) base.handoverPhotos = Array.isArray(lastSwsContext_ && lastSwsContext_.handoverPhotos) ? lastSwsContext_.handoverPhotos : [];
 
   const q = base.questionnaires || (base.questionnaires = { seirei: [], fssg: [], eat10: [], pill5: [] });
   q.seirei = [];
@@ -21521,7 +21627,7 @@ function buildSwsDocumentHtml_(data, forPrint, opts) {
   const c = d.cough || {};
   let h = `<div class="sws-doc">`;
   h += `<div class="sws-main-page">`;
-  h += `<h1>訪問歯科・嚥下スクリーニング評価表（初診・経過観察用）</h1>`;
+  h += `<h1>訪問歯科・嚥下スクリーニング評価表</h1>`;
   h += `<table><tr><th>患者氏名</th><td>${escHtml(d.patientName || "")}　様</td><th>生年月日</th><td>${escHtml(d.birthWareki || "")}${escHtml(d.ageParen || "")}</td></tr>`;
   h += `<tr><th>食事現状</th><td colspan="3" class="sws-pre">${escHtml(d.mealStatus || "")}</td></tr>`;
   h += `<tr><th>ADL</th><td class="sws-pre">${escHtml(d.adl || "")}</td><th>注意機能等</th><td class="sws-pre">${escHtml(d.attention || "")}</td></tr></table>`;
@@ -21552,7 +21658,7 @@ function buildSwsDocumentHtml_(data, forPrint, opts) {
     h += `<div class="sws-sec">4. 総合判定 ＆ 今後の計画</div>`;
     h += `<table><tr><th>総合判定・経口摂取の適応</th><td>${SWS_OVERALL_OPTS_.map(opt => swsMark(d.overall===opt.v, opt.t)).join("<br>")}</td></tr>`;
     h += `<tr><th>次回VE(嚥下内視鏡検査)計画</th><td>予定日：${escHtml(d.veDate || "")}　時間：${escHtml(d.veTime || "")}頃<br>準備物：<span class="sws-pre">${escHtml(d.vePrep || "")}</span></td></tr>`;
-    h += `<tr><th>多職種連携(ケア・ACP)への申し送り事項</th><td class="sws-pre">${escHtml(d.handover || "")}</td></tr></table>`;
+    h += `<tr><th>多職種連携(ケア・ACP)への申し送り事項</th><td>${swsHandoverCellHtml_(d, forPrint)}</td></tr></table>`;
   }
   h += `<p style="margin:6px 0 0;font-size:9.5pt">評価担当者： ${escHtml(d.evaluator || "")}　／　評価実施日： ${escHtml(d.examDate || "")}</p>`;
   h += `</div>`;
@@ -21592,7 +21698,14 @@ body{margin:0;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,san
 .sws-doc .sws-q-table td{padding:1px 3px;font-size:8.6pt;line-height:1.3}
 .sws-doc .sws-q-q{width:58%}
 .sws-doc .sws-q-a{width:42%;text-align:left}
-.sws-doc .sws-q-link-mark{display:inline-block;margin-left:4px;padding:0 3px;border:1px solid #111;font-size:8pt;font-weight:800;line-height:1.25;vertical-align:middle;white-space:nowrap}`;
+.sws-doc .sws-q-link-mark{display:inline-block;margin-left:4px;padding:0 3px;border:1px solid #111;font-size:8pt;font-weight:800;line-height:1.25;vertical-align:middle;white-space:nowrap}
+.sws-doc .sws-handover-rich{white-space:pre-wrap}
+.sws-doc .sws-handover-photos{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+.sws-doc .sws-handover-photo img{width:28mm;height:28mm;object-fit:contain;border:1px solid #111;background:#fff;display:block}
+.fax-em-red{color:#dc2626;font-weight:800}
+.fax-em-hl{background:#fef08a;padding:0 2px}
+.fax-em-box{display:inline-block;border:2px solid #dc2626;padding:1px 4px;border-radius:3px}
+.fax-em-box-black{display:inline-block;border:2px solid #111;padding:1px 4px;border-radius:3px}`;
 }
 
 function swsHandleQuestionnaireChange_(host, radioName) {
@@ -21645,6 +21758,55 @@ function ensureSwsFormListener_() {
     if (radioName) swsHandleQuestionnaireChange_(host, radioName);
     scheduleSwsPreview_();
   });
+  host.addEventListener("focusin", e => {
+    const el = e.target.closest && e.target.closest("#swsHandover");
+    if (el) rptSetActiveRichCell_(el);
+  });
+  host.addEventListener("mouseup", e => {
+    const el = e.target.closest && e.target.closest("#swsHandover");
+    if (el) rptSaveSelectionFromCell_(el);
+  });
+  host.addEventListener("keyup", e => {
+    const el = e.target.closest && e.target.closest("#swsHandover");
+    if (el) rptSaveSelectionFromCell_(el);
+  });
+  const modal = document.getElementById("swsModal");
+  if (modal && modal.dataset.swsPhotoBound !== "1") {
+    modal.dataset.swsPhotoBound = "1";
+    modal.addEventListener("click", e => {
+      if (e.target.closest(".sws-handover-photo-add")) {
+        e.preventDefault();
+        swsPickHandoverPhoto_();
+        return;
+      }
+      const del = e.target.closest(".sws-handover-photo-del");
+      if (del) {
+        e.preventDefault();
+        swsRemoveHandoverPhoto_(del.getAttribute("data-sws-photo-id"));
+      }
+    });
+  }
+  const preview = document.getElementById("swsPreviewInner");
+  if (preview && preview.dataset.swsRichBound !== "1") {
+    preview.dataset.swsRichBound = "1";
+    preview.addEventListener("focusin", e => {
+      const el = e.target.closest && e.target.closest("[data-sws-handover-ed]");
+      if (el) rptSetActiveRichCell_(el);
+    });
+    preview.addEventListener("mouseup", e => {
+      const el = e.target.closest && e.target.closest("[data-sws-handover-ed]");
+      if (el) rptSaveSelectionFromCell_(el);
+    });
+    preview.addEventListener("keyup", e => {
+      const el = e.target.closest && e.target.closest("[data-sws-handover-ed]");
+      if (el) rptSaveSelectionFromCell_(el);
+    });
+    preview.addEventListener("input", e => {
+      const el = e.target.closest && e.target.closest("[data-sws-handover-ed]");
+      if (el) swsSyncHandoverFrom_(el);
+    });
+  }
+  rptBindEmphasisBarButtons_();
 }
 
 function scheduleSwsPreview_() {
