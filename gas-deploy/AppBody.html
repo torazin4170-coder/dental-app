@@ -1104,6 +1104,10 @@
       .qo-prev-empty { color: #94a3b8; font-weight: 800; }
       .qo-swatch.qo-block { background: #fca5a5; }
       #spanel-quarterly select, #spanel-quarterly input { touch-action: manipulation; }
+      .rpt-font-bar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 8px; }
+      .rpt-font-bar-label { font-size:12px; font-weight:800; color:var(--muted); }
+      .rpt-font-bar button { font-size:12px; font-weight:800; padding:4px 10px; border-radius:8px; border:1px solid var(--border); background:#fff; color:#0f172a; cursor:pointer; }
+      .rpt-font-bar button.is-on { background:#0f172a; color:#fff; border-color:#0f172a; }
       .rpt-edit { outline: none; border-radius: 3px; min-width: 0.4em; cursor: text; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; touch-action: manipulation; }
       .rpt-edit:hover { background: rgba(37, 99, 235, 0.07); }
       .rpt-edit:focus { background: #eff6ff; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.28); }
@@ -2226,7 +2230,7 @@
 <div class="modal-overlay" id="facilityHandoverModal">
   <div class="modal-sheet fax-daily-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="facilityHandoverModalTitle">
     <div class="modal-handle"></div>
-    <div class="fax-daily-modal-scroll-body">
+    <div class="fax-daily-modal-scroll-body" id="facilityHandoverScaleHost">
       <div class="modal-title" id="facilityHandoverModalTitle">施設申し送り（次の歯科医院向け）</div>
       <div id="facilityHandoverModalError" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--red-light);border:1px solid #fca5a5;color:#991b1b;font-size:13px;line-height:1.45"></div>
       <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">日報・帳票タブの<strong>施設</strong>から、退去・逝去を除く有効な患者を居室順でまとめます。義歯・参考・歯科の投薬・注意事項・治療経過・コメントはこの画面で自由に直せます（カルテ本体には戻りません）。治療経過は初診の日以降を日付の古い順に入れます。空にした欄は印刷しません。「印刷」のチェックを外すか「外す」を押すと、その患者はこの画面からも消えます。下の「戻す」で戻せます。保存すると書類履歴に残ります。</p>

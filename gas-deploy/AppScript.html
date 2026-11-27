@@ -11773,6 +11773,8 @@ function rptPlainizeEditEl_(el) {
     .trim();
   if (preserve) cls = (cls + " rpt-print-preserve-ws").trim();
   if (cls) repl.className = cls;
+  const fontPt = rptInputFontPt_(el.getAttribute("data-rpt-fs") || "");
+  if (fontPt) repl.style.fontSize = fontPt;
   if (preserve) repl.innerHTML = el.innerHTML;
   else repl.textContent = el.textContent || "";
   return repl;
@@ -11888,6 +11890,10 @@ function rptPreviewHtmlForPrint_(innerEl, opts) {
   opts = opts || {};
   if (!innerEl) return "";
   const clone = innerEl.cloneNode(true);
+  const fs = innerEl.getAttribute("data-rpt-fs") || "";
+  if (fs && fs !== "md") {
+    clone.querySelectorAll(".rpt-edit, [contenteditable='true']").forEach(el => el.setAttribute("data-rpt-fs", fs));
+  }
   rptStripPreviewChromeForPrint_(clone, opts.extraStrip);
   if (opts.pageBreakSelector) {
     const pages = [...clone.querySelectorAll(opts.pageBreakSelector)];
@@ -11918,10 +11924,168 @@ function svListHtmlForPrint_() {
   return rptPlainHtmlForFax_(buildSupervisorListDocumentHtml_({ forPrint: true }));
 }
 
+const RPT_INPUT_FONT_HOSTS_ = [
+  ["faxDaily", "faxDailyPreviewInner"],
+  ["svList", "svListPreviewInner"],
+  ["iss", "issPreviewInner"],
+  ["personalSheet", "personalSheetPreviewInner"],
+  ["monthCare", "monthCarePreviewInner"],
+  ["patientPps", "patientPpsPreviewInner"],
+  ["sws", "swsPreviewInner"],
+  ["shindan", "shindanPreviewInner"],
+  ["ofpi", "ofpiPreviewInner"],
+  ["visitTt", "visitTimetablePreviewInner"],
+  ["kentai", "kentai-preview-host"],
+  ["facilityHandover", "facilityHandoverScaleHost"]
+];
+
+const RPT_INPUT_FONT_SELS_ = [
+  ".rpt-edit",
+  "[contenteditable='true']",
+  "textarea",
+  "input[type='text']",
+  ".rpt-print-preserve-ws",
+  ".sws-pre",
+  ".sws-handover-rich",
+  ".fh-sec-body",
+  ".fh-title",
+  ".fh-facility-note",
+  ".tt-col-treat",
+  ".shindan-title",
+  ".shindan-line",
+  ".shindan-disease-block",
+  ".shindan-body-block",
+  ".shindan-clinic-lines",
+  ".kentai-assess-body",
+  ".kentai-summary-box",
+  ".ps-notes-text",
+  ".ps-bullet-cell",
+  ".ps-body-text",
+  ".ps-extra-comment",
+  ".ofpi-meta",
+  ".ofpi-main td",
+  ".mc-body",
+  ".cm-body"
+];
+
+function rptInputFontStorageKey_(kind) {
+  return "rptInputFont_" + String(kind || "");
+}
+
+function rptReadInputFont_(kind) {
+  try {
+    const v = localStorage.getItem(rptInputFontStorageKey_(kind));
+    if (v === "sm" || v === "lg" || v === "xl") return v;
+  } catch (_) {}
+  return "md";
+}
+
+function rptInputFontPt_(fs) {
+  if (fs === "sm") return "9pt";
+  if (fs === "lg") return "13pt";
+  if (fs === "xl") return "16pt";
+  return "";
+}
+
+function rptInputFontCss_(fs, pt) {
+  if (!pt) return "";
+  const scoped = RPT_INPUT_FONT_SELS_.map(sel => `[data-rpt-fs="${fs}"] ${sel}`).join(",");
+  return scoped + `{font-size:${pt} !important;}`;
+}
+
+function rptEnsureInputFontStyle_() {
+  let tag = document.getElementById("rptInputFontStyle");
+  if (!tag) {
+    tag = document.createElement("style");
+    tag.id = "rptInputFontStyle";
+    document.head.appendChild(tag);
+  }
+  tag.textContent = ["sm", "lg", "xl"].map(fs => rptInputFontCss_(fs, rptInputFontPt_(fs))).join("\n");
+}
+
+function rptApplyInputFontHost_(kind, host) {
+  if (!host) return;
+  const fs = rptReadInputFont_(kind);
+  if (!fs || fs === "md") host.removeAttribute("data-rpt-fs");
+  else host.setAttribute("data-rpt-fs", fs);
+  const bar = document.querySelector(`.rpt-font-bar[data-rpt-font-bar="${kind}"]`);
+  if (!bar) return;
+  bar.querySelectorAll("[data-rpt-font]").forEach(btn => {
+    btn.classList.toggle("is-on", btn.getAttribute("data-rpt-font") === fs);
+  });
+}
+
+function rptSetInputFont_(kind, fs) {
+  const next = fs === "sm" || fs === "lg" || fs === "xl" ? fs : "md";
+  try {
+    if (next === "md") localStorage.removeItem(rptInputFontStorageKey_(kind));
+    else localStorage.setItem(rptInputFontStorageKey_(kind), next);
+  } catch (_) {}
+  RPT_INPUT_FONT_HOSTS_.forEach(pair => {
+    if (pair[0] !== kind) return;
+    rptApplyInputFontHost_(kind, document.getElementById(pair[1]));
+  });
+}
+
+function rptMountInputFontBars_() {
+  rptEnsureInputFontStyle_();
+  if (!document.body.dataset.rptFontClick) {
+    document.body.dataset.rptFontClick = "1";
+    document.addEventListener("click", e => {
+      const btn = e.target.closest && e.target.closest("[data-rpt-font]");
+      if (!btn) return;
+      const bar = btn.closest(".rpt-font-bar");
+      if (!bar) return;
+      e.preventDefault();
+      e.stopPropagation();
+      rptSetInputFont_(bar.getAttribute("data-rpt-font-bar"), btn.getAttribute("data-rpt-font"));
+    });
+  }
+  RPT_INPUT_FONT_HOSTS_.forEach(pair => {
+    const kind = pair[0];
+    const host = document.getElementById(pair[1]);
+    if (!host || host.dataset.rptFontBar === "1") {
+      rptApplyInputFontHost_(kind, host);
+      return;
+    }
+    host.dataset.rptFontBar = "1";
+    const bar = document.createElement("div");
+    bar.className = "rpt-font-bar";
+    bar.setAttribute("data-rpt-font-bar", kind);
+    bar.innerHTML = `<span class="rpt-font-bar-label">文字の大きさ</span>`
+      + `<button type="button" data-rpt-font="sm">小</button>`
+      + `<button type="button" data-rpt-font="md">標準</button>`
+      + `<button type="button" data-rpt-font="lg">大</button>`
+      + `<button type="button" data-rpt-font="xl">特大</button>`;
+    host.parentNode.insertBefore(bar, host);
+    rptApplyInputFontHost_(kind, host);
+  });
+}
+
+function rptOpenModalFontPt_() {
+  for (let i = 0; i < RPT_INPUT_FONT_HOSTS_.length; i++) {
+    const host = document.getElementById(RPT_INPUT_FONT_HOSTS_[i][1]);
+    if (!host) continue;
+    const modal = host.closest(".modal-overlay");
+    if (modal && modal.classList.contains("show")) return rptInputFontPt_(host.getAttribute("data-rpt-fs") || "");
+  }
+  return "";
+}
+
+function rptInjectPrintInputFont_(w) {
+  const pt = rptOpenModalFontPt_();
+  if (!pt || !w || !w.document || !w.document.head) return;
+  const style = w.document.createElement("style");
+  style.setAttribute("data-rpt-font", "1");
+  style.textContent = RPT_INPUT_FONT_SELS_.join(",") + `{font-size:${pt} !important;}`;
+  w.document.head.appendChild(style);
+}
+
 /** 印刷ウィンドウ：子ウィンドウ内で1回だけ print()（背景タブ・二重呼び出し対策・全帳票共通） */
 function rptTriggerPrintWhenReady_(w, beforePrint) {
   if (!w || w.__rptPrintScheduled) return;
   w.__rptPrintScheduled = true;
+  try { rptInjectPrintInputFont_(w); } catch (_) {}
   try {
     if (typeof beforePrint === "function") beforePrint(w);
     try { w.focus(); } catch (_) {}
@@ -25596,6 +25760,7 @@ window.addEventListener("beforeunload", e => {
 function startApp_() {
   applyDarkModeOnLoad();
   applyPcModeOnLoad();
+  rptMountInputFontBars_();
   init();
   migrateLegacyReportButton6_();
   var boot = document.getElementById("boot-loading");
